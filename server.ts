@@ -453,6 +453,10 @@ f109a24d8b     redis:7-alpine        "docker-entrypoint.s…"   5 hours ago    U
     output = `[sudo] password for ${userRole}: ********
 Elevated execution granted for command: '${trimmed.substring(5)}'
 Operation completed successfully.`;
+  } else if (lower === 'history') {
+    const recentLogs = activityLogs.slice(0, 25).reverse();
+    output = recentLogs.map((l, i) => `  ${(i + 1).toString().padStart(4, ' ')}  ${l.details.replace('Executed: ', '')}`).join('\n') || '  1  welcome\n  2  help';
+    syntaxType = 'bash';
   } else if (lower === 'help') {
     output = `DevTerminal Pro - Supported CLI Commands:
   • ls / dir          - List filesystem directory contents
@@ -467,7 +471,8 @@ Operation completed successfully.`;
   • backup run        - Execute instant system backup snapshot
   • claude <prompt>   - Execute AI Coder Copilot command
   • gemini <prompt>   - Execute Gemini Terminal Assistant
-  • clear             - Clear terminal viewport`;
+  • history           - Print past command history list
+  • clear             - Clear terminal viewport (Ctrl+L)`;
   } else {
     output = `command executed: '${trimmed}'\nReturn code: 0\n[DevTerminal Execution Engine - ${osPreset.toUpperCase()} Preset]`;
   }
