@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  omniterm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omniterm-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Optional: Add GEMINI_API_KEY if using AI copilot features
+      # - GEMINI_API_KEY=your_key_here

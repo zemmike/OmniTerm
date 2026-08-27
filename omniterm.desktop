@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=OmniTerm
+Comment=Professional DevTerminal & AI Copilot Suite
+GenericName=Terminal Emulator
+Exec=omniterm %U
+Icon=utilities-terminal
+Terminal=false
+Type=Application
+Categories=Development;System;TerminalEmulator;Utility;
+Keywords=terminal;cli;developer;bash;sh;server;ai;
+StartupWMClass=OmniTerm

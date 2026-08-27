@@ -1,0 +1,6 @@
+{
+  "name": "DevTerminal Pro",
+  "description": "Cross-platform terminal interface with AI CLI integration, script runner, system file manager, real-time server health dashboard, RBAC permissions, encryption manager, backup scheduling, and plugin architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
