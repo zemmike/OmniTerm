@@ -1,82 +1,103 @@
-// End-to-end test of the PTY WebSocket: real shell, Ctrl+C, aliases, TUI app.
+/**
+ * End-to-end test of the terminal socket for one shell.
+ *
+ *   PORT=4410 TOKEN=testtoken SHELL_NAME=zsh ALIAS_CMD=zt \
+ *   ALIAS_EXPECT=ZSH-ALIAS-OK EXPECT_INTEGRATION=1 \
+ *   node scripts/pty-socket-test.cjs
+ *
+ * Checks the things a user would notice: an interactive prompt, commands that
+ * really execute, the user's own rc file being loaded (an alias only defined
+ * there), Ctrl+C, and the audit trail recording the command and exit code.
+ */
 const WebSocket = require('ws');
 
-const PORT = process.env.PORT || '4399';
+const PORT = process.env.PORT || '4401';
 const TOKEN = process.env.TOKEN || 'tok';
-const url = `ws://127.0.0.1:${PORT}/term?token=${TOKEN}`;
-const ws = new WebSocket(url);
+const SHELL_NAME = process.env.SHELL_NAME || 'shell';
+const ALIAS_CMD = process.env.ALIAS_CMD || '';
+const ALIAS_EXPECT = process.env.ALIAS_EXPECT || '';
+const EXPECT_INTEGRATION = process.env.EXPECT_INTEGRATION !== '0';
+const CWD = process.env.TEST_CWD || '/tmp';
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-let buf = '';
-const results = {};
-
-ws.on('open', async () => {
-  ws.send(JSON.stringify({ type: 'start', sessionId: 'test-1', cols: 100, rows: 30, cwd: '/root' }));
-});
-
-ws.on('message', (raw) => {
-  const msg = JSON.parse(raw.toString());
-  if (msg.type === 'data') buf += msg.data;
-  if (msg.type === 'ready') results.ready = `${msg.shell} pid=${msg.pid} cwd=${msg.cwd}`;
-  if (msg.type === 'error') results.error = msg.message;
-  if (msg.type === 'exit') results.exit = msg.exitCode;
-});
+const strip = (s) =>
+  s
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, '') // OSC (title, cwd, 133 markers)
+    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '') // CSI
+    .replace(/\x1b[=>78]/g, '') // zsh's PROMPT_SP marker, keypad modes
+    .replace(/\r/g, '');
+const lastLines = (s, n = 2) =>
+  JSON.stringify(
+    strip(s)
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(-n)
+  ).slice(0, 90);
 
 (async () => {
-  await sleep(2500);
-  const send = (d) => ws.send(JSON.stringify({ type: 'input', data: d }));
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/term?token=${TOKEN}`);
+  let buf = '';
+  ws.on('message', (raw) => {
+    const m = JSON.parse(raw.toString());
+    if (m.type === 'data') buf += m.data;
+  });
+  await new Promise((res, rej) => {
+    ws.on('open', res);
+    ws.on('error', rej);
+  });
 
-  // 1. does the shell run and echo back, with the user's own prompt?
-  send('echo PTY-OK-$(( 6 * 7 ))\r');
-  await sleep(1200);
-  results.shellWorks = buf.includes('PTY-OK-42');
-  results.realPrompt = /root@[\w.-]+:/.test(buf);
+  ws.send(JSON.stringify({ type: 'start', sessionId: `t-${SHELL_NAME}`, cols: 100, rows: 30, cwd: CWD }));
+  await sleep(3000);
 
-  // 2. does integration report the exit code + command to the audit trail?
-  send('false\r');
-  await sleep(900);
-  send('echo AFTER-FALSE\r');
-  await sleep(900);
-  results.auditHookFired = buf.includes('AFTER-FALSE');
+  const checks = [];
+  const note = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail || '' });
 
-  // 3. Ctrl+C on a long-running command
-  const before = buf.length;
-  send('sleep 60\r');
-  await sleep(900);
-  send('\u0003');
-  await sleep(600);
-  send('echo CTRL-C-OK\r');
-  await sleep(900);
-  results.ctrlC = buf.slice(before).includes('CTRL-C-OK');
+  note('interactive prompt', /[#$%>] ?$/.test(strip(buf).trimEnd().slice(-40)), lastLines(buf, 1));
 
-  // 4. tab completion (shell-driven, folders in /root)
-  send('cd /root/OmniT\t\r');
-  await sleep(900);
-  send('pwd\r');
-  await sleep(900);
-  results.tabCompletion = /\/root\/OmniTerm/.test(buf.slice(-400));
+  const run = async (cmd, wait = 1400) => {
+    buf = '';
+    ws.send(JSON.stringify({ type: 'input', data: `${cmd}\r` }));
+    await sleep(wait);
+    return buf;
+  };
 
-  // 5. a full-screen TUI program (the old build refused these outright)
-  const beforeTui = buf.length;
-  send('vim -u NONE -c "set nocompatible" /tmp/omniterm-tui-test.txt\r');
-  await sleep(1800);
-  const tuiBuffer = buf.slice(beforeTui);
-  results.vimLaunched = !/not supported|only one-shot commands|refus/i.test(tuiBuffer);
-  results.vimAltScreen = tuiBuffer.includes('\u001b[?1049h') || tuiBuffer.includes('\u001b[?47h');
-  send('\u001b:q!\r');
-  await sleep(1200);
-  send('echo VIM-EXITED-OK\r');
-  await sleep(900);
-  results.vimExited = buf.slice(-200).includes('VIM-EXITED-OK');
+  const MATH = process.env.MATH_CMD || 'expr 6 \\* 7';
+  note('command executes', /(^|\D)42(\D|$)/.test(strip(await run(MATH))), `${MATH} -> 42`);
+  if (ALIAS_CMD) {
+    const out = await run(ALIAS_CMD);
+    note(`user rc loaded (${ALIAS_CMD})`, out.includes(ALIAS_EXPECT), lastLines(out, 2));
+  }
 
-  console.log(JSON.stringify(results, null, 2));
-  console.log('--- tail ---');
-  console.log(JSON.stringify(buf.slice(-260)));
+  ws.send(JSON.stringify({ type: 'input', data: 'sleep 30\r' }));
+  await sleep(900);
+  ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
+  await sleep(700);
+  note('Ctrl+C interrupts', (await run('echo AFTER-CC')).includes('AFTER-CC'), 'echo AFTER-CC ran');
+
+  await run('false');
+  await sleep(700);
+
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/activity-logs`, { headers: { 'x-omniterm-token': TOKEN } });
+  const body = await res.json();
+  const entries = body.entries || [];
+  const recorded = entries.find((e) => (e.command || '').includes(MATH.replace('\\\\*', '*')));
+  const failed = entries.find((e) => (e.command || '').trim() === 'false');
+
+  note('audit: command recorded', !!recorded, recorded ? `exit=${recorded.exitCode} cwd=${recorded.cwd}` : `missing (saw: ${entries.slice(0, 3).map((e) => e.command).join(' | ')})`);
+  if (EXPECT_INTEGRATION) {
+    note('audit: exit code captured', !!failed && failed.exitCode === 1, failed ? `exit=${failed.exitCode}` : 'missing');
+  } else {
+    note('audit: command without exit code (no hooks)', !!failed && failed.exitCode === null, failed ? `exit=${failed.exitCode}` : 'missing');
+  }
+
+  const failedChecks = checks.filter((c) => !c.ok);
+  console.log(`\n=== ${SHELL_NAME} === integration=${EXPECT_INTEGRATION ? 'osc133' : 'none'}`);
+  for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(42)} ${c.detail}`);
+  console.log(`${checks.length - failedChecks.length}/${checks.length} passed`);
   ws.close();
-  process.exit(0);
-})();
-
-setTimeout(() => {
-  console.log('TIMEOUT', JSON.stringify(results, null, 2));
-  process.exit(1);
-}, 40000);
+  process.exit(failedChecks.length ? 1 : 0);
+})().catch((err) => {
+  console.error('TEST ERROR', err);
+  process.exit(2);
+});

@@ -8,6 +8,13 @@ snapshot engine and a file browser, packaged as a native Ubuntu/Debian app.
 
 ## Features
 
+- **Works with your shell, whatever it is** — bash, zsh and fish get full shell
+  integration (their own prompt, their own aliases and functions, plus command
+  and exit-code reporting to the audit trail). Each shell is hooked the way that
+  shell requires: bash through a generated `--rcfile`, zsh through a generated
+  `$ZDOTDIR`, fish through `--init-command`. Any other shell (dash, ash, sh)
+  still runs as a normal interactive shell; only the exit code cannot be
+  reported there, and the app says so instead of guessing.
 - **A real terminal, not a command box** — every tab is an actual PTY running
   your login shell, so `vim`, `top`, `less`, `ssh`, job control, colours, Ctrl+C,
   Ctrl+D, Tab completion and your shell's own history all behave exactly as they
@@ -129,6 +136,7 @@ electron-main.cjs   Electron shell: picks a free loopback port, boots the
                     ~/.config/OmniTerm/omniterm.log
 preload.cjs         Sandboxed bridge that exposes the token to the renderer
 pty.ts              Real interactive terminals: one node-pty session per tab,
+                    shell integration for bash/zsh/fish (OSC 133 + OSC 7),
                     spawned with the user's login shell + bash OSC 133/7
                     integration, exposed over a token-guarded WebSocket at
                     /term and turned into audit records
@@ -184,11 +192,24 @@ copilot status panel in the AI tab tells you which provider is answering. If no
 local model is present and no key is configured, the copilot says so instead of
 pretending to answer.
 
+## Shell support
+
+| Shell | Config adopted | Prompt | Audit: command | Audit: exit code |
+| --- | --- | --- | --- | --- |
+| bash | `/etc/profile`, `~/.bash_profile`, `~/.profile`, `~/.bashrc` | yes | yes | yes |
+| zsh | `$ZDOTDIR` (or `~`) `.zshenv/.zprofile/.zshrc/.zlogin` | yes | yes | yes |
+| fish | `~/.config/fish/config.fish` | yes | yes | yes |
+| dash, ash, sh, other | the shell's own defaults | yes | yes | no (unknown, reported as empty) |
+
+`npm run test:pty-socket` checks one shell end to end; `bash
+scripts/shell-matrix-test.sh` checks every installed shell (prompt, command
+execution, a user alias from the shell's own config, Ctrl+C, and the audit
+entries with their exit codes) against a throwaway `$HOME`.
+
 ## Roadmap
 
 - Hash-chained audit entries (tamper-evident retention) and a signed apt repo.
 - Split panes and per-tab tab titles.
-- Optional `zsh`/`fish` OSC integration (bash is covered today).
 
 ## License
 

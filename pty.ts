@@ -6,12 +6,13 @@
  * from /etc/profile and ~/.profile, their aliases and functions from ~/.bashrc,
  * job control, colours, and full-screen programs (vim, top, less, ssh).
  *
- * Shell integration (bash) emits two OSC sequences that we parse server-side:
+ * Shell integration (bash, zsh, fish) emits two OSC sequences we parse here:
  *   133;D;<exit>;<b64 command>   last command, its exit code
  *   7;file://<host><cwd>         the shell's current directory
  * Both are stripped from the stream sent to the renderer and turned into audit
  * records, so the audit trail keeps working with a real interactive shell.
  */
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -35,7 +36,8 @@ function loadPty(): any {
 
 export function ptyStatus() {
   loadPty();
-  return { available: !!ptyLib, error: ptyLoadError, shell: process.env.SHELL || '/bin/bash' };
+  const shell = process.env.SHELL || '/bin/bash';
+  return { available: !!ptyLib, error: ptyLoadError, shell, integration: buildShellLaunch(shell).integration };
 }
 
 // ---------------------------------------------------------------- integration
@@ -69,15 +71,123 @@ PROMPT_COMMAND="__omniterm_osc\${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
   }
 }
 
-function shellArgs(shell: string): string[] {
-  const base = path.basename(shell);
-  if (base === 'bash') {
-    const rc = bashIntegrationRc();
-    // Interactive shell that reads the user's config through our rc wrapper.
-    return rc ? ['--rcfile', rc, '-i'] : ['-l', '-i'];
+export type ShellKind = 'bash' | 'zsh' | 'fish' | 'plain';
+
+export function shellKind(shell: string): ShellKind {
+  const base = path.basename(shell || '').toLowerCase();
+  if (base.startsWith('bash')) return 'bash';
+  if (base.startsWith('zsh')) return 'zsh';
+  if (base.startsWith('fish')) return 'fish';
+  return 'plain';
+}
+
+/** Hook appended to the generated zsh rc files. */
+const ZSH_HOOKS = `
+__omniterm_precmd() {
+  local __ot_code=$?
+  local __ot_cmd __ot_b64
+  __ot_cmd=$(fc -ln -1 2>/dev/null | sed -e 's/^[[:space:]]*//' | head -c 400)
+  case "$__ot_cmd" in __omniterm_precmd*|fc\\ -ln*) __ot_cmd='' ;; esac
+  __ot_b64=$(printf '%s' "$__ot_cmd" | base64 -w0 2>/dev/null)
+  printf '\\033]133;D;%s;%s\\007' "$__ot_code" "$__ot_b64"
+  printf '\\033]7;file://%s%s\\007' "\${HOST:-\${HOSTNAME:-localhost}}" "$PWD"
+}
+autoload -Uz add-zsh-hook 2>/dev/null
+if command -v add-zsh-hook >/dev/null 2>&1; then
+  add-zsh-hook precmd __omniterm_precmd
+else
+  precmd_functions+=(__omniterm_precmd)
+fi
+`;
+
+/**
+ * zsh ignores --rcfile but honours $ZDOTDIR, so we generate a dotdir whose four
+ * startup files each source the user's originals (from $OMNITERM_USER_ZDOTDIR)
+ * and then register the OSC hooks. The user's own config still runs, unchanged.
+ */
+function zshIntegrationDir(): string {
+  const dir = path.join(DATA_DIR, 'zdotdir');
+  const sourceUser = (name: string) =>
+    `__ot_dir="\${OMNITERM_USER_ZDOTDIR:-$HOME}"\n` +
+    `if [ -f "$__ot_dir/${name}" ]; then ZDOTDIR="$__ot_dir" . "$__ot_dir/${name}"; fi\n` +
+    `unset __ot_dir\n`;
+  const banner = '# OmniTerm shell integration — generated file, safe to delete.\n';
+  const files: Record<string, string> = {
+    '.zshenv': banner + sourceUser('.zshenv'),
+    '.zprofile': banner + sourceUser('.zprofile'),
+    '.zlogin': banner + sourceUser('.zlogin'),
+    '.zshrc': banner + sourceUser('.zshrc') + ZSH_HOOKS,
+  };
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    for (const [name, content] of Object.entries(files)) {
+      fs.writeFileSync(path.join(dir, name), content, { mode: 0o600 });
+    }
+    return dir;
+  } catch {
+    return '';
   }
-  // zsh/fish/others: a plain interactive login shell with their own config.
-  return ['-l', '-i'];
+}
+
+/** fish takes its hooks on the command line; they run before the user's config. */
+const FISH_INIT = [
+  'function __omniterm_prompt --on-event fish_prompt',
+  '  set -l __ot_code $status',
+  '  set -l __ot_host (hostname 2>/dev/null; or echo localhost)',
+  '  set -l __ot_cmd (history --max=1 2>/dev/null | head -c 400)',
+  '  set -l __ot_b64 (printf "%s" "$__ot_cmd" | base64 -w0 2>/dev/null)',
+  "  printf '\\033]133;D;%s;%s\\007' $__ot_code \"$__ot_b64\"",
+  "  printf '\\033]7;file://%s%s\\007' $__ot_host \"$PWD\"",
+  'end',
+].join('\n');
+
+let fishInitOk: boolean | null = null;
+
+/** --init-command exists since fish 3.1; probe once instead of guessing. */
+function fishSupportsInit(shell: string): boolean {
+  if (fishInitOk !== null) return fishInitOk;
+  try {
+    execFileSync(shell, ['--init-command=true', '-c', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
+    fishInitOk = true;
+  } catch {
+    fishInitOk = false;
+  }
+  return fishInitOk;
+}
+
+export interface ShellLaunch {
+  kind: ShellKind;
+  args: string[];
+  env: Record<string, string>;
+  /** Describes how (or whether) this session reports commands and exit codes. */
+  integration: string;
+}
+
+export function buildShellLaunch(shell: string): ShellLaunch {
+  const kind = shellKind(shell);
+  if (kind === 'bash') {
+    const rc = bashIntegrationRc();
+    if (rc) return { kind, args: ['--rcfile', rc, '-i'], env: {}, integration: 'bash osc133' };
+  } else if (kind === 'zsh') {
+    const dir = zshIntegrationDir();
+    if (dir) {
+      return {
+        kind,
+        args: ['-l', '-i'],
+        env: { ZDOTDIR: dir, OMNITERM_USER_ZDOTDIR: process.env.ZDOTDIR || os.homedir() },
+        integration: 'zsh osc133',
+      };
+    }
+  } else if (kind === 'fish') {
+    if (fishSupportsInit(shell)) {
+      return { kind, args: ['-l', '-i', `--init-command=${FISH_INIT}`], env: {}, integration: 'fish osc133' };
+    }
+  }
+  // POSIX sh (dash, ash, busybox) has no -l flag, so it gets a plain
+  // interactive shell; it has no prompt hooks either way.
+  const base = path.basename(shell || '').toLowerCase();
+  const posixBasic = /^(dash|ash|busybox|sh)$/.test(base);
+  return { kind: 'plain', args: posixBasic ? ['-i'] : ['-l', '-i'], env: {}, integration: 'none' };
 }
 
 // ------------------------------------------------------------------ sessions
@@ -101,6 +211,10 @@ interface Session {
   carry: string;
   typed: string;
   lastExit: number | null;
+  /** 'bash osc133' | 'zsh osc133' | 'fish osc133' | 'none'. */
+  integration: string;
+  /** True once the shell has emitted at least one 133;D marker. */
+  integrationSeen: boolean;
   /** Replayed to a client that attaches after the shell already spoke. */
   backlog: string;
 }
@@ -122,6 +236,7 @@ export function listSessions() {
     cols: s.cols,
     rows: s.rows,
     createdAt: s.createdAt,
+    integration: s.integration,
     attached: s.clients.size,
     pid: s.proc?.pid ?? null,
   }));
@@ -174,6 +289,7 @@ function handleChunk(s: Session, chunk: string) {
         }
       }
       if (!command) command = s.typed.trim();
+      s.integrationSeen = true;
       s.lastExit = Number.isFinite(Number(exitRaw)) ? Number(exitRaw) : null;
       s.typed = '';
       if (command.trim()) {
@@ -203,7 +319,22 @@ function handleChunk(s: Session, chunk: string) {
 
 function trackInput(s: Session, data: string) {
   for (const ch of data) {
-    if (ch === '\r' || ch === '\n') continue; // command text comes from history
+    if (ch === '\r' || ch === '\n') {
+      // Shells we cannot hook (dash, ash, unknown) still get an audit entry for
+      // what was typed. Without shell cooperation the exit code is unknowable,
+      // and we do not invent one: it stays null.
+      if (!s.integrationSeen && s.typed.trim()) {
+        commandListener?.({
+          sessionId: s.id,
+          command: s.typed.trim(),
+          exitCode: null,
+          cwd: s.cwd,
+          at: new Date().toISOString(),
+        });
+        s.typed = '';
+      }
+      continue;
+    }
     if (ch === '\u007f' || ch === '\b') {
       s.typed = s.typed.slice(0, -1);
     } else if (ch === '\u0003' || ch === '\u0015') {
@@ -222,6 +353,7 @@ function spawnSession(
   if (!pty) throw new Error(`node-pty unavailable: ${ptyLoadError}`);
 
   const shell = process.env.SHELL || '/bin/bash';
+  const launch = buildShellLaunch(shell);
   const cwd = opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : os.homedir();
   const cols = Math.max(20, Math.min(500, opts.cols || 100));
   const rows = Math.max(5, Math.min(300, opts.rows || 30));
@@ -240,13 +372,15 @@ function spawnSession(
     carry: '',
     typed: '',
     lastExit: null,
+    integration: launch.integration,
+    integrationSeen: false,
     backlog: '',
   };
   sessions.set(opts.id, session);
   if (attach) session.clients.add(attach);
 
   try {
-    const proc = pty.spawn(shell, shellArgs(shell), {
+    const proc = pty.spawn(shell, launch.args, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -254,6 +388,7 @@ function spawnSession(
       env: {
         ...process.env,
         ...(opts.env || {}),
+        ...launch.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
         OMNITERM_SESSION: opts.id,
