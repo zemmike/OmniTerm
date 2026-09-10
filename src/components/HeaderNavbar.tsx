@@ -50,7 +50,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   const primaryNavItems = [
     { id: 'terminal', label: 'Terminal', icon: Terminal },
     { id: 'files', label: 'Files', icon: FolderTree },
-    { id: 'ai-cli', label: 'AI Copilot', icon: Bot },
+    { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'health', label: 'Server Health', icon: Activity },
     { id: 'system', label: 'System & Security', icon: Settings },
   ];

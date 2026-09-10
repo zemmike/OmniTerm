@@ -3,7 +3,7 @@ import { HeaderNavbar } from './components/HeaderNavbar';
 import TerminalView from './components/TerminalView';
 import { FileManagerView } from './components/FileManagerView';
 import { ServerHealthView } from './components/ServerHealthView';
-import { AiCliSuiteView } from './components/AiCliSuiteView';
+import { AiSettingsView } from './components/AiSettingsView';
 import { PermissionsAndLogsView } from './components/PermissionsAndLogsView';
 import { BackupsAndCloudView } from './components/BackupsAndCloudView';
 import { SecurityEncryptionView } from './components/SecurityEncryptionView';
@@ -146,34 +146,6 @@ export default function App() {
   };
 
   // Helper to send generated AI script straight to the active terminal
-  const handleSendAiToTerminal = (cmdToRun: string) => {
-    setActiveTab('terminal');
-    // Find active tab and append to history
-    setTabs((prev) =>
-      prev.map((t) => {
-        if (t.id === activeTabId) {
-          return {
-            ...t,
-            history: [
-              ...t.history,
-              {
-                id: `cmd-ai-${Date.now()}`,
-                timestamp: new Date().toLocaleTimeString(),
-                command: 'AI Copilot Injection',
-                output: `[AI Generated Script Injected]:\n\n${cmdToRun}\n\nExecute in terminal via 'Run'`,
-                status: 'success',
-                executionTimeMs: 10,
-                cwd: t.cwd,
-                userRole,
-                os: osPreset,
-              },
-            ],
-          };
-        }
-        return t;
-      })
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[#0F0F10] text-[#E0E0E5] flex flex-col font-mono selection:bg-[#00FF41] selection:text-black">
@@ -240,7 +212,7 @@ export default function App() {
 
         {activeTab === 'health' && <ServerHealthView />}
 
-        {activeTab === 'ai-cli' && <AiCliSuiteView onSendToTerminal={handleSendAiToTerminal} />}
+        {activeTab === 'ai-settings' && <AiSettingsView />}
 
         {activeTab === 'rbac-logs' && <PermissionsAndLogsView currentRole={userRole} />}
 

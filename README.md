@@ -1,8 +1,9 @@
 # OmniTerm
 
 A real terminal emulator for Linux desktop — multi-tab sessions backed by your
-**actual shell**, an AI copilot sidebar, live host health monitoring, a backup
-snapshot engine and a file browser, packaged as a native Ubuntu/Debian app.
+**actual shell**, an AI assistant you point at any provider, live host health
+monitoring, a backup snapshot engine and a file browser, packaged as a native
+Ubuntu/Debian app.
 
 ![OmniTerm icon](build/icon.png)
 
@@ -44,9 +45,11 @@ snapshot engine and a file browser, packaged as a native Ubuntu/Debian app.
   `~/.local/share/omniterm/shell-integration.bash`.
 - **Snapshots** — create real `tar.gz` archives of any directory (stored under
   `~/.local/share/omniterm/backups`) and get the exact restore command back.
-- **AI copilot, local-first** — uses a model on your own machine via Ollama when
-  one is running (shell context never leaves the box); falls back to the Gemini
-  API only if you configure a key.
+- **AI assistant, any provider** — configure it in the app: a local model
+  (Ollama, LM Studio, llama.cpp) that keeps everything on this machine, any
+  OpenAI-compatible API (OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Together,
+  vLLM …) or Anthropic / Google Gemini. Nothing is hard-coded to one vendor, the
+  key is write-only, and the panel always says which provider answered.
 - **Real host health** — CPU load, memory, disk (`statfs`), network rates from
   `/proc/net/dev`, process count, top processes and uptime.
 - **Security posture** — firewall state, AppArmor, sshd, privileged accounts,
@@ -152,7 +155,10 @@ server.ts           Express API, all of it backed by the real machine:
                       /api/security          firewall, sshd, sockets, sudoers
                       /api/backups[/run]     real tar.gz snapshots
                       /api/activity-logs     audit trail (+ /api/audit/export)
-                      /api/ai/copilot        local-first AI answer
+                      /api/ai/settings       read/save the provider (key never returned)
+                      /api/ai/test           real request, real latency or real error
+                      /api/ai/models         models the provider offers
+                      /api/ai/copilot        ask the configured provider
                       /api/ai/status         which provider is in use
 src/                React 19 + Vite + Tailwind frontend (tabbed terminal UI)
 build/              Packaging resources (icon, .deb post-install hooks)
@@ -171,26 +177,58 @@ Never expose the backend port to a network.
 
 ## Configuration
 
-Optional, via environment variables:
+Everything is optional — with nothing configured OmniTerm is a normal terminal.
 
-- `GEMINI_API_KEY` — enables the cloud AI fallback (prompts leave the machine).
-- `OMNITERM_AI_PROVIDER` — `auto` (default, prefers a local model), `ollama`
-  (local only, never calls the cloud) or `gemini`.
-- `OLLAMA_URL` — default `http://127.0.0.1:11434`.
-- `OMNITERM_OLLAMA_MODEL` — default `llama3.1`.
-- `OMNITERM_AI_MODEL` — Gemini model, default `gemini-2.5-flash`.
+### AI: any provider, not one vendor
+
+Open the **AI Settings** tab. Pick a preset or fill in the fields yourself:
+
+- **Local, private** — Ollama (`http://127.0.0.1:11434` by default), LM Studio or
+  llama.cpp's server. No API key, nothing leaves the machine.
+- **OpenAI-compatible** — OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Together,
+  vLLM, or any other server exposing `/chat/completions`: set base URL, model and
+  key, and it works.
+- **Anthropic** (`/messages`) and **Google Gemini** (`generateContent`) — native
+  request shapes.
+
+The screen holds the base URL, model, API key, temperature, max tokens and system
+prompt, and adds two buttons that matter:
+
+- **Load** — asks the provider which models it offers and fills a picker, so you
+  do not have to guess model names.
+- **Test** — sends a real request using the values currently in the form
+  *without saving them*, then shows the reply, the latency, or the provider's
+  exact error message.
+
+The API key is write-only. It is stored in
+`~/.local/share/omniterm/ai-config.json` (mode `0600`) and is never returned to
+the interface — the UI only ever learns whether a key exists and where it came
+from. Choose the local provider and nothing leaves this machine; choose a cloud
+provider and the prompt (plus any terminal context you attach) is sent there.
+
+Environment variables still work for scripted or headless setups. Saved settings
+take precedence, then environment variables, then auto-detected local Ollama:
+
+- `OMNITERM_AI_PROVIDER` — `openai`, `anthropic`, `gemini` or `ollama`.
+- `OMNITERM_AI_BASE_URL` — endpoint, e.g. `https://api.deepseek.com/v1`.
+- `OMNITERM_AI_MODEL` — model name.
+- `OMNITERM_AI_API_KEY` — key. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are also
+  read, and `GEMINI_API_KEY` / `GOOGLE_API_KEY` act as a Gemini shortcut.
+- `OMNITERM_AI_CONFIG` — config file location.
+- `OLLAMA_URL`, `OMNITERM_OLLAMA_MODEL` — where the local daemon lives and which
+  model to prefer.
+
+Then use it from the terminal with `ai <question>`, or from the API at
+`POST /api/ai/copilot`.
+
+### Other
+
 - `OMNITERM_EXEC_TIMEOUT_MS` — per-command timeout, defaults to 60000.
 - `OMNITERM_BACKUP_DIR` — snapshot location, default
   `~/.local/share/omniterm/backups`.
-- `OMNITERM_DATA_DIR` — audit trail location, default
+- `OMNITERM_DATA_DIR` — audit trail and shell integration, default
   `~/.local/share/omniterm`.
-
-### Privacy
-
-With a local Ollama model running, nothing you type leaves the machine — the
-copilot status panel in the AI tab tells you which provider is answering. If no
-local model is present and no key is configured, the copilot says so instead of
-pretending to answer.
+- `OMNITERM_START_TAB` — tab to open at launch, e.g. `terminal` or `ai-settings`.
 
 ## Shell support
 

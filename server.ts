@@ -3,7 +3,17 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
-import { GoogleGenAI } from '@google/genai';
+import {
+  aiChat,
+  aiEffective,
+  aiListModels,
+  aiSettingsForUi,
+  aiTest,
+  loadAiConfig,
+  normaliseConfig,
+  saveAiConfig,
+  ollamaAvailable,
+} from './ai-provider';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -313,96 +323,22 @@ function securityPosture() {
 }
 
 
-const AI_PROVIDER = (process.env.OMNITERM_AI_PROVIDER || 'auto').toLowerCase();
-const GEMINI_MODEL = process.env.OMNITERM_AI_MODEL || 'gemini-2.5-flash';
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
-const OLLAMA_MODEL = process.env.OMNITERM_OLLAMA_MODEL || 'llama3.1';
-
-async function ollamaAvailable(): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 1200);
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal });
-    clearTimeout(t);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function ollamaGenerate(prompt: string, system: string): Promise<string> {
-  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      stream: false,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
-  if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
-  const data: any = await res.json();
-  return data?.message?.content || '';
-}
-
 /**
- * Local-first AI: prefers a model running on this machine (Ollama) so shell
- * context never leaves the box, and only falls back to the cloud API when the
- * user explicitly allows it.
+ * Copilot used by the `ai` terminal command and the /api/ai/copilot endpoint.
+ * Which provider answers is entirely up to the user's settings; this helper
+ * only decides what to ask and how to report a failure.
  */
-async function generateAiReply(system: string, prompt: string): Promise<{ text: string; source: string }> {
-  const preferLocal = AI_PROVIDER === 'auto' || AI_PROVIDER === 'ollama';
-  if (preferLocal && (await ollamaAvailable())) {
-    try {
-      const text = await ollamaGenerate(prompt, system);
-      if (text.trim()) return { text, source: `ollama:${OLLAMA_MODEL}` };
-    } catch {
-      /* fall through to the cloud provider */
-    }
+async function askCopilot(prompt: string, cwd: string): Promise<string> {
+  const config = loadAiConfig();
+  try {
+    const reply = await aiChat(config.systemPrompt, `Working directory: ${cwd}\nRequest: ${prompt}`);
+    return `${reply.text}\n\n[${reply.source} \u00b7 ${reply.latencyMs}ms]`;
+  } catch (err: any) {
+    return (
+      `[AI] ${err.message}\n` +
+      'Set up a provider in the AI Settings tab (any OpenAI-compatible API, Anthropic, Gemini, or a local Ollama).'
+    );
   }
-
-  if (AI_PROVIDER === 'ollama') {
-    return { text: `[OmniTerm AI] No local model answered at ${OLLAMA_URL}. Start Ollama (\`ollama serve\`) or pull a model (\`ollama pull ${OLLAMA_MODEL}\`).`, source: 'ollama-unavailable' };
-  }
-
-  const ai = getGeminiClient();
-  if (!ai) {
-    return {
-      text:
-        '[OmniTerm AI] No AI provider available.\n' +
-        `  • Local, private:        install Ollama and run \`ollama pull ${OLLAMA_MODEL}\`\n` +
-        '  • Cloud:                 set GEMINI_API_KEY (your prompts and shell output leave this machine)',
-      source: 'none',
-    };
-  }
-
-  const response = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt, config: { systemInstruction: system, temperature: 0.2 } });
-  return { text: response.text || '[OmniTerm AI] Empty response.', source: `gemini:${GEMINI_MODEL}` };
-}
-
-// Copilot used by the `ai` / `claude` / `gemini` terminal commands.
-async function askCopilot(mode: string, prompt: string, cwd: string): Promise<string> {
-  const system =
-    'You are OmniTerm Copilot, an expert Linux shell assistant. Answer with concrete, runnable commands and keep it short.';
-  const reply = await generateAiReply(system, `Working directory: ${cwd}\nRequest: ${prompt}`);
-  return reply.text;
-}
-
-// Helper: Gemini AI Client
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
 }
 
 // ------------------- REAL EXECUTION ENGINE ------------------- //
@@ -673,7 +609,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // 1b. Real environment info (drives the initial working directory / preset)
-app.get('/api/env', (req, res) => {
+app.get('/api/env', async (req, res) => {
   res.json({
     platform: process.platform,
     osPreset: process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
@@ -689,7 +625,7 @@ app.get('/api/env', (req, res) => {
     hostname: os.hostname(),
     shell: SHELL,
     version: process.env.OMNITERM_VERSION || '1.0.0',
-    aiEnabled: Boolean(process.env.GEMINI_API_KEY),
+    aiEnabled: (await aiEffective()).config.provider !== 'none',
   });
 });
 
@@ -789,19 +725,18 @@ app.post('/api/terminal/execute', async (req, res) => {
       `  clear               - Clear the terminal viewport (Ctrl+L)\n` +
       `  history             - Show commands run in this session\n` +
       `  backup [run]        - Snapshot the current directory to ~/OmniTerm/backups\n` +
-      `  ai <prompt>         - Ask the AI copilot from the terminal\n` +
-      `  claude|gemini <p>   - AI copilot aliases\n` +
+      `  ai <prompt>         - Ask your configured AI provider (AI Settings tab)\n` +
       `  help                - This list\n\n` +
       `Everything else (ls, git, docker, npm, python3, ...) runs in your real shell (${SHELL}) ` +
       `with your real environment. Full-screen TTY apps (vim, top, ssh) are not supported yet — ` +
       `use the 'Files' and 'Health' tabs for browsing and monitoring.`;
     syntaxType = 'bash';
-  } else if (bin === 'ai' || bin === 'claude' || bin === 'gemini' || bin === 'cursor') {
+  } else if (bin === 'ai') {
     const prompt = parts.slice(1).join(' ').trim();
     if (!prompt) {
       output = `[OmniTerm AI] Usage: ${bin} <your question about this system or a command>`;
     } else {
-      output = await askCopilot(bin === 'claude' ? 'claude-coder' : bin === 'gemini' ? 'gemini-cli' : 'cursor-agent', prompt, nextCwd);
+      output = await askCopilot(prompt, nextCwd);
       syntaxType = 'bash';
     }
   } else if (bin === 'backup') {
@@ -878,28 +813,79 @@ app.post('/api/terminal/execute', async (req, res) => {
   });
 });
 
-// 3. AI Copilot Endpoint (local-first: Ollama, then Gemini if configured)
-app.post('/api/ai/copilot', async (req, res) => {
-  const { action, prompt, mode = 'assistant', contextLogs = '' } = req.body || {};
+// 3. AI endpoints — provider-agnostic, see ai-provider.ts
+const aiChatHandler = async (req: any, res: any) => {
+  const { prompt, mode = 'assistant', contextLogs = '' } = req.body || {};
 
-  const systemInstruction =
-    'You are OmniTerm Copilot, an expert Linux terminal assistant. ' +
-    'Reply with concrete, runnable commands, keep answers short, and use fenced code blocks.';
-
-  const userPrompt =
-    `Action: ${action}\nMode: ${mode}\nUser Query: ${prompt}\n` +
-    (contextLogs ? `Recent terminal context:\n${contextLogs}` : '');
+  const systemInstruction = loadAiConfig().systemPrompt;
+  const userPrompt = contextLogs
+    ? `Recent terminal context:\n${contextLogs}\n\nRequest: ${prompt}`
+    : String(prompt || '');
 
   try {
-    const reply = await generateAiReply(systemInstruction, userPrompt);
-    res.json({ result: reply.text, mode, source: reply.source });
+    const reply = await aiChat(systemInstruction, userPrompt);
+    res.json({ result: reply.text, mode, source: reply.source, latencyMs: reply.latencyMs });
   } catch (err: any) {
-    res.json({
-      result: `[AI Copilot Error]: ${err.message || 'provider call failed'}`,
-      mode,
-      source: 'error',
-    });
+    res.status(502).json({ result: `[AI Error] ${err.message || 'provider call failed'}`, mode, source: 'error' });
   }
+};
+
+app.post('/api/ai/copilot', aiChatHandler);
+// Neutral alias: /api/ai/copilot predates the provider switch.
+app.post('/api/ai/chat', aiChatHandler);
+
+// The AI Settings tab: read the current setup, save a new one, prove it works.
+app.get('/api/ai/settings', async (_req, res) => {
+  try {
+    res.json(await aiSettingsForUi());
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/ai/settings', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const patch: Record<string, unknown> = {};
+    if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
+    if (body.provider !== undefined) patch.provider = body.provider;
+    if (body.baseUrl !== undefined) patch.baseUrl = String(body.baseUrl);
+    if (body.model !== undefined) patch.model = String(body.model);
+    if (body.apiKey !== undefined) patch.apiKey = String(body.apiKey);
+    if (body.temperature !== undefined) patch.temperature = Number(body.temperature);
+    if (body.maxTokens !== undefined) patch.maxTokens = Number(body.maxTokens);
+    if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt);
+    saveAiConfig(patch as any);
+    res.json(await aiSettingsForUi());
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Test the provider. With useForm: true the values currently typed in the AI
+ * Settings form are tested without saving them (a blank key falls back to the
+ * saved one), so the user can check a setup before committing to it.
+ */
+app.post('/api/ai/test', async (req, res) => {
+  const body = req.body || {};
+  const override = body.useForm
+    ? normaliseConfig({
+        enabled: true,
+        provider: body.provider,
+        baseUrl: body.baseUrl,
+        model: body.model,
+        apiKey: body.apiKey ? String(body.apiKey) : loadAiConfig().apiKey,
+        temperature: body.temperature,
+        maxTokens: body.maxTokens,
+        systemPrompt: loadAiConfig().systemPrompt,
+      })
+    : undefined;
+  res.json(await aiTest(body.prompt, override));
+});
+
+app.get('/api/ai/models', async (_req, res) => {
+  res.json(await aiListModels());
 });
 
 // 4. File Manager Endpoints (real filesystem)
@@ -1001,20 +987,17 @@ app.get('/api/security', (req, res) => {
   res.json(securityPosture());
 });
 
-app.get('/api/ai/status', async (req, res) => {
-  const local = await ollamaAvailable();
+app.get('/api/ai/status', async (_req, res) => {
+  const { config, source, privacy, warnings } = await aiEffective();
   res.json({
-    provider: AI_PROVIDER,
-    localAvailable: local,
-    localModel: OLLAMA_MODEL,
-    localUrl: OLLAMA_URL,
-    cloudConfigured: Boolean(process.env.GEMINI_API_KEY),
-    cloudModel: GEMINI_MODEL,
-    privacy: local
-      ? 'local — nothing leaves this machine'
-      : process.env.GEMINI_API_KEY
-        ? 'cloud — prompts are sent to the Gemini API'
-        : 'offline — no provider configured',
+    provider: config.provider,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    configured: config.provider !== 'none',
+    source,
+    privacy,
+    warnings,
+    localAvailable: config.provider === 'ollama' ? true : await ollamaAvailable(),
   });
 });
 
@@ -1197,7 +1180,17 @@ app.get('/api/api-docs', (req, res) => {
         post: { summary: 'Execute terminal command with RBAC permission check', responses: { 200: { description: 'Execution result' } } },
       },
       '/api/ai/copilot': {
-        post: { summary: 'Query Gemini AI CLI Copilot / Claude Coder for script generation', responses: { 200: { description: 'AI generated response' } } },
+        post: { summary: 'Ask the configured AI provider (any OpenAI-compatible API, Anthropic, Gemini or a local Ollama)', responses: { 200: { description: 'AI generated response' } } },
+      },
+      '/api/ai/settings': {
+        get: { summary: 'Read the AI provider settings (the API key itself is never returned)', responses: { 200: { description: 'Provider, base URL, model, key presence, presets' } } },
+        post: { summary: 'Save AI provider settings', responses: { 200: { description: 'Updated settings' } } },
+      },
+      '/api/ai/test': {
+        post: { summary: 'Send a real request to the provider and report the result', responses: { 200: { description: 'ok, latency, reply or error' } } },
+      },
+      '/api/ai/models': {
+        get: { summary: 'List the models the configured provider offers', responses: { 200: { description: 'Model ids' } } },
       },
       '/api/files': {
         get: { summary: 'Fetch virtual system files tree and contents', responses: { 200: { description: 'List of virtual files' } } },

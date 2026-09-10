@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Professional terminal emulator for Linux and macOS with real shell execution, AI copilot, file manager and server health monitoring.",
   "private": true,
   "type": "module",
@@ -122,7 +122,6 @@
     ]
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "@xterm/addon-fit": "^0.10.0",
