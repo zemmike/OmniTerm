@@ -26,7 +26,7 @@ die()   { echo -e "${RED} ✗${NC} $*" >&2; exit 1; }
 
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64|amd64) DEB_ARCH="x64" ;;
+  x86_64|amd64) DEB_ARCH="amd64" ;;
   aarch64|arm64) DEB_ARCH="arm64" ;;
   *) die "Unsupported CPU architecture: $ARCH" ;;
 esac

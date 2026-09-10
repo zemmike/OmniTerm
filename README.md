@@ -34,24 +34,28 @@ curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux
 
 ### Option 2 — Ubuntu Software / App Center
 
-Download `OmniTerm-<version>-x64.deb` from the
+Download `OmniTerm-<version>-amd64.deb` from the
 [releases page](https://github.com/zemmike/OmniTerm/releases) and **double-click
 it** — Ubuntu Software opens and installs it, dependencies included.
 
 ### Option 3 — apt from the command line
 
 ```bash
-wget https://github.com/zemmike/OmniTerm/releases/latest/download/OmniTerm-1.0.0-x64.deb
-sudo apt install ./OmniTerm-1.0.0-x64.deb     # apt resolves the dependencies
-omniterm                                       # or launch it from the app grid
+VERSION=1.0.0
+wget https://github.com/zemmike/OmniTerm/releases/latest/download/OmniTerm-$VERSION-amd64.deb
+sudo apt install ./OmniTerm-$VERSION-amd64.deb   # apt resolves the dependencies
+omniterm                                          # or launch it from the app grid
 ```
 
 Uninstall with `sudo apt remove omniterm`.
 
 ### No-install options
 
-- `OmniTerm-<version>-x64.AppImage` — `chmod +x` and run.
+- `OmniTerm-<version>-x86_64.AppImage` — `chmod +x` and run.
 - `OmniTerm-<version>-x64.tar.gz` — unpack and run `./omniterm`.
+
+(The suffixes come from electron-builder: `amd64` for Debian packages,
+`x86_64`/`x64` for the portable builds.)
 
 ## Build from source
 
