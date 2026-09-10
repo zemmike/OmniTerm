@@ -19,6 +19,9 @@ const { spawn } = require('child_process');
 
 const TOKEN = crypto.randomBytes(32).toString('hex');
 const VERSION = app.getVersion();
+// Optional landing tab (e.g. OMNITERM_START_TAB=backups) — handy for kiosk
+// setups and for automated UI checks.
+const START_TAB = (process.env.OMNITERM_START_TAB || '').trim();
 
 let mainWindow = null;
 let serverProcess = null;
@@ -156,7 +159,7 @@ function createWindow() {
   // The app ships its own in-window chrome; drop Electron's default menu.
   Menu.setApplicationMenu(null);
 
-  const targetUrl = `http://127.0.0.1:${serverPort}`;
+  const targetUrl = `http://127.0.0.1:${serverPort}${START_TAB ? `?tab=${encodeURIComponent(START_TAB)}` : ''}`;
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();

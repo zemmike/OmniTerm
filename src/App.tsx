@@ -11,9 +11,10 @@ import { SecurityEncryptionView } from './components/SecurityEncryptionView';
 import { TerminalTab, OSPreset, UserRole, SystemAlert } from './types';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('terminal');
-  // Note: UI-only modules (fake plugins, fake API test runner) were removed on
-  // purpose — every tab now shows real data from this machine.
+  // Deep link: the desktop shell can open a specific tab (?tab=backups).
+  const [activeTab, setActiveTab] = useState<string>(
+    () => new URLSearchParams(window.location.search).get('tab') || 'terminal'
+  );
   const [osPreset, setOsPreset] = useState<OSPreset>('macos');
   const [userRole, setUserRole] = useState<UserRole>('developer');
   const [currentTheme, setCurrentTheme] = useState<string>('matrix');
