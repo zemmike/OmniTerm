@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-10
+
+### Fixed
+- zsh no longer blocks the terminal. Debian and Ubuntu run `compinit` from
+  `/etc/zsh/zshrc` for interactive shells, and when it finds an insecure
+  directory it asks `Ignore insecure directories and continue [y] or abort
+  compinit [n]?` — a question nobody can answer inside a terminal emulator, so
+  the shell waits forever. The session now skips the global `compinit` and
+  initialises completions itself, silently, only when your own configuration has
+  not already done it.
+- fish now receives the configuration file it is meant to read: the test harness
+  pinned `XDG_CONFIG_HOME` at the throwaway home instead of picking up whatever
+  the environment pointed at.
+- The shell matrix in CI is no longer timing-dependent: one port per shell, and
+  it waits for the API to answer instead of assuming three seconds is enough.
+  When a server does not come up it now prints the log, so a failure is
+  diagnosable.
+
 ## [1.6.0] - 2026-09-10
 
 ### Added
@@ -119,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...HEAD
+[1.6.1]: https://github.com/zemmike/OmniTerm/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/zemmike/OmniTerm/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/zemmike/OmniTerm/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/zemmike/OmniTerm/compare/v1.4.0...v1.4.1
