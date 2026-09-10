@@ -17,7 +17,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
-const TOKEN = crypto.randomBytes(32).toString('hex');
+// Fixed token when explicitly provided (kiosk / scripted setups), random otherwise.
+const TOKEN = (process.env.OMNITERM_TOKEN || '').trim() || crypto.randomBytes(32).toString('hex');
 const VERSION = app.getVersion();
 // Optional landing tab (e.g. OMNITERM_START_TAB=backups) — handy for kiosk
 // setups and for automated UI checks.

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HeaderNavbar } from './components/HeaderNavbar';
-import { TerminalView } from './components/TerminalView';
+import TerminalView from './components/TerminalView';
 import { FileManagerView } from './components/FileManagerView';
 import { ServerHealthView } from './components/ServerHealthView';
 import { AiCliSuiteView } from './components/AiCliSuiteView';
@@ -18,6 +18,41 @@ export default function App() {
   const [osPreset, setOsPreset] = useState<OSPreset>('macos');
   const [userRole, setUserRole] = useState<UserRole>('developer');
   const [currentTheme, setCurrentTheme] = useState<string>('matrix');
+  // Real footer figures: host memory from /api/health and the measured
+  // round-trip time of that very request.
+  const [mem, setMem] = useState<{ usedMb: number; totalMb: number; percent: number } | null>(null);
+  const [latency, setLatency] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        // Latency is measured on a cheap endpoint so it reflects the API, not
+        // how long the host-wide health scan takes.
+        const started = performance.now();
+        await fetch('/api/terminal/status').then((r) => r.json());
+        if (cancelled) return;
+        setLatency(Math.max(1, Math.round(performance.now() - started)));
+
+        const data = await fetch('/api/health').then((r) => r.json());
+        if (cancelled) return;
+        const m = data?.memoryUsage;
+        if (m && typeof m.usedMb === 'number') {
+          const usedMb = Math.round(m.usedMb);
+          const totalMb = Math.round(m.totalMb);
+          setMem({ usedMb, totalMb, percent: totalMb ? Math.round((usedMb / totalMb) * 100) : 0 });
+        }
+      } catch {
+        if (!cancelled) setLatency(null);
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Terminal Tabs State
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
@@ -227,22 +262,21 @@ export default function App() {
             <span className="text-[#55555E]">ENCODING: </span>
             <span className="text-[#E0E0E5]">UTF-8</span>
           </div>
-          <span className="text-[#2A2A2E] hidden sm:inline">|</span>
-          <div className="hidden sm:block">
-            <span className="text-[#55555E]">ROLE: </span>
-            <span className="text-[#3B82F6] font-bold uppercase">{userRole}</span>
-          </div>
         </div>
 
         <div className="flex items-center gap-4">
           <div className="hidden md:block">
             <span className="text-[#55555E]">MEM: </span>
-            <span className="text-[#E0E0E5]">1.42GB / 8.00GB</span>
+            <span className="text-[#E0E0E5]">
+              {mem ? `${mem.usedMb}MB / ${mem.totalMb}MB (${mem.percent}%)` : '—'}
+            </span>
           </div>
           <span className="text-[#2A2A2E] hidden md:inline">|</span>
           <div>
-            <span className="text-[#55555E]">LATENCY: </span>
-            <span className="text-[#00FF41]">12ms</span>
+            <span className="text-[#55555E]">API: </span>
+            <span className={latency !== null && latency < 50 ? 'text-[#00FF41]' : 'text-[#EAB308]'}>
+              {latency !== null ? `${latency}ms` : '—'}
+            </span>
           </div>
         </div>
       </footer>

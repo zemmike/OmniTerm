@@ -8,29 +8,56 @@ snapshot engine and a file browser, packaged as a native Ubuntu/Debian app.
 
 ## Features
 
-- **Real shell execution** — commands run through your `$SHELL` (bash/zsh) with
-  your environment, your `PATH`, your working directory. Real exit codes, real
-  stdout/stderr, real errors.
-- **Multi-tab sessions** with per-tab working directory, command history
-  (`↑`/`↓` recall) and themes.
+- **A real terminal, not a command box** — every tab is an actual PTY running
+  your login shell, so `vim`, `top`, `less`, `ssh`, job control, colours, Ctrl+C,
+  Ctrl+D, Tab completion and your shell's own history all behave exactly as they
+  do in GNOME Terminal or Konsole.
+- **Your environment, adopted as-is** — `$SHELL`, `PATH` from `/etc/profile` and
+  `~/.profile`, your aliases and functions from `~/.bashrc`, your prompt, your
+  locale, your `~/.ssh` keys, and every package and tool you already installed.
+  OmniTerm does not wrap, restrict or re-implement your shell.
+- **Real shell execution for scripts and the AI panel** — one-shot commands run
+  through your `$SHELL` with real exit codes and real stderr.
+- **Multi-tab sessions**, each with its own shell process, cwd and scrollback
+  (10k lines) that survives tab switches.
+- **Keyboard shortcuts** — `Ctrl+T` new tab, `Ctrl+W` close tab, `Ctrl+Tab`
+  next tab, `Alt+1…9` jump to tab, `Ctrl+±` / `Ctrl+0` font size,
+  `Ctrl+Shift+C/V` copy/paste, middle-click paste, `Ctrl+Shift+F` scrollback
+  search, plus everything the shell itself binds.
+- **Folder autocomplete** — Tab completes paths inside the terminal, and the
+  new-tab folder picker completes directories as you type (`/api/complete`).
 - **Real filesystem browser** — browse, read and edit actual files on disk
-  (dirs, permissions, owners, symlinks, binary detection). No sample tree.
-- **Live status bar** — the real `git` branch/dirty state of the session
-  directory and the actual Docker container count, not decorations.
-- **Command audit trail** — every command, its exit code, duration and working
-  directory is appended to `~/.local/share/omniterm/activity.jsonl` (mode 0600)
-  and can be exported as JSONL evidence.
+  (dirs, permissions, owners, symlinks, binary detection).
+- **Live status bar** — the real `git` branch/dirty state of the shell's current
+  directory and the actual Docker container count.
+- **Command audit trail** — one-shot *and* interactive shell commands are
+  appended to `~/.local/share/omniterm/activity.jsonl` (mode 0600) with exit
+  code, cwd and timestamp, exportable as JSONL evidence. Inside the terminal the
+  shell reports this via OSC 133/OSC 7 integration, which OmniTerm installs in
+  `~/.local/share/omniterm/shell-integration.bash`.
 - **Snapshots** — create real `tar.gz` archives of any directory (stored under
   `~/.local/share/omniterm/backups`) and get the exact restore command back.
 - **AI copilot, local-first** — uses a model on your own machine via Ollama when
   one is running (shell context never leaves the box); falls back to the Gemini
-  API only if you configure a key. Answers in the terminal via `ai <question>`.
+  API only if you configure a key.
 - **Real host health** — CPU load, memory, disk (`statfs`), network rates from
   `/proc/net/dev`, process count, top processes and uptime.
 - **Security posture** — firewall state, AppArmor, sshd, privileged accounts,
   world-writable files and every listening socket with its scope.
 - **Loopback-only API with a per-launch session token** — the local backend
   cannot be driven from a random web page.
+
+## Keyboard
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+T` / `Ctrl+W` | new tab / close tab |
+| `Ctrl+Tab`, `Alt+1…9` | switch tabs |
+| `Ctrl+±`, `Ctrl+0` | font size |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste (middle-click pastes too) |
+| `Ctrl+Shift+F` | search the scrollback |
+| `Tab` | path and command completion (from your shell) |
+| `Ctrl+C`, `Ctrl+D`, `Ctrl+L`, `Ctrl+R`, … | handled by your shell, as usual |
 
 ## What OmniTerm deliberately does *not* do
 
@@ -101,8 +128,14 @@ electron-main.cjs   Electron shell: picks a free loopback port, boots the
                     renderer a session token, streams logs to
                     ~/.config/OmniTerm/omniterm.log
 preload.cjs         Sandboxed bridge that exposes the token to the renderer
+pty.ts              Real interactive terminals: one node-pty session per tab,
+                    spawned with the user's login shell + bash OSC 133/7
+                    integration, exposed over a token-guarded WebSocket at
+                    /term and turned into audit records
 server.ts           Express API, all of it backed by the real machine:
                       /api/terminal/execute  real shell, real cwd, exit codes
+                      /api/terminal/status   PTY availability + live sessions
+                      /api/complete          path completion for app dialogs
                       /api/health            real host metrics
                       /api/env               platform, home, shell, AI provider
                       /api/files[/read|/save] real filesystem CRUD
@@ -153,9 +186,9 @@ pretending to answer.
 
 ## Roadmap
 
-- Full-screen TTY support (`vim`, `top`, `ssh`) via `node-pty` pseudo-terminals.
 - Hash-chained audit entries (tamper-evident retention) and a signed apt repo.
-- Split panes and scrollback search.
+- Split panes and per-tab tab titles.
+- Optional `zsh`/`fish` OSC integration (bash is covered today).
 
 ## License
 

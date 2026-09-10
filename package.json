@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Professional terminal emulator for Linux and macOS with real shell execution, AI copilot, file manager and server health monitoring.",
   "private": true,
   "type": "module",
@@ -35,6 +35,7 @@
     "build:web": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build": "npm run build:web && npm run build:server",
+    "rebuild:native": "electron-rebuild -f -w node-pty",
     "start": "NODE_ENV=production node dist/server.cjs",
     "start:desktop": "npm run build && electron .",
     "dist:linux": "npm run build && electron-builder --linux",
@@ -112,23 +113,34 @@
     },
     "appImage": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ]
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "node-pty": "^1.1.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.21",
     "electron": "^38.0.0",
     "electron-builder": "^26.0.12",

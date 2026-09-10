@@ -7,6 +7,9 @@ import { GoogleGenAI } from '@google/genai';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+// Real interactive terminal backend (node-pty + WebSocket).
+import { attachTerminalSocket, onPtyCommand, ptyStatus, listSessions, killSession, killAllSessions } from './pty';
+
 const HOST = process.env.OMNITERM_HOST || '127.0.0.1';
 const APP_TOKEN = process.env.OMNITERM_TOKEN || '';
 const EXEC_TIMEOUT_MS = Number(process.env.OMNITERM_EXEC_TIMEOUT_MS) || 60_000;
@@ -1016,6 +1019,57 @@ app.get('/api/ai/status', async (req, res) => {
 });
 
 
+// 7. Interactive terminal sessions & path completion
+app.get('/api/terminal/status', (req, res) => {
+  const state = ptyStatus();
+  res.json({ ...state, sessions: listSessions() });
+});
+
+app.get('/api/terminal/sessions', (req, res) => {
+  res.json({ sessions: listSessions() });
+});
+
+app.post('/api/terminal/kill', (req, res) => {
+  const id = String(req.body?.sessionId || '');
+  res.json({ success: killSession(id) });
+});
+
+/**
+ * Path completion for the app's own dialogs (new tab directory, snapshot
+ * source, file paths). The shell completes paths inside the terminal; this is
+ * for the inputs that are not a shell.
+ */
+app.get('/api/complete', (req, res) => {
+  const raw = String(req.query.path ?? '');
+  const expanded = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw;
+  const dir = expanded.endsWith('/') ? expanded : path.dirname(expanded || '.');
+  const base = expanded.endsWith('/') ? '' : path.basename(expanded);
+  const showHidden = base.startsWith('.');
+  try {
+    const entries = fs
+      .readdirSync(dir || '.', { withFileTypes: true })
+      .filter((e) => (showHidden || !e.name.startsWith('.')) && e.name.startsWith(base))
+      .map((e) => {
+        const full = path.join(dir || '.', e.name);
+        let isDir = e.isDirectory();
+        if (e.isSymbolicLink()) {
+          try {
+            isDir = fs.statSync(full).isDirectory();
+          } catch {
+            isDir = false;
+          }
+        }
+        const pretty = full.startsWith(os.homedir()) ? `~${full.slice(os.homedir().length)}` : full;
+        return { name: e.name, path: pretty + (isDir ? '/' : ''), type: isDir ? 'directory' : 'file' };
+      })
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1))
+      .slice(0, 40);
+    res.json({ input: raw, directory: dir, matches: entries });
+  } catch (err: any) {
+    res.json({ input: raw, directory: dir, matches: [], error: err?.message || String(err) });
+  }
+});
+
 // 6. Activity Logs & Alerts Endpoints
 app.get('/api/activity-logs', (req, res) => {
   res.json({ entries: activityLogs, auditFile: AUDIT_FILE, total: activityLogs.length });
@@ -1179,10 +1233,39 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, HOST, () => {
+  process.on('exit', () => killAllSessions());
+  process.on('SIGINT', () => { killAllSessions(); process.exit(0); });
+  process.on('SIGTERM', () => { killAllSessions(); process.exit(0); });
+
+  // Interactive shell commands land in the same audit trail as one-shot execs.
+  onPtyCommand((e) => {
+    appendAuditLog({
+      id: `pty-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: e.at,
+      username: os.userInfo().username,
+      role: 'developer',
+      action: 'SHELL_COMMAND',
+      details: `${e.command}  →  exit ${e.exitCode ?? '?'}  (cwd ${e.cwd})`,
+      ip: '127.0.0.1',
+      severity: e.exitCode === 0 ? 'info' : 'error',
+      cwd: e.cwd,
+      exitCode: e.exitCode,
+      command: e.command,
+    } as any);
+  });
+
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[OmniTerm] Local API ready on http://${HOST}:${PORT} (shell: ${SHELL})`);
     console.log(`[OmniTerm] Working directory: ${DEFAULT_CWD}`);
   });
+
+  attachTerminalSocket(httpServer, { token: APP_TOKEN });
+  const ptyState = ptyStatus();
+  console.log(
+    ptyState.available
+      ? '[OmniTerm] Terminal backend: node-pty ready (real interactive shell)'
+      : `[OmniTerm] Terminal backend: node-pty UNAVAILABLE — ${ptyState.error}`
+  );
 }
 
 startServer();

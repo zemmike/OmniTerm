@@ -1,27 +1,9 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import {
-  Terminal as TerminalIcon,
-  Plus,
-  X,
-  Play,
-  RotateCcw,
-  Sparkles,
-  Copy,
-  Check,
-  Server,
-  Code2,
-  Lock,
-  Cpu,
-  CornerDownLeft,
-  ChevronRight,
-  ShieldAlert,
-  History,
-  Command,
-} from 'lucide-react';
-import { TerminalTab, TerminalCommand, OSPreset, UserRole } from '../types';
-import { TERMINAL_THEMES } from '../lib/themeUtils';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, X, Terminal as TerminalIcon, Folder, ChevronDown, GitBranch, Container, ShieldCheck, Minus, RotateCcw } from 'lucide-react';
+import TerminalPane, { XtermTheme } from './TerminalPane';
+import { TerminalTab, OSPreset, UserRole } from '../types';
 
-interface TerminalViewProps {
+interface Props {
   tabs: TerminalTab[];
   setTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>;
   activeTabId: string;
@@ -31,726 +13,458 @@ interface TerminalViewProps {
   currentTheme: string;
 }
 
-const STORAGE_KEY = 'omniterm_command_history';
+// --------------------------------------------------------------------- themes
+export const TERMINAL_THEMES: Record<string, XtermTheme> = {
+  matrix: {
+    background: '#0A0A0B', foreground: '#D7DAE0', cursor: '#22C55E', selectionBackground: '#264F78',
+    black: '#1B1D22', red: '#F87171', green: '#22C55E', yellow: '#EAB308', blue: '#60A5FA',
+    magenta: '#C084FC', cyan: '#22D3EE', white: '#D7DAE0', brightBlack: '#6B7280', brightRed: '#FCA5A5',
+    brightGreen: '#4ADE80', brightYellow: '#FDE047', brightBlue: '#93C5FD', brightMagenta: '#D8B4FE',
+    brightCyan: '#67E8F9', brightWhite: '#F9FAFB',
+  },
+  dracula: {
+    background: '#1E1F29', foreground: '#F8F8F2', cursor: '#FF79C6', selectionBackground: '#44475A',
+    black: '#21222C', red: '#FF5555', green: '#50FA7B', yellow: '#F1FA8C', blue: '#BD93F9',
+    magenta: '#FF79C6', cyan: '#8BE9FD', white: '#F8F8F2', brightBlack: '#6272A4', brightRed: '#FF6E6E',
+    brightGreen: '#69FF94', brightYellow: '#FFFFA5', brightBlue: '#D6ACFF', brightMagenta: '#FF92DF',
+    brightCyan: '#A4FFFF', brightWhite: '#FFFFFF',
+  },
+  slate: {
+    background: '#12141A', foreground: '#E2E8F0', cursor: '#38BDF8', selectionBackground: '#334155',
+    black: '#1E293B', red: '#F87171', green: '#4ADE80', yellow: '#FACC15', blue: '#60A5FA',
+    magenta: '#C084FC', cyan: '#38BDF8', white: '#E2E8F0', brightBlack: '#64748B', brightRed: '#FCA5A5',
+    brightGreen: '#86EFAC', brightYellow: '#FDE68A', brightBlue: '#93C5FD', brightMagenta: '#D8B4FE',
+    brightCyan: '#7DD3FC', brightWhite: '#F8FAFC',
+  },
+  solarized: {
+    background: '#002B36', foreground: '#93A1A1', cursor: '#B58900', selectionBackground: '#073642',
+    black: '#073642', red: '#DC322F', green: '#859900', yellow: '#B58900', blue: '#268BD2',
+    magenta: '#D33682', cyan: '#2AA198', white: '#EEE8D5', brightBlack: '#586E75', brightRed: '#CB4B16',
+    brightGreen: '#586E75', brightYellow: '#657B83', brightBlue: '#839496', brightMagenta: '#6C71C4',
+    brightCyan: '#93A1A1', brightWhite: '#FDF6E3',
+  },
+  amber: {
+    background: '#0C0A06', foreground: '#F5D0A9', cursor: '#F59E0B', selectionBackground: '#3F2D10',
+    black: '#26180A', red: '#EF4444', green: '#84CC16', yellow: '#F59E0B', blue: '#38BDF8',
+    magenta: '#E879F9', cyan: '#22D3EE', white: '#FDE68A', brightBlack: '#78716C', brightRed: '#FCA5A5',
+    brightGreen: '#BEF264', brightYellow: '#FCD34D', brightBlue: '#7DD3FC', brightMagenta: '#F0ABFC',
+    brightCyan: '#67E8F9', brightWhite: '#FFFBEB',
+  },
+};
 
-const DEFAULT_COMMANDS = [
-  'help',
-  'ls -la',
-  'ps top',
-  'git status',
-  'docker ps',
-  'backup run',
-  'cat deploy.sh',
-  'cat config.json',
-  'cat /var/scripts/backup_cron.py',
-  'whoami',
-  'pwd',
-  'ping 8.8.8.8',
-  'git log',
-  'node -v',
-  'python /var/scripts/backup_cron.py',
-  'clear',
-  'history',
-];
+const FONT_KEY = 'omniterm_font_size';
+const LAST_DIR_KEY = 'omniterm_last_dir';
 
-export const TerminalView: React.FC<TerminalViewProps> = ({
+function makeTab(cwd: string, osPreset: OSPreset, colorTheme: string, index: number): TerminalTab {
+  return {
+    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: `shell ${index}`,
+    osPreset,
+    environment: 'local',
+    cwd,
+    history: [],
+    colorTheme,
+    activePluginIds: [],
+  };
+}
+
+export default function TerminalView({
   tabs,
   setTabs,
   activeTabId,
   setActiveTabId,
   osPreset,
-  userRole,
   currentTheme,
-}) => {
+}: Props) {
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
-  const [inputCommand, setInputCommand] = useState('');
-  
-  // Persistent Command History (stored in localStorage)
-  const [commandHistory, setCommandHistory] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return DEFAULT_COMMANDS;
-  });
+  const [fontSize, setFontSize] = useState<number>(() => Number(localStorage.getItem(FONT_KEY)) || 13);
+  const [repo, setRepo] = useState<{ isRepo: boolean; branch: string | null; changed: number; untracked: number } | null>(null);
+  const [docker, setDocker] = useState<{ available: boolean; running: number } | null>(null);
+  const [ptyBackend, setPtyBackend] = useState<{ available: boolean; error: string | null } | null>(null);
+  const [cwdByTab, setCwdByTab] = useState<Record<string, string>>({});
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [chooserPath, setChooserPath] = useState('');
+  const [matches, setMatches] = useState<{ name: string; path: string; type: string }[]>([]);
+  const shellInfo = useRef<Record<string, { shell: string; pid: number | null }>>({});
 
-  const [historyIndex, setHistoryIndex] = useState<number>(-1);
-  const [draftCommand, setDraftCommand] = useState<string>('');
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(0);
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [isExecuting, setIsExecuting] = useState(false);
+  // The app shell sizes itself with min-height, so percentage heights do not
+  // resolve here. Measure the available space instead of trusting h-full, or
+  // the terminal gets a zero-height box and renders nothing.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [rootH, setRootH] = useState<number | null>(null);
+  useEffect(() => {
+    const parent = rootRef.current?.parentElement;
+    if (!parent) return;
+    const measure = () => setRootH(parent.clientHeight || null);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, []);
 
-  // Real status bar data: actual git state of the session directory and the
-  // real container runtime state — no hardcoded strings.
-  const [repo, setRepo] = useState<{ isRepo: boolean; branch: string | null; changed: number; untracked: number; ahead: number; behind: number; toplevel: string | null } | null>(null);
-  const [docker, setDocker] = useState<{ available: boolean; running: number; total: number } | null>(null);
+  const theme = TERMINAL_THEMES[currentTheme] || TERMINAL_THEMES.matrix;
+  const activeCwd = cwdByTab[activeTab?.id] || activeTab?.cwd || '';
 
+  useEffect(() => {
+    localStorage.setItem(FONT_KEY, String(fontSize));
+  }, [fontSize]);
+
+  // ------------------------------------------------------- status bar (real)
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      if (!activeCwd) return;
       try {
-        const [repoRes, dockerRes] = await Promise.all([
-          fetch(`/api/repo/status?path=${encodeURIComponent(activeTab?.cwd || '')}`),
-          fetch('/api/docker/status'),
+        const [r, d] = await Promise.all([
+          fetch(`/api/repo/status?path=${encodeURIComponent(activeCwd)}`).then((x) => x.json()),
+          fetch('/api/docker/status').then((x) => x.json()),
         ]);
-        if (cancelled) return;
-        if (repoRes.ok) setRepo(await repoRes.json());
-        if (dockerRes.ok) setDocker(await dockerRes.json());
+        if (!cancelled) {
+          setRepo(r);
+          setDocker(d);
+        }
       } catch {
-        /* status bar is best-effort */
+        /* status bar is informational */
       }
     };
     load();
-    const timer = setInterval(load, 20000);
+    const timer = setInterval(load, 15000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [activeTab?.cwd, activeTab?.history.length]);
-  const [aiAnalysis, setAiAnalysis] = useState<{ commandId: string; text: string } | null>(null);
+  }, [activeCwd]);
 
-  const terminalEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const theme = TERMINAL_THEMES[currentTheme] || TERMINAL_THEMES.matrix;
-
-  // Auto-scroll to bottom of terminal when history changes
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTab?.history, isExecuting]);
+    fetch('/api/terminal/status')
+      .then((r) => r.json())
+      .then((d) => setPtyBackend({ available: d.available, error: d.error }))
+      .catch(() => setPtyBackend({ available: false, error: 'API unreachable' }));
+  }, []);
 
-  // Keep input focused
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [activeTabId]);
-
-  // Synchronize Command History to LocalStorage
-  const saveCommandToHistory = (cmd: string) => {
-    const trimmed = cmd.trim();
-    if (!trimmed) return;
-    setCommandHistory((prev) => {
-      // Remove duplicate and insert at front
-      const filtered = prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
-      const updated = [trimmed, ...filtered].slice(0, 200);
+  // ------------------------------------------------------------------- tabs
+  const addTab = useCallback(
+    (cwd?: string) => {
+      const dir = cwd || activeCwd || '';
+      setTabs((prev) => {
+        const next = makeTab(dir, osPreset, currentTheme, prev.length + 1);
+        setActiveTabId(next.id);
+        return [...prev, next];
+      });
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        localStorage.setItem(LAST_DIR_KEY, dir);
       } catch {
-        // ignore
+        /* ignore */
       }
-      return updated;
-    });
-  };
+    },
+    [activeCwd, currentTheme, osPreset, setActiveTabId, setTabs]
+  );
 
-  // Autocomplete matching dictionary (combines unique history + system commands)
-  const allKnownCommands = useMemo(() => {
-    const set = new Set([...commandHistory, ...DEFAULT_COMMANDS]);
-    return Array.from(set);
-  }, [commandHistory]);
-
-  // Compute matching suggestions based on current input
-  const suggestions = useMemo(() => {
-    const trimmed = inputCommand.trim();
-    if (!trimmed) return [];
-    const lower = trimmed.toLowerCase();
-    return allKnownCommands
-      .filter((cmd) => cmd.toLowerCase().startsWith(lower) && cmd.toLowerCase() !== lower)
-      .slice(0, 6);
-  }, [inputCommand, allKnownCommands]);
-
-  // Top Ghost Suggestion (Zsh/Fish style inline hint)
-  const ghostSuggestion = useMemo(() => {
-    if (!inputCommand || suggestions.length === 0) return '';
-    const topMatch = suggestions[selectedSuggestionIndex] || suggestions[0];
-    if (topMatch && topMatch.toLowerCase().startsWith(inputCommand.toLowerCase())) {
-      return topMatch.slice(inputCommand.length);
-    }
-    return '';
-  }, [inputCommand, suggestions, selectedSuggestionIndex]);
-
-  // Reset selected suggestion when input changes
-  useEffect(() => {
-    setSelectedSuggestionIndex(0);
-    setShowSuggestions(true);
-  }, [inputCommand]);
-
-  // Handle Tab Creation
-  const handleAddTab = () => {
-    const newId = `tab-${Date.now()}`;
-    const newTab: TerminalTab = {
-      id: newId,
-      title: `Tab ${tabs.length + 1} (${osPreset})`,
-      osPreset,
-      environment: 'local',
-      cwd: '/home/user',
-      history: [
-        {
-          id: `cmd-init-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          command: 'welcome',
-          output: `DevTerminal Pro v2.4.0 (${osPreset.toUpperCase()} Run Engine)\nConnected as '${userRole}' with TLS 1.3 encryption.\nPersistent command history & Up/Down autocomplete active.\nType 'help' or 'history' for commands.`,
-          status: 'success',
-          executionTimeMs: 4,
-          cwd: '/home/user',
-          userRole,
-          os: osPreset,
-        },
-      ],
-      colorTheme: currentTheme,
-      activePluginIds: [],
-    };
-    setTabs([...tabs, newTab]);
-    setActiveTabId(newId);
-  };
-
-  // Handle Tab Close
-  const handleCloseTab = (idToClose: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (tabs.length === 1) return; // Keep at least 1 tab
-    const filtered = tabs.filter((t) => t.id !== idToClose);
-    setTabs(filtered);
-    if (activeTabId === idToClose) {
-      setActiveTabId(filtered[0].id);
-    }
-  };
-
-  // Execute Command via Backend Express API
-  const handleExecuteCommand = async (cmdToRun?: string) => {
-    const cmd = cmdToRun !== undefined ? cmdToRun : inputCommand;
-    if (!cmd.trim() || isExecuting) return;
-
-    const trimmedCmd = cmd.trim();
-    setIsExecuting(true);
-    setInputCommand('');
-    setDraftCommand('');
-    setHistoryIndex(-1);
-    setShowSuggestions(false);
-
-    // Save to persistent command history
-    saveCommandToHistory(trimmedCmd);
-
-    try {
-      const res = await fetch('/api/terminal/execute', {
+  const closeTab = useCallback(
+    (id: string) => {
+      fetch('/api/terminal/kill', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          command: trimmedCmd,
-          cwd: activeTab.cwd,
-          userRole,
-          osPreset,
-        }),
+        body: JSON.stringify({ sessionId: id }),
+      }).catch(() => undefined);
+      setTabs((prev) => {
+        if (prev.length === 1) return prev; // always keep one shell
+        const idx = prev.findIndex((t) => t.id === id);
+        const next = prev.filter((t) => t.id !== id);
+        if (id === activeTabId) {
+          const fallback = next[Math.max(0, idx - 1)] || next[0];
+          setActiveTabId(fallback.id);
+        }
+        return next;
       });
+    },
+    [activeTabId, setActiveTabId, setTabs]
+  );
 
-      const data = await res.json();
+  const cycleTab = useCallback(
+    (delta: number) => {
+      const idx = tabs.findIndex((t) => t.id === activeTabId);
+      const next = (idx + delta + tabs.length) % tabs.length;
+      setActiveTabId(tabs[next].id);
+    },
+    [activeTabId, tabs, setActiveTabId]
+  );
 
-      if (data.output === '__CLEAR__') {
-        // Clear tab history
-        setTabs((prev) =>
-          prev.map((t) => (t.id === activeTab.id ? { ...t, history: [] } : t))
-        );
-      } else {
-        const newCmd: TerminalCommand = {
-          id: `cmd-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString(),
-          command: trimmedCmd,
-          output: data.output,
-          status: data.status,
-          executionTimeMs: data.executionTimeMs,
-          cwd: data.cwd || activeTab.cwd,
-          userRole,
-          os: osPreset,
-          syntaxType: data.syntaxType,
-        };
+  // -------------------------------------------------------------- shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl) return;
 
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === activeTab.id ? { ...t, history: [...t.history, newCmd] } : t
-          )
-        );
-      }
-    } catch (err: any) {
-      const errCmd: TerminalCommand = {
-        id: `cmd-err-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString(),
-        command: trimmedCmd,
-        output: `[NETWORK/EXECUTION ERROR]: ${err.message || 'Failed to communicate with Express server.'}`,
-        status: 'error',
-        executionTimeMs: 12,
-        cwd: activeTab.cwd,
-        userRole,
-        os: osPreset,
-      };
-
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === activeTab.id ? { ...t, history: [...t.history, errCmd] } : t
-        )
-      );
-    } finally {
-      setIsExecuting(false);
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
-  };
-
-  // Up/Down Arrow Key Navigation & Autocomplete Handler
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // 1. Enter key: Execute command
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleExecuteCommand();
-      return;
-    }
-
-    // 2. Up Arrow key: Navigate to older commands in history
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (commandHistory.length === 0) return;
-
-      if (historyIndex === -1) {
-        // Save currently typed text as draft
-        setDraftCommand(inputCommand);
-        setHistoryIndex(0);
-        setInputCommand(commandHistory[0]);
-      } else {
-        const nextIdx = Math.min(historyIndex + 1, commandHistory.length - 1);
-        setHistoryIndex(nextIdx);
-        setInputCommand(commandHistory[nextIdx]);
-      }
-      return;
-    }
-
-    // 3. Down Arrow key: Navigate to newer commands or return to draft
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIndex > 0) {
-        const prevIdx = historyIndex - 1;
-        setHistoryIndex(prevIdx);
-        setInputCommand(commandHistory[prevIdx]);
-      } else if (historyIndex === 0) {
-        setHistoryIndex(-1);
-        setInputCommand(draftCommand);
-      }
-      return;
-    }
-
-    // 4. Tab key: Autocomplete to the suggested command
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      if (suggestions.length > 0) {
-        const selected = suggestions[selectedSuggestionIndex] || suggestions[0];
-        setInputCommand(selected);
-        // Cycle suggestion for subsequent tabs
-        setSelectedSuggestionIndex((prev) => (prev + 1) % suggestions.length);
-      } else if (ghostSuggestion) {
-        setInputCommand(inputCommand + ghostSuggestion);
-      }
-      return;
-    }
-
-    // 5. Right Arrow: If cursor is at the end of input and ghost suggestion exists, complete it
-    if (e.key === 'ArrowRight' && ghostSuggestion) {
-      const inputEl = inputRef.current;
-      if (inputEl && inputEl.selectionStart === inputCommand.length) {
+      // Tabs
+      if (!e.shiftKey && e.key.toLowerCase() === 't') {
         e.preventDefault();
-        setInputCommand(inputCommand + ghostSuggestion);
+        addTab();
         return;
       }
-    }
+      if (!e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        if (activeTab) closeTab(activeTab.id);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        cycleTab(e.shiftKey ? -1 : 1);
+        return;
+      }
+      if (e.altKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const target = tabs[Number(e.key) - 1];
+        if (target) setActiveTabId(target.id);
+        return;
+      }
+      // Font size
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        setFontSize((s) => Math.min(28, s + 1));
+        return;
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setFontSize((s) => Math.max(8, s - 1));
+        return;
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        setFontSize(13);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTab, addTab, closeTab, cycleTab, setActiveTabId, tabs]);
 
-    // 6. Escape: Close suggestions popup
-    if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      return;
-    }
+  // ------------------------------------------------- folder autocomplete API
+  useEffect(() => {
+    if (!chooserOpen) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/complete?path=${encodeURIComponent(chooserPath)}`, { signal: controller.signal })
+        .then((r) => r.json())
+        .then((d) => setMatches(d.matches || []))
+        .catch(() => undefined);
+    }, 120);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [chooserPath, chooserOpen]);
 
-    // 7. Ctrl + C: Clear input line and reset
-    if (e.ctrlKey && e.key.toLowerCase() === 'c') {
-      e.preventDefault();
-      setInputCommand('');
-      setDraftCommand('');
-      setHistoryIndex(-1);
-      setShowSuggestions(false);
-      return;
-    }
-
-    // 8. Ctrl + L: Clear terminal viewport
-    if (e.ctrlKey && e.key.toLowerCase() === 'l') {
-      e.preventDefault();
-      setTabs((prev) =>
-        prev.map((t) => (t.id === activeTab.id ? { ...t, history: [] } : t))
-      );
-      return;
-    }
+  const openChooser = () => {
+    setChooserPath(activeCwd || '~/');
+    setChooserOpen(true);
   };
 
-  // AI Quick Fix Error Analysis
-  const handleAskAiFix = async (cmdItem: TerminalCommand) => {
-    try {
-      setAiAnalysis({ commandId: cmdItem.id, text: 'Analyzing terminal error with Gemini AI...' });
-      const res = await fetch('/api/ai/copilot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'debug_error',
-          prompt: `Command '${cmdItem.command}' failed with error:\n${cmdItem.output}`,
-          mode: 'claude-coder',
-        }),
-      });
-      const data = await res.json();
-      setAiAnalysis({ commandId: cmdItem.id, text: data.result });
-    } catch (err: any) {
-      setAiAnalysis({ commandId: cmdItem.id, text: 'Failed to contact AI Copilot service.' });
-    }
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  // Pre-baked Quick Scripts
-  const quickScripts = [
-    { label: '🚀 Deploy Pipeline', cmd: 'cat deploy.sh' },
-    { label: '📦 Backup Snapshot', cmd: 'backup run' },
-    { label: '📊 System Top PS', cmd: 'ps top' },
-    { label: '🔍 Git Status', cmd: 'git status' },
-    { label: '🐳 Docker PS', cmd: 'docker ps' },
-    { label: '🐍 Python Cron', cmd: 'python /var/scripts/backup_cron.py' },
-  ];
-
+  const statusText = useMemo(() => {
+    if (!repo) return 'checking…';
+    if (!repo.isRepo) return 'not a git repository';
+    const parts = [repo.branch || 'detached'];
+    if (repo.changed) parts.push(`${repo.changed} changed`);
+    if (repo.untracked) parts.push(`${repo.untracked} untracked`);
+    return parts.join(' · ');
+  }, [repo]);
 
   return (
-    <div className={`flex flex-col h-[calc(100vh-125px)] ${theme.bg} text-[#E0E0E5] font-mono text-sm`}>
-      {/* Tab Navigation Header Bar */}
-      <div className="bg-[#161618] border-b border-[#2A2A2E] flex items-center justify-between px-2 pt-1.5 overflow-x-auto no-scrollbar select-none">
-        <div className="flex items-center gap-1">
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTab.id;
-            return (
-              <div
-                key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
-                className={`group cursor-pointer px-3 py-1.5 rounded-t border-t border-x text-xs flex items-center gap-2 transition-all ${
-                  isActive
-                    ? 'bg-[#0A0A0B] border-[#2A2A2E] text-[#00FF41] font-bold border-t-2 border-t-[#00FF41]'
-                    : 'bg-[#161618] border-[#2A2A2E]/60 text-[#88888E] hover:text-[#E0E0E5] hover:bg-[#202024]'
-                }`}
-              >
-                <TerminalIcon className={`w-3.5 h-3.5 ${isActive ? 'text-[#00FF41]' : 'text-[#55555E]'}`} />
-                <span>{tab.title}</span>
-                <span className="text-[10px] px-1 py-0.2 rounded bg-[#202024] text-[#88888E] uppercase font-bold border border-[#2A2A2E]">
-                  {tab.environment === 'remote-ssh' ? 'SSH' : tab.osPreset}
-                </span>
-                {tabs.length > 1 && (
-                  <button
-                    onClick={(e) => handleCloseTab(tab.id, e)}
-                    className="opacity-40 group-hover:opacity-100 hover:text-[#FF5555] p-0.5 rounded"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          <button
-            onClick={handleAddTab}
-            className="p-1.5 rounded bg-[#202024] hover:bg-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5] transition-all border border-[#2A2A2E] ml-1"
-            title="Create New Terminal Tab"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Tab Environment Preset Selector */}
-        <div className="hidden sm:flex items-center gap-2 pb-1 text-xs">
-          <span className="text-[#55555E] text-[11px]">Env:</span>
-          <select
-            value={activeTab.environment}
-            onChange={(e) =>
-              setTabs((prev) =>
-                prev.map((t) =>
-                  t.id === activeTab.id ? { ...t, environment: e.target.value as any } : t
-                )
-              )
-            }
-            className="bg-[#0A0A0B] border border-[#2A2A2E] rounded px-2 py-0.5 text-[11px] text-[#E0E0E5] focus:outline-none focus:border-[#00FF41]"
-          >
-            <option value="local">Local Native Machine</option>
-            <option value="remote-ssh">Remote SSH Server (root@10.0.1.50)</option>
-            <option value="claude-coder-ai">Claude Coder AI Environment</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Quick Scripts & Extensions Bar */}
-      <div className="bg-[#161618] border-b border-[#2A2A2E] px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs select-none">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-          <span className="text-[#55555E] text-[11px] font-bold">SCRIPTS:</span>
-          {quickScripts.map((s, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleExecuteCommand(s.cmd)}
-              className="px-2.5 py-1 rounded bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-[#E0E0E5] hover:text-[#00FF41] transition-all text-[11px] flex items-center gap-1.5 whitespace-nowrap"
+    <div
+      ref={rootRef}
+      className="flex flex-col bg-[#0A0A0B]"
+      style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}
+    >
+      {/* ------------------------------------------------ tab bar */}
+      <div className="flex items-center gap-1 px-2 py-1 bg-[#111113] border-b border-[#2A2A2E] select-none">
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTabId;
+          const label = (cwdByTab[tab.id] || tab.cwd || '~').replace(/\/+$/, '') || '/';
+          const short = label.split('/').filter(Boolean).pop() || '/';
+          return (
+            <div
+              key={tab.id}
+              onClick={() => setActiveTabId(tab.id)}
+              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t text-xs cursor-pointer border-t border-x ${
+                isActive
+                  ? 'bg-[#0A0A0B] text-zinc-100 border-[#2A2A2E]'
+                  : 'bg-[#151517] text-zinc-500 border-transparent hover:text-zinc-300'
+              }`}
+              title={`${tab.title} — ${label}`}
             >
-              <Play className="w-2.5 h-2.5 text-[#00FF41] fill-[#00FF41]" />
-              <span>{s.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* History Count Badge */}
-          <div className="hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#202024] border border-[#2A2A2E] text-[10px] text-[#88888E]">
-            <History className="w-3 h-3 text-[#00FF41]" />
-            <span>{commandHistory.length} in History (↑/↓)</span>
-          </div>
-
-          <button
-            onClick={() =>
-              setTabs((prev) =>
-                prev.map((t) => (t.id === activeTab.id ? { ...t, history: [] } : t))
-              )
-            }
-            className="px-2 py-1 rounded bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-[#88888E] hover:text-[#FF5555] transition-all text-[11px] flex items-center gap-1"
-            title="Clear Terminal Output Viewport (Ctrl+L)"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>Clear</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Real environment status bar */}
-      <div className="bg-[#0A0A0B] border-b border-[#2A2A2E] px-4 py-1 flex items-center justify-between gap-4 text-[11px] select-none">
-        <div className="flex items-center gap-4 overflow-x-auto">
-          {repo?.isRepo ? (
-            <div className="flex items-center gap-1.5 text-[#00FF41] font-bold" title={repo.toplevel || ''}>
-              <Code2 className="w-3.5 h-3.5" />
-              <span>git:({repo.branch})</span>
-              <span className="text-[#55555E]">|</span>
-              <span className={repo.changed + repo.untracked > 0 ? 'text-[#FFBD2E]' : 'text-[#55555E]'}>
-                {repo.changed} modified · {repo.untracked} untracked
-              </span>
-              {(repo.ahead > 0 || repo.behind > 0) && (
-                <span className="text-[#88888E]">↑{repo.ahead} ↓{repo.behind}</span>
+              <TerminalIcon className="w-3.5 h-3.5" style={{ color: isActive ? theme.green : undefined }} />
+              <span className="font-mono">{short}</span>
+              {tabs.length > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 hover:text-red-400"
+                  title="Close tab (Ctrl+W)"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               )}
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-[#55555E]">
-              <Code2 className="w-3.5 h-3.5" />
-              <span>not a git repository</span>
-            </div>
-          )}
+          );
+        })}
 
-          <div className={`flex items-center gap-1.5 font-bold ${docker?.available ? 'text-[#3B82F6]' : 'text-[#55555E]'}`}>
-            <Server className="w-3.5 h-3.5" />
-            <span>
-              {docker === null
-                ? 'docker: checking…'
-                : docker.available
-                  ? `docker: ${docker.running} running${docker.total !== docker.running ? ` / ${docker.total} total` : ''}`
-                  : 'docker: not available'}
-            </span>
-          </div>
+        <button
+          onClick={() => addTab()}
+          className="p-1.5 rounded hover:bg-[#1F1F23] text-zinc-500 hover:text-green-400"
+          title="New shell in current directory (Ctrl+T)"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
+          onClick={openChooser}
+          className="p-1.5 rounded hover:bg-[#1F1F23] text-zinc-500 hover:text-green-400"
+          title="New shell in a different directory"
+        >
+          <Folder className="w-4 h-4" />
+        </button>
 
-          <div className="flex items-center gap-1.5 text-[#BB86FC] font-bold">
-            <Lock className="w-3.5 h-3.5" />
-            <span>Command Guard: ({userRole})</span>
+        <div className="ml-auto flex items-center gap-3 text-[11px] text-zinc-500 pr-1">
+          <span className="flex items-center gap-1">
+            <GitBranch className="w-3 h-3" /> {statusText}
+          </span>
+          <span className="flex items-center gap-1">
+            <Container className="w-3 h-3" />
+            {docker ? (docker.available ? `${docker.running} running` : 'docker unavailable') : '…'}
+          </span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setFontSize((s) => Math.max(8, s - 1))} title="Smaller (Ctrl+-)">
+              <Minus className="w-3 h-3 hover:text-zinc-200" />
+            </button>
+            <button onClick={() => setFontSize(13)} className="hover:text-zinc-200 font-mono" title="Reset (Ctrl+0)">
+              {fontSize}
+            </button>
+            <button onClick={() => setFontSize((s) => Math.min(28, s + 1))} title="Larger (Ctrl+=)">
+              <Plus className="w-3 h-3 hover:text-zinc-200" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main Terminal Output Viewport Screen */}
-      <div
-        className={`flex-1 p-4 overflow-y-auto space-y-4 ${theme.terminalBg} select-text cursor-text relative`}
-        onClick={() => inputRef.current?.focus()}
-      >
-        {activeTab.history.map((item) => (
-          <div key={item.id} className="space-y-1.5 group">
-            {/* Command Line Header */}
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-[#3B82F6] font-bold">
-                  {userRole === 'admin' ? 'root' : 'alex'}
-                </span>
-                <span className="text-[#55555E]">@</span>
-                <span className="text-[#E0E0E5]">
-                  {activeTab.environment === 'remote-ssh' ? 'ssh-server' : 'omniterm'}
-                </span>
-                <span className="text-[#55555E]">:</span>
-                <span className="text-[#BB86FC]">{item.cwd}</span>
-                <span className="text-[#00FF41] font-bold">$</span>
-                <span className="font-bold text-[#00FF41]">{item.command}</span>
-              </div>
-
-              <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity text-[10px]">
-                <span
-                  className={`px-1.5 py-0.2 rounded uppercase font-bold border ${
-                    item.status === 'success'
-                      ? 'bg-[#00FF41]/10 text-[#00FF41] border-[#00FF41]/30'
-                      : item.status === 'denied'
-                      ? 'bg-[#FFBD2E]/10 text-[#FFBD2E] border-[#FFBD2E]/30'
-                      : 'bg-[#FF5555]/10 text-[#FF5555] border-[#FF5555]/30'
-                  }`}
-                >
-                  {item.status}
-                </span>
-                <span className="text-[#55555E]">{item.executionTimeMs}ms</span>
-                <span className="text-[#55555E]">{item.timestamp}</span>
-                <button
-                  onClick={() => copyToClipboard(item.output, item.id)}
-                  className="p-1 rounded bg-[#202024] hover:bg-[#2A2A2E] text-[#88888E]"
-                  title="Copy command output"
-                >
-                  {copiedId === item.id ? (
-                    <Check className="w-3 h-3 text-[#00FF41]" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Output Box */}
-            <div
-              className={`p-3 rounded border leading-relaxed overflow-x-auto whitespace-pre-wrap ${
-                item.status === 'denied'
-                  ? 'bg-[#FFBD2E]/10 border-[#FFBD2E]/30 text-[#FFBD2E]'
-                  : item.status === 'error'
-                  ? 'bg-[#FF5555]/10 border-[#FF5555]/30 text-[#FF5555]'
-                  : 'bg-[#161618] border-[#2A2A2E] text-[#00FF41]'
-              }`}
-            >
-              {item.output}
-            </div>
-
-            {/* AI Error Quick Fix Button if Error / Denied */}
-            {(item.status === 'error' || item.status === 'denied') && (
-              <div className="pt-1">
-                <button
-                  onClick={() => handleAskAiFix(item)}
-                  className="px-2.5 py-1 rounded bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-[#BB86FC] transition-all text-xs flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#BB86FC]" />
-                  <span>Ask AI Copilot to Explain & Fix Error</span>
-                </button>
-
-                {aiAnalysis?.commandId === item.id && (
-                  <div className="mt-2 p-3 rounded bg-[#161618] border border-[#2A2A2E] text-[#BB86FC] text-xs space-y-1">
-                    <div className="flex items-center gap-2 font-bold text-[#E0E0E5]">
-                      <Sparkles className="w-4 h-4 text-[#BB86FC]" />
-                      <span>Gemini AI Terminal Analysis:</span>
-                    </div>
-                    <p className="whitespace-pre-wrap font-mono text-[12px]">{aiAnalysis.text}</p>
-                  </div>
-                )}
-              </div>
-            )}
+      {/* ------------------------------------------------ terminals */}
+      <div className="flex-1 min-h-0 relative overflow-hidden">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className="absolute inset-0"
+            style={{ visibility: tab.id === activeTabId ? 'visible' : 'hidden' }}
+          >
+            <TerminalPane
+              sessionId={tab.id}
+              cwd={cwdByTab[tab.id] || tab.cwd}
+              theme={TERMINAL_THEMES[tab.colorTheme] || theme}
+              fontSize={fontSize}
+              active={tab.id === activeTabId}
+              onReady={(info) => {
+                shellInfo.current[tab.id] = { shell: info.shell, pid: info.pid };
+                setPtyBackend({ available: true, error: null });
+                setCwdByTab((prev) => ({ ...prev, [tab.id]: info.cwd }));
+              }}
+              onCwdChange={(cwd) => setCwdByTab((prev) => ({ ...prev, [tab.id]: cwd }))}
+            />
           </div>
         ))}
 
-        {isExecuting && (
-          <div className="flex items-center gap-2 text-xs text-[#00FF41] animate-pulse py-1">
-            <Cpu className="w-4 h-4 animate-spin text-[#00FF41]" />
-            <span>Executing shell process...</span>
+        {ptyBackend && !ptyBackend.available && (
+          <div className="absolute inset-x-0 top-0 z-10 bg-[#2A1616] border-b border-red-900/60 px-4 py-2 text-xs text-red-200">
+            The interactive terminal backend could not start ({ptyBackend.error}). Run a shell from the
+            API or reinstall OmniTerm.
           </div>
         )}
+      </div>
 
-        {/* Autocomplete Suggestion Floating Bar */}
-        {showSuggestions && suggestions.length > 0 && inputCommand.trim().length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded bg-[#161618] border border-[#2A2A2E] text-xs max-w-2xl select-none shadow-xl">
-            <div className="flex items-center gap-1 text-[10px] text-[#55555E] uppercase font-bold px-1.5 border-r border-[#2A2A2E]">
-              <Command className="w-3 h-3 text-[#00FF41]" />
-              <span>Suggestions (Tab ⇥)</span>
+      {/* ------------------------------------------------ directory chooser */}
+      {chooserOpen && (
+        <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center p-6">
+          <div className="w-[34rem] bg-[#131316] border border-[#2A2A2E] rounded-lg shadow-2xl">
+            <div className="px-4 py-3 border-b border-[#2A2A2E] text-sm text-zinc-200 flex items-center gap-2">
+              <Folder className="w-4 h-4 text-green-400" /> New shell — pick a directory
             </div>
-            {suggestions.map((s, idx) => (
-              <button
-                key={s}
-                onClick={() => {
-                  setInputCommand(s);
-                  inputRef.current?.focus();
+            <div className="p-4 space-y-2">
+              <input
+                autoFocus
+                value={chooserPath}
+                onChange={(e) => setChooserPath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' && matches[0]) {
+                    e.preventDefault();
+                    setChooserPath(matches[0].path.replace('~', '') || matches[0].path);
+                  }
+                  if (e.key === 'Enter') {
+                    addTab(chooserPath);
+                    setChooserOpen(false);
+                  }
+                  if (e.key === 'Escape') setChooserOpen(false);
                 }}
-                className={`px-2 py-0.5 rounded text-[11px] transition-all flex items-center gap-1 font-mono ${
-                  idx === selectedSuggestionIndex
-                    ? 'bg-[#00FF41] text-black font-bold'
-                    : 'bg-[#202024] text-[#E0E0E5] hover:bg-[#2A2A2E] hover:text-[#00FF41] border border-[#2A2A2E]'
-                }`}
-              >
-                <span className="opacity-60">{inputCommand}</span>
-                <span>{s.slice(inputCommand.length)}</span>
-              </button>
-            ))}
-            <span className="text-[10px] text-[#55555E] ml-auto pr-1 hidden sm:inline">
-              [Tab] to complete • [↑/↓] history
-            </span>
-          </div>
-        )}
-
-        {/* Inline Active Shell Prompt Line with Real-time Ghost Autocomplete */}
-        <div className="flex items-center gap-2 text-xs font-bold pt-1 font-mono relative">
-          <span className="text-[#3B82F6]">
-            {userRole === 'admin' ? 'root' : 'alex'}
-          </span>
-          <span className="text-[#55555E]">@</span>
-          <span className="text-[#E0E0E5]">
-            {activeTab.environment === 'remote-ssh' ? 'ssh-server' : 'omniterm'}
-          </span>
-          <span className="text-[#55555E]">:</span>
-          <span className="text-[#BB86FC]">{activeTab.cwd}</span>
-          <span className="text-[#00FF41] font-bold">$</span>
-
-          <div className="flex-1 flex items-center relative min-h-[20px]">
-            {/* Native Unstyled Input */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputCommand}
-              onChange={(e) => setInputCommand(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoFocus
-              spellCheck={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              className="w-full bg-transparent border-none outline-none p-0 text-xs text-[#00FF41] font-mono focus:ring-0 focus:outline-none z-10"
-            />
-
-            {/* Inline Ghost Suggestion Overlay (Fish / Zsh style) */}
-            {ghostSuggestion && (
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 pointer-events-none flex items-center text-xs font-mono select-none"
-              >
-                {/* Transparent spacer matching the exact text width of inputCommand */}
-                <span className="opacity-0">{inputCommand}</span>
-                {/* Subtle dim ghost suffix */}
-                <span className="text-[#55555E] bg-[#202024]/40 px-0.5 rounded">
-                  {ghostSuggestion}
-                </span>
-                <span className="text-[10px] text-[#44444A] ml-2 font-normal hidden md:inline">
-                  [Tab ⇥ / →]
-                </span>
+                placeholder="/var/log  ·  ~/projects  ·  Tab completes"
+                className="w-full bg-[#0E0E10] border border-[#33333A] rounded px-3 py-2 text-sm font-mono text-zinc-100 outline-none focus:border-green-600"
+              />
+              <div className="max-h-56 overflow-auto border border-[#232328] rounded divide-y divide-[#1D1D21]">
+                {matches.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-zinc-600">
+                    No matches. Type a path and press Enter — folders complete as you type.
+                  </div>
+                )}
+                {matches.map((m) => (
+                  <button
+                    key={m.path}
+                    onClick={() => {
+                      if (m.type === 'directory') setChooserPath(m.path);
+                      else {
+                        addTab(m.path.split('/').slice(0, -1).join('/'));
+                        setChooserOpen(false);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-400 hover:bg-[#1C1C20] hover:text-zinc-100 flex items-center gap-2"
+                  >
+                    {m.type === 'directory' ? (
+                      <Folder className="w-3.5 h-3.5 text-green-500" />
+                    ) : (
+                      <RotateCcw className="w-3.5 h-3.5 text-zinc-600" />
+                    )}
+                    {m.path}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
-
-          {/* Up/Down History indicator badge when cycling history */}
-          {historyIndex >= 0 && (
-            <div className="text-[10px] px-1.5 py-0.5 rounded bg-[#202024] border border-[#2A2A2E] text-[#3B82F6] font-mono select-none flex items-center gap-1">
-              <span>history #{historyIndex + 1}</span>
             </div>
-          )}
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#2A2A2E]">
+              <button
+                onClick={() => setChooserOpen(false)}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  addTab(chooserPath);
+                  setChooserOpen(false);
+                }}
+                className="px-3 py-1.5 text-xs bg-green-700 hover:bg-green-600 text-white rounded"
+              >
+                Open shell
+              </button>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div ref={terminalEndRef} />
+      {/* ------------------------------------------------ key hints */}
+      <div className="px-3 py-1 bg-[#0A0A0B] border-t border-[#1D1D21] text-[10px] text-zinc-600 flex items-center gap-4 select-none">
+        <span className="flex items-center gap-1">
+          <ShieldCheck className="w-3 h-3 text-green-700" /> real PTY · your shell ({shellInfo.current[activeTab?.id]?.shell?.split('/').pop() || 'shell'})
+          {shellInfo.current[activeTab?.id]?.pid ? ` · pid ${shellInfo.current[activeTab?.id]?.pid}` : ''}
+        </span>
+        <span>Ctrl+T new · Ctrl+W close · Ctrl+Tab switch · Ctrl± size · Ctrl+Shift+C/V copy/paste · Ctrl+Shift+F search</span>
       </div>
     </div>
   );
-};
-
+}
