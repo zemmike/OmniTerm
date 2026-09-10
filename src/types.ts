@@ -90,22 +90,30 @@ export interface ProcessItem {
 }
 
 export interface ServerHealth {
+  cpuModel?: string;
+  networkInterface?: string;
   cpuUsage: number;
   cpuCores: number;
   memoryUsage: {
     usedMb: number;
     totalMb: number;
     freeMb: number;
+    /** MemAvailable: what free/top mean by free, including reclaimable cache. */
+    availableMb: number;
     percent: number;
   };
   diskUsage: {
     usedGb: number;
     totalGb: number;
     percent: number;
+    /** Path the figures were measured on (e.g. the user's home directory). */
+    path?: string;
   };
   networkIO: {
     rxKbps: number;
     txKbps: number;
+    /** Interface actually carrying the traffic, from /proc/net/dev. */
+    interface?: string;
   };
   uptimeSeconds: number;
   processCount: number;

@@ -51,7 +51,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
     { id: 'terminal', label: 'Terminal', icon: Terminal },
     { id: 'files', label: 'Files', icon: FolderTree },
     { id: 'ai-settings', label: 'AI Settings', icon: Bot },
-    { id: 'health', label: 'Server Health', icon: Activity },
+    { id: 'health', label: 'System Health', icon: Activity },
     { id: 'system', label: 'System & Security', icon: Settings },
   ];
 

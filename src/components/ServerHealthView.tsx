@@ -60,10 +60,11 @@ export const ServerHealthView: React.FC = () => {
         <div>
           <h1 className="text-lg font-bold text-[#E0E0E5] flex items-center gap-2">
             <Activity className="w-5 h-5 text-[#00FF41]" />
-            <span>REAL-TIME SERVER HEALTH & PROCESS METRICS</span>
+            <span>THIS MACHINE — LIVE HEALTH & PROCESS METRICS</span>
           </h1>
           <p className="text-xs text-[#88888E]">
-            Live telemetry stream from Cloud Run instance on <span className="font-mono text-[#00FF41]">{health.systemInfo.hostname}</span>
+            Read live from <span className="font-mono text-[#00FF41]">{health.systemInfo.hostname}</span> — the machine
+            OmniTerm is running on ({health.systemInfo.os} · {health.systemInfo.arch}) — via /proc, statfs and ps.
           </p>
         </div>
 
@@ -102,8 +103,12 @@ export const ServerHealthView: React.FC = () => {
           </div>
 
           <div className="text-[11px] text-[#55555E] flex justify-between font-mono">
-            <span>Load: 0.42, 0.38</span>
-            <span>3.20 GHz</span>
+            <span>
+              Load: {health.loadAverage.one}, {health.loadAverage.five}, {health.loadAverage.fifteen}
+            </span>
+            <span className="truncate max-w-[45%] text-right" title={health.cpuModel || ''}>
+              {health.cpuModel ? health.cpuModel.replace(/\s+/g, ' ').slice(0, 28) : `${health.systemInfo.arch}`}
+            </span>
           </div>
         </div>
 
@@ -128,7 +133,7 @@ export const ServerHealthView: React.FC = () => {
 
           <div className="text-[11px] text-[#55555E] flex justify-between font-mono">
             <span>Used: {(health.memoryUsage.usedMb / 1024).toFixed(1)} GB</span>
-            <span>Total: {(health.memoryUsage.totalMb / 1024).toFixed(0)} GB</span>
+            <span>Free: {(health.memoryUsage.availableMb / 1024).toFixed(1)} GB</span>
           </div>
         </div>
 
@@ -137,7 +142,7 @@ export const ServerHealthView: React.FC = () => {
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
               <HardDrive className="w-4 h-4 text-[#BB86FC]" />
-              <span>Disk Partition (/)</span>
+              <span>Disk usage ({health.diskUsage.path || '/'})</span>
             </span>
             <span className="font-mono font-bold text-[#BB86FC]">
               {health.diskUsage.percent}%
@@ -164,7 +169,9 @@ export const ServerHealthView: React.FC = () => {
               <Network className="w-4 h-4 text-[#FFBD2E]" />
               <span>Network Traffic</span>
             </span>
-            <span className="font-mono text-[#E0E0E5] font-bold">1 Gbps Interface</span>
+            <span className="font-mono text-[#E0E0E5] font-bold">
+              {health.networkIO.interface || health.networkInterface || 'no active interface'}
+            </span>
           </div>
 
           <div className="flex items-center justify-between text-xs font-mono pt-1">
@@ -197,7 +204,7 @@ export const ServerHealthView: React.FC = () => {
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] text-[#88888E] font-bold">SERVER UPTIME</div>
+            <div className="text-[11px] text-[#88888E] font-bold">MACHINE UPTIME</div>
             <div className="font-mono text-xs font-bold text-[#E0E0E5]">{formatUptime(health.uptimeSeconds)}</div>
           </div>
         </div>
@@ -209,7 +216,7 @@ export const ServerHealthView: React.FC = () => {
           <div>
             <div className="text-[11px] text-[#88888E] font-bold">ACTIVE PROCESSES</div>
             <div className="font-mono text-xs font-bold text-[#E0E0E5]">
-              {health.processCount} processes | {health.activeConnections} HTTP/WS clients
+              {health.processCount} processes | {health.activeConnections} established TCP connections
             </div>
           </div>
         </div>
@@ -220,7 +227,7 @@ export const ServerHealthView: React.FC = () => {
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
             <Cpu className="w-4 h-4 text-[#00FF41]" />
-            <span>TOP ACTIVE SERVER PROCESSES (top / ps)</span>
+            <span>TOP PROCESSES ON THIS MACHINE (ps)</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">Sorted by CPU %</span>
         </div>

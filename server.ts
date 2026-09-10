@@ -473,24 +473,45 @@ function networkRates() {
     const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
     let rx = 0;
     let tx = 0;
+    let busiest = '';
+    let busiestBytes = -1;
     for (const line of lines) {
-      const [iface, rest] = line.split(':');
-      if (!rest || iface.trim() === 'lo') continue;
+      const [ifaceRaw, rest] = line.split(':');
+      const iface = (ifaceRaw || '').trim();
+      if (!rest || iface === 'lo') continue;
       const cols = rest.trim().split(/\s+/);
-      rx += Number(cols[0]) || 0;
-      tx += Number(cols[8]) || 0;
+      const ifaceRx = Number(cols[0]) || 0;
+      const ifaceTx = Number(cols[8]) || 0;
+      rx += ifaceRx;
+      tx += ifaceTx;
+      // Report the interface actually carrying the traffic, not a guess.
+      if (ifaceRx + ifaceTx > busiestBytes) {
+        busiestBytes = ifaceRx + ifaceTx;
+        busiest = iface;
+      }
     }
     const now = Date.now();
     const prev = prevNet;
     prevNet = { rx, tx, at: now };
-    if (!prev || now === prev.at) return { rxKbps: 0, txKbps: 0 };
+    if (!prev || now === prev.at) return { rxKbps: 0, txKbps: 0, interface: busiest };
     const seconds = (now - prev.at) / 1000;
     return {
       rxKbps: Math.max(0, Math.round(((rx - prev.rx) * 8) / 1000 / seconds)),
       txKbps: Math.max(0, Math.round(((tx - prev.tx) * 8) / 1000 / seconds)),
+      interface: busiest,
     };
   } catch {
-    return { rxKbps: 0, txKbps: 0 };
+    return { rxKbps: 0, txKbps: 0, interface: '' };
+  }
+}
+
+function memAvailableMb(): number | null {
+  try {
+    const info = fs.readFileSync('/proc/meminfo', 'utf8');
+    const m = info.match(/^MemAvailable:\s+(\d+) kB/m);
+    return m ? Math.round(Number(m[1]) / 1024) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -505,12 +526,14 @@ function diskUsage() {
         usedGb: Number(used.toFixed(1)),
         totalGb: Number(total.toFixed(1)),
         percent: Number(((used / total) * 100).toFixed(1)),
+        // The path the figures were measured on, so the UI can label it truthfully.
+        path: os.homedir(),
       };
     }
   } catch {
     /* fall through */
   }
-  return { usedGb: 0, totalGb: 0, percent: 0 };
+  return { usedGb: 0, totalGb: 0, percent: 0, path: os.homedir() };
 }
 
 function activeConnectionCount() {
@@ -519,7 +542,10 @@ function activeConnectionCount() {
     try {
       const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
       for (const line of lines.slice(1)) {
-        if (line.trim().split(/\s+/)[6] === '01') count += 1;
+        // Fields: 0 sl, 1 local, 2 remote, 3 state … so the state is index 3,
+        // and 01 means ESTABLISHED. (Reading index 6 counted the wrong column.)
+        const cols = line.trim().split(/\s+/);
+        if (cols[3] === '01') count += 1;
       }
     } catch {
       /* ignore */
@@ -545,7 +571,11 @@ function topProcesses() {
     return out
       .trim()
       .split('\n')
-      .slice(1, 6)
+      .slice(1)
+      // The sampler itself is always near the top of its own snapshot (ps can
+      // briefly show high CPU), and that is not a fact about the machine.
+      .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
+      .slice(0, 5)
       .map((row) => {
         const cols = row.trim().split(/\s+/);
         const pid = Number(cols[0]) || 0;
@@ -577,7 +607,11 @@ app.get('/api/health', async (req, res) => {
 
   const totalMb = Math.round(os.totalmem() / 1048576);
   const freeMb = Math.round(os.freemem() / 1048576);
-  const usedMb = totalMb - freeMb;
+  // os.freemem() is MemFree only: it ignores reclaimable page cache and so
+  // overstates "used" on any long-running Linux box. MemAvailable is the figure
+  // free/top mean, so that is what we report.
+  const availableMb = memAvailableMb() ?? freeMb;
+  const usedMb = totalMb - availableMb;
   const load = os.loadavg();
 
   res.json({
@@ -589,6 +623,7 @@ app.get('/api/health', async (req, res) => {
       usedMb,
       totalMb,
       freeMb,
+      availableMb,
       percent: Math.round((usedMb / totalMb) * 100),
     },
     diskUsage: diskUsage(),
@@ -597,6 +632,7 @@ app.get('/api/health', async (req, res) => {
     processCount: processCount(),
     activeConnections: activeConnectionCount(),
     topProcesses: topProcesses(),
+    cpuModel: (os.cpus()[0]?.model || '').trim(),
     systemInfo: {
       os: `${os.type()} ${os.release()}`,
       arch: os.arch(),

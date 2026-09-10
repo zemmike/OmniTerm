@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Professional terminal emulator for Linux and macOS with real shell execution, AI copilot, file manager and server health monitoring.",
   "private": true,
   "type": "module",
