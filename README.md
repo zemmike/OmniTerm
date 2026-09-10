@@ -20,8 +20,8 @@ snapshot engine and a file browser, packaged as a native Ubuntu/Debian app.
 - **Command audit trail** — every command, its exit code, duration and working
   directory is appended to `~/.local/share/omniterm/activity.jsonl` (mode 0600)
   and can be exported as JSONL evidence.
-- **Snapshots** — create real `tar.gz` archives of any directory and get the
-  exact restore command back.
+- **Snapshots** — create real `tar.gz` archives of any directory (stored under
+  `~/.local/share/omniterm/backups`) and get the exact restore command back.
 - **AI copilot, local-first** — uses a model on your own machine via Ollama when
   one is running (shell context never leaves the box); falls back to the Gemini
   API only if you configure a key. Answers in the terminal via `ai <question>`.
@@ -139,7 +139,8 @@ Optional, via environment variables:
 - `OMNITERM_OLLAMA_MODEL` — default `llama3.1`.
 - `OMNITERM_AI_MODEL` — Gemini model, default `gemini-2.5-flash`.
 - `OMNITERM_EXEC_TIMEOUT_MS` — per-command timeout, defaults to 60000.
-- `OMNITERM_BACKUP_DIR` — snapshot location, default `~/OmniTerm/backups`.
+- `OMNITERM_BACKUP_DIR` — snapshot location, default
+  `~/.local/share/omniterm/backups`.
 - `OMNITERM_DATA_DIR` — audit trail location, default
   `~/.local/share/omniterm`.
 

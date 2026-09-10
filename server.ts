@@ -802,7 +802,7 @@ app.post('/api/terminal/execute', async (req, res) => {
       syntaxType = 'bash';
     }
   } else if (bin === 'backup') {
-    const destDir = path.join(os.homedir(), 'OmniTerm', 'backups');
+    const destDir = BACKUP_DIR;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const archive = path.join(destDir, `snapshot-${stamp}.tar.gz`);
     try {
@@ -1042,9 +1042,8 @@ app.post('/api/alerts/mark-read', (req, res) => {
   res.json({ success: true });
 });
 
-// 6. Backups API Endpoint
-// 6. Backups (real tar.gz snapshots in ~/OmniTerm/backups)
-const BACKUP_DIR = process.env.OMNITERM_BACKUP_DIR || path.join(os.homedir(), 'OmniTerm', 'backups');
+// 6. Backups — real tar.gz snapshots under the OmniTerm data directory
+const BACKUP_DIR = process.env.OMNITERM_BACKUP_DIR || path.join(AUDIT_DIR, 'backups');
 
 function listBackups() {
   try {
