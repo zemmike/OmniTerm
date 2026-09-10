@@ -43,7 +43,8 @@ export interface AiPreset {
   note: string;
 }
 
-const DATA_DIR = process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const DATA_DIR =
+  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
 const CONFIG_FILE = process.env.OMNITERM_AI_CONFIG || path.join(DATA_DIR, 'ai-config.json');
 
 export const DEFAULT_SYSTEM_PROMPT =
@@ -51,18 +52,114 @@ export const DEFAULT_SYSTEM_PROMPT =
   'Answer with concrete, runnable commands, keep it short, and use fenced code blocks.';
 
 export const AI_PRESETS: AiPreset[] = [
-  { id: 'ollama', label: 'Ollama (local)', provider: 'ollama', baseUrl: 'http://127.0.0.1:11434', model: 'llama3.1', needsKey: false, note: 'Private: nothing leaves this machine.' },
-  { id: 'lmstudio', label: 'LM Studio (local)', provider: 'openai', baseUrl: 'http://127.0.0.1:1234/v1', model: 'local-model', needsKey: false, note: 'Local OpenAI-compatible server.' },
-  { id: 'llamacpp', label: 'llama.cpp server (local)', provider: 'openai', baseUrl: 'http://127.0.0.1:8080/v1', model: 'local-model', needsKey: false, note: 'Local OpenAI-compatible server.' },
-  { id: 'openai', label: 'OpenAI', provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', needsKey: true, note: 'Cloud: prompts and context leave this machine.' },
-  { id: 'anthropic', label: 'Anthropic (Claude)', provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5', needsKey: true, note: 'Cloud: prompts and context leave this machine.' },
-  { id: 'gemini', label: 'Google Gemini', provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-2.5-flash', needsKey: true, note: 'Cloud: prompts and context leave this machine.' },
-  { id: 'openrouter', label: 'OpenRouter', provider: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', needsKey: true, note: 'Cloud gateway to many models.' },
-  { id: 'groq', label: 'Groq', provider: 'openai', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', needsKey: true, note: 'Cloud: fast hosted Llama/Mixtral.' },
-  { id: 'deepseek', label: 'DeepSeek', provider: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', needsKey: true, note: 'Cloud: OpenAI-compatible.' },
-  { id: 'mistral', label: 'Mistral', provider: 'openai', baseUrl: 'https://api.mistral.ai/v1', model: 'mistral-small-latest', needsKey: true, note: 'Cloud: OpenAI-compatible.' },
-  { id: 'together', label: 'Together AI', provider: 'openai', baseUrl: 'https://api.together.xyz/v1', model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', needsKey: true, note: 'Cloud: OpenAI-compatible.' },
-  { id: 'custom', label: 'Custom endpoint', provider: 'openai', baseUrl: '', model: '', needsKey: true, note: 'Any OpenAI-compatible /chat/completions server.' },
+  {
+    id: 'ollama',
+    label: 'Ollama (local)',
+    provider: 'ollama',
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'llama3.1',
+    needsKey: false,
+    note: 'Private: nothing leaves this machine.',
+  },
+  {
+    id: 'lmstudio',
+    label: 'LM Studio (local)',
+    provider: 'openai',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-model',
+    needsKey: false,
+    note: 'Local OpenAI-compatible server.',
+  },
+  {
+    id: 'llamacpp',
+    label: 'llama.cpp server (local)',
+    provider: 'openai',
+    baseUrl: 'http://127.0.0.1:8080/v1',
+    model: 'local-model',
+    needsKey: false,
+    note: 'Local OpenAI-compatible server.',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    provider: 'openai',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    needsKey: true,
+    note: 'Cloud: prompts and context leave this machine.',
+  },
+  {
+    id: 'anthropic',
+    label: 'Anthropic (Claude)',
+    provider: 'anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    model: 'claude-sonnet-4-5',
+    needsKey: true,
+    note: 'Cloud: prompts and context leave this machine.',
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini',
+    provider: 'gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-2.5-flash',
+    needsKey: true,
+    note: 'Cloud: prompts and context leave this machine.',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    provider: 'openai',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'openai/gpt-4o-mini',
+    needsKey: true,
+    note: 'Cloud gateway to many models.',
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    provider: 'openai',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'llama-3.3-70b-versatile',
+    needsKey: true,
+    note: 'Cloud: fast hosted Llama/Mixtral.',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    provider: 'openai',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    needsKey: true,
+    note: 'Cloud: OpenAI-compatible.',
+  },
+  {
+    id: 'mistral',
+    label: 'Mistral',
+    provider: 'openai',
+    baseUrl: 'https://api.mistral.ai/v1',
+    model: 'mistral-small-latest',
+    needsKey: true,
+    note: 'Cloud: OpenAI-compatible.',
+  },
+  {
+    id: 'together',
+    label: 'Together AI',
+    provider: 'openai',
+    baseUrl: 'https://api.together.xyz/v1',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    needsKey: true,
+    note: 'Cloud: OpenAI-compatible.',
+  },
+  {
+    id: 'custom',
+    label: 'Custom endpoint',
+    provider: 'openai',
+    baseUrl: '',
+    model: '',
+    needsKey: true,
+    note: 'Any OpenAI-compatible /chat/completions server.',
+  },
 ];
 
 const DEFAULTS: AiConfig = {
@@ -84,7 +181,9 @@ function clamp(n: number, lo: number, hi: number, fallback: number): number {
 
 function normalise(raw: Partial<AiConfig>): AiConfig {
   const kind = String(raw.provider || 'none').toLowerCase();
-  const provider: AiKind = (['openai', 'anthropic', 'gemini', 'ollama'] as const).includes(kind as any)
+  const provider: AiKind = (['openai', 'anthropic', 'gemini', 'ollama'] as const).includes(
+    kind as any,
+  )
     ? (kind as AiKind)
     : 'none';
   return {
@@ -95,7 +194,10 @@ function normalise(raw: Partial<AiConfig>): AiConfig {
     apiKey: typeof raw.apiKey === 'string' ? raw.apiKey.trim() : '',
     temperature: clamp(raw.temperature as number, 0, 2, DEFAULTS.temperature),
     maxTokens: Math.round(clamp(raw.maxTokens as number, 1, 32000, DEFAULTS.maxTokens)),
-    systemPrompt: typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim() ? raw.systemPrompt.trim() : DEFAULT_SYSTEM_PROMPT,
+    systemPrompt:
+      typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim()
+        ? raw.systemPrompt.trim()
+        : DEFAULT_SYSTEM_PROMPT,
   };
 }
 
@@ -127,7 +229,9 @@ export function saveAiConfig(patchIn: Partial<AiConfig>): AiConfig {
 
 /** Preset matching the current base URL, so the UI can show what is selected. */
 export function presetFor(config: AiConfig): string {
-  const hit = AI_PRESETS.find((p) => p.provider === config.provider && p.baseUrl && p.baseUrl === config.baseUrl);
+  const hit = AI_PRESETS.find(
+    (p) => p.provider === config.provider && p.baseUrl && p.baseUrl === config.baseUrl,
+  );
   return hit ? hit.id : 'custom';
 }
 
@@ -147,17 +251,25 @@ function fromEnv(): Partial<AiConfig> | null {
   const provider = (process.env.OMNITERM_AI_PROVIDER || '').toLowerCase();
   const baseUrl = process.env.OMNITERM_AI_BASE_URL || '';
   const model = process.env.OMNITERM_AI_MODEL || '';
-  const key = process.env.OMNITERM_AI_API_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+  const key =
+    process.env.OMNITERM_AI_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    '';
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 
   if (provider || baseUrl || key) {
-    const kind: AiKind = (['openai', 'anthropic', 'gemini', 'ollama'] as AiKind[]).includes(provider as AiKind)
+    const kind: AiKind = (['openai', 'anthropic', 'gemini', 'ollama'] as AiKind[]).includes(
+      provider as AiKind,
+    )
       ? (provider as AiKind)
       : baseUrl
         ? 'openai'
         : 'none';
     if (kind === 'none' && !geminiKey) return null;
-    const preset = AI_PRESETS.find((p) => p.provider === kind && (!baseUrl || p.baseUrl === baseUrl)) || AI_PRESETS[0];
+    const preset =
+      AI_PRESETS.find((p) => p.provider === kind && (!baseUrl || p.baseUrl === baseUrl)) ||
+      AI_PRESETS[0];
     return {
       provider: kind,
       baseUrl: baseUrl || (kind === 'ollama' ? OLLAMA_DEFAULT_URL : preset.baseUrl),
@@ -169,7 +281,13 @@ function fromEnv(): Partial<AiConfig> | null {
   // Convenience: a bare Gemini key behaves like the Gemini preset.
   if (geminiKey) {
     const preset = AI_PRESETS.find((p) => p.id === 'gemini')!;
-    return { provider: 'gemini', baseUrl: preset.baseUrl, model: model || preset.model, apiKey: geminiKey, enabled: true };
+    return {
+      provider: 'gemini',
+      baseUrl: preset.baseUrl,
+      model: model || preset.model,
+      apiKey: geminiKey,
+      enabled: true,
+    };
   }
   return null;
 }
@@ -209,7 +327,9 @@ export async function aiEffective(): Promise<AiEffective> {
       return {
         config,
         source: 'env',
-        privacy: isLocal(config) ? 'local — nothing leaves this machine' : `cloud — prompts are sent to ${config.baseUrl}`,
+        privacy: isLocal(config)
+          ? 'local — nothing leaves this machine'
+          : `cloud — prompts are sent to ${config.baseUrl}`,
         warnings: [],
       };
     }
@@ -240,17 +360,27 @@ export async function aiEffective(): Promise<AiEffective> {
     config: { ...DEFAULTS },
     source: 'none',
     privacy: 'offline — no AI provider configured',
-    warnings: ['No provider configured. Open the AI Settings tab to add one, or start Ollama for a local model.'],
+    warnings: [
+      'No provider configured. Set OMNITERM_AI_PROVIDER, OMNITERM_AI_BASE_URL and OMNITERM_AI_MODEL, write ~/.local/share/omniterm/ai-config.json, or start Ollama for a local model — see the AI section of the README.',
+    ],
   };
 }
 
 function isLocal(config: AiConfig): boolean {
-  return config.provider === 'ollama' || /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)/.test(config.baseUrl);
+  return (
+    config.provider === 'ollama' ||
+    /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)/.test(config.baseUrl)
+  );
 }
 
 // ---------------------------------------------------------------------- calls
 
-async function postJson(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number) {
+async function postJson(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  timeoutMs: number,
+) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -268,12 +398,19 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
       /* keep the raw text for the error message */
     }
     if (!res.ok) {
-      const detail = (json && (json.error?.message || json.message || json.error)) || text.slice(0, 300) || '';
-      throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`.slice(0, 400));
+      const detail =
+        (json && (json.error?.message || json.message || json.error)) || text.slice(0, 300) || '';
+      throw new Error(
+        `${res.status} ${res.statusText}${detail ? ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : ''}`.slice(
+          0,
+          400,
+        ),
+      );
     }
     return json;
   } catch (err: any) {
-    if (err?.name === 'AbortError') throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
+    if (err?.name === 'AbortError')
+      throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
     throw err;
   } finally {
     clearTimeout(timer);
@@ -294,11 +431,14 @@ async function getJson(url: string, headers: Record<string, string>, timeoutMs: 
     }
     if (!res.ok) {
       const detail = (json && (json.error?.message || json.error)) || text.slice(0, 200) || '';
-      throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`.slice(0, 300));
+      throw new Error(
+        `${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}`.slice(0, 300),
+      );
     }
     return json;
   } catch (err: any) {
-    if (err?.name === 'AbortError') throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
+    if (err?.name === 'AbortError')
+      throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);
     throw err;
   } finally {
     clearTimeout(timer);
@@ -306,10 +446,18 @@ async function getJson(url: string, headers: Record<string, string>, timeoutMs: 
 }
 
 /** One chat turn against whatever provider is configured. Throws on failure. */
-export async function aiChat(system: string, user: string, override?: AiConfig): Promise<{ text: string; source: string; latencyMs: number }> {
-  const { config, source } = override ? { config: override, source: 'settings' as const } : await aiEffective();
+export async function aiChat(
+  system: string,
+  user: string,
+  override?: AiConfig,
+): Promise<{ text: string; source: string; latencyMs: number }> {
+  const { config, source } = override
+    ? { config: override, source: 'settings' as const }
+    : await aiEffective();
   if (config.provider === 'none') {
-    throw new Error('no AI provider configured — open the AI Settings tab');
+    throw new Error(
+      'no AI provider configured — set OMNITERM_AI_PROVIDER/OMNITERM_AI_BASE_URL/OMNITERM_AI_MODEL, write ~/.local/share/omniterm/ai-config.json, or run Ollama locally (see the README)',
+    );
   }
   if (!config.baseUrl) throw new Error('no base URL configured');
   // A key is only required for a remote endpoint: local OpenAI-compatible
@@ -336,7 +484,7 @@ export async function aiChat(system: string, user: string, override?: AiConfig):
         temperature: config.temperature,
         max_tokens: config.maxTokens,
       },
-      45000
+      45000,
     );
     text = json?.choices?.[0]?.message?.content ?? '';
   } else if (config.provider === 'anthropic') {
@@ -350,7 +498,7 @@ export async function aiChat(system: string, user: string, override?: AiConfig):
         system: sys,
         messages: [{ role: 'user', content: user }],
       },
-      45000
+      45000,
     );
     text = (json?.content || []).map((part: any) => part?.text || '').join('') || '';
   } else if (config.provider === 'gemini') {
@@ -362,10 +510,12 @@ export async function aiChat(system: string, user: string, override?: AiConfig):
         systemInstruction: { parts: [{ text: sys }] },
         generationConfig: { temperature: config.temperature, maxOutputTokens: config.maxTokens },
       },
-      45000
+      45000,
     );
-    text = (json?.candidates?.[0]?.content?.parts || []).map((p: any) => p?.text || '').join('') || '';
-    if (!text && json?.promptFeedback?.blockReason) throw new Error(`blocked by provider: ${json.promptFeedback.blockReason}`);
+    text =
+      (json?.candidates?.[0]?.content?.parts || []).map((p: any) => p?.text || '').join('') || '';
+    if (!text && json?.promptFeedback?.blockReason)
+      throw new Error(`blocked by provider: ${json.promptFeedback.blockReason}`);
   } else if (config.provider === 'ollama') {
     const json = await postJson(
       `${config.baseUrl}/api/chat`,
@@ -379,18 +529,23 @@ export async function aiChat(system: string, user: string, override?: AiConfig):
           { role: 'user', content: user },
         ],
       },
-      120000
+      120000,
     );
     text = json?.message?.content ?? '';
   }
 
   if (!String(text).trim()) throw new Error('provider returned an empty response');
-  return { text: String(text), source: `${config.provider}:${config.model}${source === 'settings' ? '' : ` (${source})`}`, latencyMs: Date.now() - started };
+  return {
+    text: String(text),
+    source: `${config.provider}:${config.model}${source === 'settings' ? '' : ` (${source})`}`,
+    latencyMs: Date.now() - started,
+  };
 }
 
 /** Ask the provider something trivial, to prove the settings work. */
 export async function aiTest(prompt?: string, override?: AiConfig) {
-  const question = prompt && prompt.trim() ? prompt.trim() : 'Reply with exactly: OmniTerm AI link OK';
+  const question =
+    prompt && prompt.trim() ? prompt.trim() : 'Reply with exactly: OmniTerm AI link OK';
   const started = Date.now();
   try {
     const reply = await aiChat(DEFAULT_SYSTEM_PROMPT, question, override);
@@ -422,24 +577,53 @@ export async function aiTest(prompt?: string, override?: AiConfig) {
 }
 
 /** Whatever models the provider will admit to, for the model picker. */
-export async function aiListModels(): Promise<{ ok: boolean; models: string[]; error: string | null }> {
+export async function aiListModels(): Promise<{
+  ok: boolean;
+  models: string[];
+  error: string | null;
+}> {
   const { config } = await aiEffective();
   try {
     if (config.provider === 'ollama') {
       const json = await getJson(`${config.baseUrl}/api/tags`, {}, 8000);
-      return { ok: true, models: (json?.models || []).map((m: any) => m.name).filter(Boolean).sort(), error: null };
+      return {
+        ok: true,
+        models: (json?.models || [])
+          .map((m: any) => m.name)
+          .filter(Boolean)
+          .sort(),
+        error: null,
+      };
     }
     if (config.provider === 'openai') {
-      const json = await getJson(`${config.baseUrl}/models`, config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}, 12000);
-      const models = (json?.data || json?.models || []).map((m: any) => m.id || m.name).filter(Boolean);
+      const json = await getJson(
+        `${config.baseUrl}/models`,
+        config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+        12000,
+      );
+      const models = (json?.data || json?.models || [])
+        .map((m: any) => m.id || m.name)
+        .filter(Boolean);
       return { ok: true, models: [...new Set(models)].sort() as string[], error: null };
     }
     if (config.provider === 'anthropic') {
-      const json = await getJson(`${config.baseUrl}/models`, { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }, 12000);
-      return { ok: true, models: (json?.data || []).map((m: any) => m.id).filter(Boolean), error: null };
+      const json = await getJson(
+        `${config.baseUrl}/models`,
+        { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' },
+        12000,
+      );
+      return {
+        ok: true,
+        models: (json?.data || []).map((m: any) => m.id).filter(Boolean),
+        error: null,
+      };
     }
     if (config.provider === 'gemini') {
-      const json = await getJson(`${config.baseUrl}/models?key=${encodeURIComponent(config.apiKey)}`, {}, 12000);
+      const json = await getJson(
+        `${config.baseUrl}/models?key=${encodeURIComponent(config.apiKey)}`,
+        {},
+        12000,
+      );
       const models = (json?.models || [])
         .filter((m: any) => (m.supportedGenerationMethods || []).includes('generateContent'))
         .map((m: any) => String(m.name || '').replace(/^models\//, ''))
@@ -478,7 +662,14 @@ export async function aiSettingsForUi() {
       privacy: effective.privacy,
       preset: presetFor(effective.config),
     },
-    envProvided: env ? { provider: env.provider, baseUrl: env.baseUrl, model: env.model, hasKey: Boolean(env.apiKey) } : null,
+    envProvided: env
+      ? {
+          provider: env.provider,
+          baseUrl: env.baseUrl,
+          model: env.model,
+          hasKey: Boolean(env.apiKey),
+        }
+      : null,
     configFile: CONFIG_FILE,
     presets: AI_PRESETS,
     warnings: effective.warnings,

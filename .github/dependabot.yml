@@ -2,11 +2,11 @@ version: 2
 
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
-      time: "06:00"
+      time: '06:00'
       timezone: Europe/Berlin
     open-pull-requests-limit: 5
     versioning-strategy: increase
@@ -22,7 +22,7 @@ updates:
         applies-to: version-updates
         patterns:
           - vite
-          - "@vitejs/plugin-react"
+          - '@vitejs/plugin-react'
       # Minor and patch bumps arrive as one PR; a runtime major such as Electron
       # changes Chromium and the node-pty ABI, so it stays separate and gets the
       # packaging and .deb install checks on its own.
@@ -33,7 +33,7 @@ updates:
           - patch
 
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday

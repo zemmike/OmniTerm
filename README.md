@@ -1,5 +1,11 @@
 # OmniTerm
 
+[![Build](https://github.com/zemmike/OmniTerm/actions/workflows/build.yml/badge.svg)](https://github.com/zemmike/OmniTerm/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/zemmike/OmniTerm)](https://github.com/zemmike/OmniTerm/releases/latest)
+[![Licence](https://img.shields.io/github/license/zemmike/OmniTerm)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](.nvmrc)
+[![Platform](https://img.shields.io/badge/platform-linux-lightgrey)](#install)
+
 A real terminal emulator for Linux desktop — multi-tab sessions backed by your
 **actual shell**, split panes, an AI assistant you point at any provider, live
 host health monitoring, a backup snapshot engine and a file browser, packaged as
@@ -68,7 +74,7 @@ a native Ubuntu/Debian app.
   type badge, plus a legend and filter chips.
 - **Live status bar** — the real `git` branch/dirty state of the shell's current
   directory and the actual Docker container count.
-- **Command audit trail** — one-shot *and* interactive shell commands are
+- **Command audit trail** — one-shot _and_ interactive shell commands are
   appended to `~/.local/share/omniterm/activity.jsonl` (mode 0600) with exit
   code, cwd and timestamp, exportable as JSONL evidence. Inside the terminal the
   shell reports this via OSC 133/OSC 7 integration, which OmniTerm installs in
@@ -84,7 +90,7 @@ a native Ubuntu/Debian app.
   `~/.local/share/omniterm/ai-config.json`; the **AI Settings** tab is gone from
   the UI.
 - **Real host health** — RAM breakdown (used / cached+buffers / swap /
-  available), the top processes by memory *and* an aggregation by program name
+  available), the top processes by memory _and_ an aggregation by program name
   (so 20 chrome processes are shown as one entry), swap usage, every real mount
   with its own usage, live disk I/O with the device name, per-core CPU usage,
   and CPU temperature when the hardware exposes it — plus load, network rates
@@ -97,28 +103,28 @@ a native Ubuntu/Debian app.
 Every binding below is remappable in **Settings** (`Ctrl+,`), and each action can
 be reset to its default.
 
-| Shortcut | Action |
-| --- | --- |
-| `Ctrl+T` / `Ctrl+Shift+T` | new tab |
-| `Ctrl+W` | close tab |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab` | next / previous tab |
-| `Alt+1…9` | switch to tab N |
-| `Ctrl+Shift+E` | split right |
-| `Ctrl+Shift+O` | split down |
-| `Ctrl+Shift+W` | close pane |
-| `Ctrl+Shift+↑` / `Ctrl+Shift+↓` / `Ctrl+Shift+←` / `Ctrl+Shift+→` | move pane focus |
-| `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy / paste (middle-click pastes too) |
-| `Ctrl+Shift+F` | search the scrollback |
-| `Ctrl+Shift+K` | clear the screen |
-| `Ctrl+Shift+PageUp` / `Ctrl+Shift+PageDown` | jump to previous / next prompt |
-| `Ctrl+,` | open Settings |
-| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size up / down / reset |
-| `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
-| `↑` / `↓` | prefix history search (see above) |
-| `Tab` | path and command completion (from your shell) |
-| `Ctrl+C`, `Ctrl+D`, `Ctrl+L`, `Ctrl+R`, … | handled by your shell, as usual |
+| Shortcut                                                          | Action                                        |
+| ----------------------------------------------------------------- | --------------------------------------------- |
+| `Ctrl+T` / `Ctrl+Shift+T`                                         | new tab                                       |
+| `Ctrl+W`                                                          | close tab                                     |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab`                                     | next / previous tab                           |
+| `Alt+1…9`                                                         | switch to tab N                               |
+| `Ctrl+Shift+E`                                                    | split right                                   |
+| `Ctrl+Shift+O`                                                    | split down                                    |
+| `Ctrl+Shift+W`                                                    | close pane                                    |
+| `Ctrl+Shift+↑` / `Ctrl+Shift+↓` / `Ctrl+Shift+←` / `Ctrl+Shift+→` | move pane focus                               |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V`                                   | copy / paste (middle-click pastes too)        |
+| `Ctrl+Shift+F`                                                    | search the scrollback                         |
+| `Ctrl+Shift+K`                                                    | clear the screen                              |
+| `Ctrl+Shift+PageUp` / `Ctrl+Shift+PageDown`                       | jump to previous / next prompt                |
+| `Ctrl+,`                                                          | open Settings                                 |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0`                                    | font size up / down / reset                   |
+| `Shift+PageUp` / `Shift+PageDown`                                 | scroll the scrollback                         |
+| `↑` / `↓`                                                         | prefix history search (see above)             |
+| `Tab`                                                             | path and command completion (from your shell) |
+| `Ctrl+C`, `Ctrl+D`, `Ctrl+L`, `Ctrl+R`, …                         | handled by your shell, as usual               |
 
-## What OmniTerm deliberately does *not* do
+## What OmniTerm deliberately does _not_ do
 
 Fake features were removed rather than decorated: the previous "plugins" module,
 "API & unit tests" runner and encryption toggles were UI mock-ups with no
@@ -132,7 +138,6 @@ metrics — every number in the UI now comes from this machine.
 
 ![What is using your RAM, per-mount usage and per-core CPU](docs/screenshots/system-health.png)
 ![Themes, custom colours and remappable shortcuts](docs/screenshots/settings.png)
-
 
 ## Install on Ubuntu / Debian / Mint / Pop!_OS
 
@@ -151,10 +156,19 @@ it** — Ubuntu Software opens and installs it, dependencies included.
 ### Option 3 — apt from the command line
 
 ```bash
-VERSION=1.5.0
-wget https://github.com/zemmike/OmniTerm/releases/latest/download/OmniTerm-$VERSION-amd64.deb
-sudo apt install ./OmniTerm-$VERSION-amd64.deb   # apt resolves the dependencies
-omniterm                                          # or launch it from the app grid
+# Ask GitHub which version is current, so this never goes stale:
+VERSION=$(curl -fsSL https://api.github.com/repos/zemmike/OmniTerm/releases/latest \
+  | grep -o '"tag_name": *"v[^"]*"' | head -1 | sed 's/.*v//; s/"//')
+curl -fsSLO "https://github.com/zemmike/OmniTerm/releases/latest/download/OmniTerm-$VERSION-amd64.deb"
+sudo apt install "./OmniTerm-$VERSION-amd64.deb"   # apt resolves the dependencies
+omniterm                                           # or launch it from the app grid
+```
+
+The installer script does the same thing, and also verifies the download against
+the published `SHA256SUMS`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash
 ```
 
 Uninstall with `sudo apt remove omniterm`.
@@ -174,10 +188,10 @@ git clone https://github.com/zemmike/OmniTerm.git
 cd OmniTerm
 npm install
 npm run build                 # frontend + backend bundle into dist/
-npx electron-builder --linux deb    # → release/OmniTerm-1.5.0-amd64.deb
+npx electron-builder --linux deb    # → release/OmniTerm-<version>-amd64.deb
 ```
 
-Requirements: Node.js 18+, and on Debian/Ubuntu the usual Electron runtime libs
+Requirements: Node.js 20+ (pinned in `.nvmrc`), and on Debian/Ubuntu the usual Electron runtime libs
 (`libgtk-3-0 libnss3 libxss1 libxtst6 libatspi2.0-0 libsecret-1-0 xdg-utils`) —
 the `.deb` declares them, apt pulls them in for you.
 
@@ -296,12 +310,12 @@ Then use it from the terminal with `ai <question>`, or from the API at
 
 ## Shell support
 
-| Shell | Config adopted | Prompt | Audit: command | Audit: exit code |
-| --- | --- | --- | --- | --- |
-| bash | `/etc/profile`, `~/.bash_profile`, `~/.profile`, `~/.bashrc` | yes | yes | yes |
-| zsh | `$ZDOTDIR` (or `~`) `.zshenv/.zprofile/.zshrc/.zlogin` | yes | yes | yes |
-| fish | `~/.config/fish/config.fish` | yes | yes | yes |
-| dash, ash, sh, other | the shell's own defaults | yes | yes | no (unknown, reported as empty) |
+| Shell                | Config adopted                                               | Prompt | Audit: command | Audit: exit code                |
+| -------------------- | ------------------------------------------------------------ | ------ | -------------- | ------------------------------- |
+| bash                 | `/etc/profile`, `~/.bash_profile`, `~/.profile`, `~/.bashrc` | yes    | yes            | yes                             |
+| zsh                  | `$ZDOTDIR` (or `~`) `.zshenv/.zprofile/.zshrc/.zlogin`       | yes    | yes            | yes                             |
+| fish                 | `~/.config/fish/config.fish`                                 | yes    | yes            | yes                             |
+| dash, ash, sh, other | the shell's own defaults                                     | yes    | yes            | no (unknown, reported as empty) |
 
 `npm run test:pty-socket` checks one shell end to end; `bash
 scripts/shell-matrix-test.sh` checks every installed shell (prompt, command
@@ -322,7 +336,6 @@ update pull requests.
 
 Every release publishes a `SHA256SUMS` file covering all its assets, and
 `install-linux.sh` verifies the `.deb` against it before installing anything.
-
 
 ## Licence
 

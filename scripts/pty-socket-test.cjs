@@ -32,7 +32,7 @@ const lastLines = (s, n = 2) =>
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
-      .slice(-n)
+      .slice(-n),
   ).slice(0, 90);
 
 (async () => {
@@ -47,7 +47,9 @@ const lastLines = (s, n = 2) =>
     ws.on('error', rej);
   });
 
-  ws.send(JSON.stringify({ type: 'start', sessionId: `t-${SHELL_NAME}`, cols: 100, rows: 30, cwd: CWD }));
+  ws.send(
+    JSON.stringify({ type: 'start', sessionId: `t-${SHELL_NAME}`, cols: 100, rows: 30, cwd: CWD }),
+  );
   await sleep(3000);
 
   const checks = [];
@@ -78,22 +80,42 @@ const lastLines = (s, n = 2) =>
   await run('false');
   await sleep(700);
 
-  const res = await fetch(`http://127.0.0.1:${PORT}/api/activity-logs`, { headers: { 'x-omniterm-token': TOKEN } });
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/activity-logs`, {
+    headers: { 'x-omniterm-token': TOKEN },
+  });
   const body = await res.json();
   const entries = body.entries || [];
   const recorded = entries.find((e) => (e.command || '').includes(MATH.replace('\\\\*', '*')));
   const failed = entries.find((e) => (e.command || '').trim() === 'false');
 
-  note('audit: command recorded', !!recorded, recorded ? `exit=${recorded.exitCode} cwd=${recorded.cwd}` : `missing (saw: ${entries.slice(0, 3).map((e) => e.command).join(' | ')})`);
+  note(
+    'audit: command recorded',
+    !!recorded,
+    recorded
+      ? `exit=${recorded.exitCode} cwd=${recorded.cwd}`
+      : `missing (saw: ${entries
+          .slice(0, 3)
+          .map((e) => e.command)
+          .join(' | ')})`,
+  );
   if (EXPECT_INTEGRATION) {
-    note('audit: exit code captured', !!failed && failed.exitCode === 1, failed ? `exit=${failed.exitCode}` : 'missing');
+    note(
+      'audit: exit code captured',
+      !!failed && failed.exitCode === 1,
+      failed ? `exit=${failed.exitCode}` : 'missing',
+    );
   } else {
-    note('audit: command without exit code (no hooks)', !!failed && failed.exitCode === null, failed ? `exit=${failed.exitCode}` : 'missing');
+    note(
+      'audit: command without exit code (no hooks)',
+      !!failed && failed.exitCode === null,
+      failed ? `exit=${failed.exitCode}` : 'missing',
+    );
   }
 
   const failedChecks = checks.filter((c) => !c.ok);
   console.log(`\n=== ${SHELL_NAME} === integration=${EXPECT_INTEGRATION ? 'osc133' : 'none'}`);
-  for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(42)} ${c.detail}`);
+  for (const c of checks)
+    console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(42)} ${c.detail}`);
   console.log(`${checks.length - failedChecks.length}/${checks.length} passed`);
   ws.close();
   process.exit(failedChecks.length ? 1 : 0);

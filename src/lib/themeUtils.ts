@@ -6,7 +6,7 @@
 import { THEMES } from '../themes';
 
 export const TERMINAL_THEMES: Record<string, { name: string }> = Object.fromEntries(
-  THEMES.map((t) => [t.id, { name: t.label }])
+  THEMES.map((t) => [t.id, { name: t.label }]),
 );
 
 export type ThemeId = string;

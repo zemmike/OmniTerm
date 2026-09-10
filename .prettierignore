@@ -1,0 +1,7 @@
+dist/
+release/
+node_modules/
+docs/
+package-lock.json
+CHANGELOG.md
+build/

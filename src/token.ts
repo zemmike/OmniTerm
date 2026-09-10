@@ -7,4 +7,6 @@ export const OMNITERM_TOKEN =
   new URLSearchParams(window.location.search).get('omniterm_token') ||
   '';
 
-export const IS_DESKTOP = Boolean((window as unknown as { omniterm?: { isDesktop?: boolean } }).omniterm?.isDesktop);
+export const IS_DESKTOP = Boolean(
+  (window as unknown as { omniterm?: { isDesktop?: boolean } }).omniterm?.isDesktop,
+);

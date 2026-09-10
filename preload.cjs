@@ -6,7 +6,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const argToken = (process.argv || []).find((arg) => arg.startsWith('--omniterm-token='));
-const TOKEN = argToken ? argToken.slice('--omniterm-token='.length) : (process.env.OMNITERM_TOKEN || '').trim();
+const TOKEN = argToken
+  ? argToken.slice('--omniterm-token='.length)
+  : (process.env.OMNITERM_TOKEN || '').trim();
 
 const argVersion = (process.argv || []).find((arg) => arg.startsWith('--omniterm-version='));
 const VERSION = argVersion

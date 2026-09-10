@@ -29,7 +29,12 @@ export const ACTIONS: ActionDef[] = [
   { id: 'selectAll', label: 'Select all', group: 'Clipboard', def: 'Ctrl+Shift+A' },
   { id: 'search', label: 'Search the scrollback', group: 'Terminal', def: 'Ctrl+Shift+F' },
   { id: 'clear', label: 'Clear the screen', group: 'Terminal', def: 'Ctrl+Shift+K' },
-  { id: 'prevPrompt', label: 'Jump to previous prompt', group: 'Terminal', def: 'Ctrl+Shift+PageUp' },
+  {
+    id: 'prevPrompt',
+    label: 'Jump to previous prompt',
+    group: 'Terminal',
+    def: 'Ctrl+Shift+PageUp',
+  },
   { id: 'nextPrompt', label: 'Jump to next prompt', group: 'Terminal', def: 'Ctrl+Shift+PageDown' },
   { id: 'fontUp', label: 'Increase font size', group: 'Terminal', def: 'Ctrl+=' },
   { id: 'fontDown', label: 'Decrease font size', group: 'Terminal', def: 'Ctrl+-' },
@@ -37,11 +42,17 @@ export const ACTIONS: ActionDef[] = [
   { id: 'settings', label: 'Open settings', group: 'App', def: 'Ctrl+,' },
 ];
 
-const MOD_ORDER = ['Ctrl', 'Alt', 'Shift', 'Meta'] as const;
-
 function normaliseKey(key: string): string {
   if (key.length === 1) return key.toUpperCase();
-  const map: Record<string, string> = { ' ': 'Space', Esc: 'Escape', Del: 'Delete', Left: 'ArrowLeft', Right: 'ArrowRight', Up: 'ArrowUp', Down: 'ArrowDown' };
+  const map: Record<string, string> = {
+    ' ': 'Space',
+    Esc: 'Escape',
+    Del: 'Delete',
+    Left: 'ArrowLeft',
+    Right: 'ArrowRight',
+    Up: 'ArrowUp',
+    Down: 'ArrowDown',
+  };
   return map[key] || key;
 }
 
@@ -86,5 +97,7 @@ export function actionForEvent(e: KeyboardEvent): string | null {
 export function conflictsFor(actionId: string): string[] {
   const binding = bindingFor(actionId);
   if (!binding) return [];
-  return ACTIONS.filter((a) => a.id !== actionId && bindingFor(a.id) === binding).map((a) => a.label);
+  return ACTIONS.filter((a) => a.id !== actionId && bindingFor(a.id) === binding).map(
+    (a) => a.label,
+  );
 }

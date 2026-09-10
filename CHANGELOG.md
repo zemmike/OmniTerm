@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-10
+
+### Added
+- ESLint 9 (flat config, with `typescript-eslint` and `react-hooks`) and Prettier,
+  plus an `.editorconfig`. The rules that matter for this codebase are on:
+  `rules-of-hooks`, `exhaustive-deps`, `no-floating-promises`,
+  `no-misused-promises`, unused variables and imports, `eqeqeq` and
+  `prefer-const`. Until now `npm run lint` was just `tsc --noEmit`, so there was
+  no hook-dependency checking and no floating-promise detection at all.
+- CI runs three separate gates: type check, lint, and formatting.
+- `.nvmrc` pinned to Node 20 and `engines.node` raised to `>= 20`. Electron 38
+  needs Node 20 or newer to build, so a contributor on Node 18 hit a wall.
+- README badges (build, release, licence, Node, platform), and the apt
+  instructions now ask GitHub for the current version instead of hardcoding it.
+
+### Fixed
+- The last four stale references to an "AI Settings tab", which has not existed
+  since 1.5.0: two warnings in `ai-provider.ts` and two comments in
+  `.env.example`. They now point at the `OMNITERM_AI_*` variables and
+  `~/.local/share/omniterm/ai-config.json`.
+- Real problems the new lint rules found: a non-hook function named
+  `useSettingsFont` (the `use` prefix made `rules-of-hooks` fire on every click),
+  floating promises in the polling and paste paths, and a set of unused imports,
+  variables and state.
+
+### Changed
+- The codebase is formatted with Prettier (single quotes, 100 columns, semicolons,
+  trailing commas). No behaviour change: the rendered output was verified
+  identical, including JSX whitespace.
+
 ## [1.6.2] - 2026-09-10
 
 ### Added
@@ -158,7 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...HEAD
+[1.6.3]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/zemmike/OmniTerm/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/zemmike/OmniTerm/compare/v1.5.0...v1.6.0

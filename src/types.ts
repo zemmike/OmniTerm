@@ -60,7 +60,6 @@ export interface UserAccount {
   avatarColor: string;
 }
 
-
 export interface SystemAlert {
   id: string;
   timestamp: string;
@@ -194,7 +193,6 @@ export interface ServerHealth {
   };
 }
 
-
 export interface BackupTask {
   id: string;
   name: string;
@@ -206,12 +204,9 @@ export interface BackupTask {
   sizeMb: number;
 }
 
-
 export interface AiToolConfig {
   mode: 'claude-coder' | 'gemini-cli' | 'cursor-agent';
   systemPrompt: string;
   autoSuggestOnError: boolean;
   temperature: number;
 }
-
-

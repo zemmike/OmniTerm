@@ -72,7 +72,8 @@ function waitForServer(url, timeout = 20000) {
       req.setTimeout(2000, () => req.destroy(new Error('timeout')));
     };
     const retry = () => {
-      if (Date.now() - start > timeout) reject(new Error(`Backend did not answer on ${url} within ${timeout}ms`));
+      if (Date.now() - start > timeout)
+        reject(new Error(`Backend did not answer on ${url} within ${timeout}ms`));
       else setTimeout(check, 250);
     };
     check();
@@ -83,7 +84,9 @@ function waitForServer(url, timeout = 20000) {
 function startBackendServer() {
   const serverScript = path.join(__dirname, 'dist', 'server.cjs');
   if (!fs.existsSync(serverScript)) {
-    throw new Error(`Backend bundle missing: ${serverScript}\nRun "npm run build" before starting the desktop app.`);
+    throw new Error(
+      `Backend bundle missing: ${serverScript}\nRun "npm run build" before starting the desktop app.`,
+    );
   }
 
   serverProcess = spawn(process.execPath, [serverScript], {
@@ -217,27 +220,29 @@ if (!app.requestSingleInstanceLock()) {
   process.on('exit', stopBackendServer);
 
   /**
- * Opening a link from terminal output. Only http(s) and file URLs are ever
- * passed to the OS: terminal output is attacker-controlled (an SSH banner, a
- * log line), and handing an arbitrary scheme to the desktop handler is how
- * terminal emulators have been turned into RCE vectors.
- */
-ipcMain.handle('omniterm:open-external', (_event, rawUrl) => {
-  const value = String(rawUrl || '');
-  let parsed;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return false;
-  shell.openExternal(parsed.toString());
-  return true;
-});
+   * Opening a link from terminal output. Only http(s) and file URLs are ever
+   * passed to the OS: terminal output is attacker-controlled (an SSH banner, a
+   * log line), and handing an arbitrary scheme to the desktop handler is how
+   * terminal emulators have been turned into RCE vectors.
+   */
+  ipcMain.handle('omniterm:open-external', (_event, rawUrl) => {
+    const value = String(rawUrl || '');
+    let parsed;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+    if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return false;
+    shell.openExternal(parsed.toString());
+    return true;
+  });
 
-app.whenReady().then(async () => {
+  app.whenReady().then(async () => {
     openLogFile();
-    log(`[main] OmniTerm ${VERSION} starting on ${process.platform} (electron ${process.versions.electron})`);
+    log(
+      `[main] OmniTerm ${VERSION} starting on ${process.platform} (electron ${process.versions.electron})`,
+    );
     try {
       serverPort = await findFreePort();
       log(`[main] loopback port ${serverPort}`);

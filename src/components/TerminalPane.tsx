@@ -40,16 +40,17 @@ interface Props {
   cwd?: string;
   active: boolean;
   settings: TerminalSettings;
-  onReady?: (info: { shell: string; pid: number | null; cwd: string; integration?: string }) => void;
+  onReady?: (info: {
+    shell: string;
+    pid: number | null;
+    cwd: string;
+    integration?: string;
+  }) => void;
   onExit?: (code: number) => void;
   onCwdChange?: (cwd: string) => void;
   onFocusPane?: () => void;
   onAction?: (actionId: string, paneId: string) => void;
   registerApi?: (id: string, api: PaneApi | null) => void;
-}
-
-interface HistoryReply {
-  items: string[];
 }
 
 export default function TerminalPane({
@@ -69,7 +70,9 @@ export default function TerminalPane({
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState<'connecting' | 'live' | 'reconnecting' | 'exited' | 'error'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'live' | 'reconnecting' | 'exited' | 'error'>(
+    'connecting',
+  );
   const intentionalExit = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -124,7 +127,7 @@ export default function TerminalPane({
       new WebLinksAddon((event, uri) => {
         event.preventDefault();
         openExternal(uri);
-      })
+      }),
     );
 
     host.innerHTML = '';
@@ -160,7 +163,12 @@ export default function TerminalPane({
         term.write(msg.data);
       } else if (msg.type === 'ready') {
         setStatus('live');
-        onReady?.({ shell: msg.shell, pid: msg.pid ?? null, cwd: msg.cwd, integration: msg.integration });
+        onReady?.({
+          shell: msg.shell,
+          pid: msg.pid ?? null,
+          cwd: msg.cwd,
+          integration: msg.integration,
+        });
       } else if (msg.type === 'exit') {
         intentionalExit.current = true;
         setStatus('exited');
@@ -195,7 +203,11 @@ export default function TerminalPane({
     };
 
     // ------------------------------------------------------------ decorations
-    function decorateCommand(msg: { exitCode: number | null; durationMs?: number | null; command?: string }) {
+    function decorateCommand(msg: {
+      exitCode: number | null;
+      durationMs?: number | null;
+      command?: string;
+    }) {
       try {
         decorateCommandInner(msg);
       } catch {
@@ -203,14 +215,25 @@ export default function TerminalPane({
       }
     }
 
-    function decorateCommandInner(msg: { exitCode: number | null; durationMs?: number | null; command?: string }) {
-      if (typeof term.registerMarker !== 'function' || typeof term.registerDecoration !== 'function') return;
+    function decorateCommandInner(msg: {
+      exitCode: number | null;
+      durationMs?: number | null;
+      command?: string;
+    }) {
+      if (
+        typeof term.registerMarker !== 'function' ||
+        typeof term.registerDecoration !== 'function'
+      )
+        return;
       const marker = term.registerMarker(0);
       if (!marker) return;
       const ok = msg.exitCode === 0;
       const bits: string[] = [];
       if (msg.exitCode !== null && msg.exitCode !== undefined) bits.push(`exit ${msg.exitCode}`);
-      if (msg.durationMs != null) bits.push(`${msg.durationMs >= 1000 ? `${(msg.durationMs / 1000).toFixed(1)}s` : `${msg.durationMs}ms`}`);
+      if (msg.durationMs != null)
+        bits.push(
+          `${msg.durationMs >= 1000 ? `${(msg.durationMs / 1000).toFixed(1)}s` : `${msg.durationMs}ms`}`,
+        );
       const label = bits.join(' · ');
       markersRef.current.push(marker);
       if (markersRef.current.length > 200) {
@@ -299,12 +322,21 @@ export default function TerminalPane({
       const s2 = settingsRef.current;
 
       // App-level shortcuts are handled by the parent (TerminalView).
-      if (event.ctrlKey && event.shiftKey || (event.ctrlKey && !event.shiftKey && ['PageUp', 'PageDown', 'Tab'].includes(event.key))) {
+      if (
+        (event.ctrlKey && event.shiftKey) ||
+        (event.ctrlKey && !event.shiftKey && ['PageUp', 'PageDown', 'Tab'].includes(event.key))
+      ) {
         // let the parent's window listener deal with it
         return true;
       }
 
-      if (s2.prefixHistory && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+      if (
+        s2.prefixHistory &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey
+      ) {
         const prefix = lineRef.current.trim();
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           const direction: -1 | 1 = event.key === 'ArrowUp' ? -1 : 1;
@@ -339,7 +371,7 @@ export default function TerminalPane({
       // Middle click pastes, like an X11 terminal.
       if (event.button === 1 && settingsRef.current.middleClickPaste) {
         event.preventDefault();
-        pasteFromClipboard(term);
+        void pasteFromClipboard(term);
       }
     };
     const onContextMenu = (event: MouseEvent) => {
@@ -420,7 +452,7 @@ export default function TerminalPane({
             api.copy();
             return true;
           case 'paste':
-            api.paste();
+            void api.paste();
             return true;
           case 'selectAll':
             term.selectAll();
@@ -451,7 +483,9 @@ export default function TerminalPane({
       const top = term.buffer.active.viewportY;
       const lines = markersRef.current.map((m) => m.line).sort((a, b) => a - b);
       const target =
-        direction === -1 ? [...lines].reverse().find((l) => l < top - 1) : lines.find((l) => l > top + 1);
+        direction === -1
+          ? [...lines].reverse().find((l) => l < top - 1)
+          : lines.find((l) => l > top + 1);
       if (target !== undefined) term.scrollToLine(Math.max(0, target - 1));
     }
 
@@ -490,6 +524,10 @@ export default function TerminalPane({
       term.dispose();
       termRef.current = null;
     };
+    // Reconnect only when the session or its cwd changes: live settings are read
+    // through settingsRef, and re-running this effect would tear down and
+    // respawn the running PTY, so the callbacks (onReady, onExit, onCwdChange,
+    // onFocusPane, registerApi) it closes over are deliberately not dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, cwd]);
 
@@ -509,7 +547,7 @@ export default function TerminalPane({
     } catch {
       /* ignore */
     }
-  }, [settings.theme, settings.custom, settings.fontFamily, settings.fontSize, settings.lineHeight, settings.cursorStyle, settings.cursorBlink, settings.scrollback]);
+  }, [settings]);
 
   useEffect(() => {
     if (active) termRef.current?.focus();
@@ -557,7 +595,10 @@ export default function TerminalPane({
   const clearScreen = useCallback(() => apiRef.current?.clear(), []);
 
   return (
-    <div className="relative w-full h-full" style={{ background: terminalTheme(settings).background }}>
+    <div
+      className="relative w-full h-full"
+      style={{ background: terminalTheme(settings).background }}
+    >
       <div
         ref={hostRef}
         role="log"
@@ -598,7 +639,11 @@ export default function TerminalPane({
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                e.shiftKey ? searchRef.current?.findPrevious(searchQuery) : searchRef.current?.findNext(searchQuery);
+                if (e.shiftKey) {
+                  searchRef.current?.findPrevious(searchQuery);
+                } else {
+                  searchRef.current?.findNext(searchQuery);
+                }
               }
             }}
             placeholder="search scrollback"
@@ -644,7 +689,12 @@ export default function TerminalPane({
             { label: 'Copy', hint: 'Ctrl+Shift+C', run: copy, disabled: false },
             { label: 'Paste', hint: 'Ctrl+Shift+V', run: paste, disabled: false },
             { label: 'Select all', hint: 'Ctrl+Shift+A', run: selectAll, disabled: false },
-            { label: 'Search…', hint: 'Ctrl+Shift+F', run: () => setSearchOpen(true), disabled: false },
+            {
+              label: 'Search…',
+              hint: 'Ctrl+Shift+F',
+              run: () => setSearchOpen(true),
+              disabled: false,
+            },
             { label: 'Clear screen', hint: 'Ctrl+Shift+K', run: clearScreen, disabled: false },
           ].map((item) => (
             <button
@@ -658,7 +708,9 @@ export default function TerminalPane({
               className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
             >
               <span>{item.label}</span>
-              <span className="text-[10px] text-[#55555E]" aria-hidden="true">{item.hint}</span>
+              <span className="text-[10px] text-[#55555E]" aria-hidden="true">
+                {item.hint}
+              </span>
             </button>
           ))}
           <div className="h-px bg-[#2A2A2E] my-1" role="separator" />
@@ -671,7 +723,9 @@ export default function TerminalPane({
             className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
           >
             <span>Split right</span>
-            <span className="text-[10px] text-[#55555E]" aria-hidden="true">Ctrl+Shift+E</span>
+            <span className="text-[10px] text-[#55555E]" aria-hidden="true">
+              Ctrl+Shift+E
+            </span>
           </button>
           <button
             role="menuitem"
@@ -682,7 +736,9 @@ export default function TerminalPane({
             className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
           >
             <span>Split down</span>
-            <span className="text-[10px] text-[#55555E]" aria-hidden="true">Ctrl+Shift+O</span>
+            <span className="text-[10px] text-[#55555E]" aria-hidden="true">
+              Ctrl+Shift+O
+            </span>
           </button>
         </div>
       )}

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  FolderTree,
   Folder,
   FileCode,
   FileText,
@@ -24,11 +23,6 @@ import {
   RefreshCw,
   HardDrive,
 } from 'lucide-react';
-import { UserRole } from '../types';
-
-interface FileManagerViewProps {
-}
-
 interface Entry {
   id: string;
   path: string;
@@ -156,25 +150,157 @@ const BADGE_CLASS: Record<string, string> = {
   '#F87171': 'bg-[#F87171]/15 text-[#F87171] border-[#F87171]/30',
 };
 
-const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'svg', 'tiff', 'tif', 'avif', 'heic']);
-const VIDEO_EXT = new Set(['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v', 'flv', 'wmv', 'mpg', 'mpeg', 'ogv', '3gp']);
-const AUDIO_EXT = new Set(['mp3', 'wav', 'flac', 'ogg', 'oga', 'm4a', 'aac', 'opus', 'wma', 'aiff', 'mid', 'midi']);
-const ARCHIVE_EXT = new Set(['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'deb', 'rpm', 'rar', 'zst', 'jar', 'lz', 'lzma']);
+const IMAGE_EXT = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'ico',
+  'bmp',
+  'svg',
+  'tiff',
+  'tif',
+  'avif',
+  'heic',
+]);
+const VIDEO_EXT = new Set([
+  'mp4',
+  'mkv',
+  'avi',
+  'mov',
+  'webm',
+  'm4v',
+  'flv',
+  'wmv',
+  'mpg',
+  'mpeg',
+  'ogv',
+  '3gp',
+]);
+const AUDIO_EXT = new Set([
+  'mp3',
+  'wav',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'aac',
+  'opus',
+  'wma',
+  'aiff',
+  'mid',
+  'midi',
+]);
+const ARCHIVE_EXT = new Set([
+  'zip',
+  'tar',
+  'gz',
+  'tgz',
+  'bz2',
+  'xz',
+  '7z',
+  'deb',
+  'rpm',
+  'rar',
+  'zst',
+  'jar',
+  'lz',
+  'lzma',
+]);
 const DOC_EXT = new Set(['pdf', 'doc', 'docx', 'odt', 'rtf']);
 const TXT_EXT = new Set(['txt', 'log', 'text', 'csv', 'tsv']);
-const CONFIG_EXT = new Set(['conf', 'cfg', 'ini', 'rc', 'env', 'service', 'properties', 'editorconfig', 'npmrc']);
+const CONFIG_EXT = new Set([
+  'conf',
+  'cfg',
+  'ini',
+  'rc',
+  'env',
+  'service',
+  'properties',
+  'editorconfig',
+  'npmrc',
+]);
 const CONFIG_LANG = new Set(['nginx', 'ini']);
 const RC_NAMES = new Set([
-  '.env', '.bashrc', '.bash_profile', '.bash_aliases', '.zshrc', '.zprofile', '.profile',
-  '.vimrc', '.gitconfig', '.gitignore', '.dockerignore', '.editorconfig', '.npmrc',
-  '.eslintrc', '.prettierrc', '.babelrc', '.tmux.conf',
+  '.env',
+  '.bashrc',
+  '.bash_profile',
+  '.bash_aliases',
+  '.zshrc',
+  '.zprofile',
+  '.profile',
+  '.vimrc',
+  '.gitconfig',
+  '.gitignore',
+  '.dockerignore',
+  '.editorconfig',
+  '.npmrc',
+  '.eslintrc',
+  '.prettierrc',
+  '.babelrc',
+  '.tmux.conf',
 ]);
 const CODE_EXT = new Set([
-  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'pyw', 'rs', 'go', 'json', 'jsonc', 'yaml', 'yml',
-  'toml', 'md', 'mdx', 'html', 'htm', 'css', 'scss', 'sass', 'less', 'vue', 'svelte', 'sql', 'c',
-  'h', 'cc', 'cpp', 'cxx', 'hpp', 'hh', 'java', 'rb', 'php', 'swift', 'kt', 'kts', 'sh', 'bash',
-  'zsh', 'fish', 'lua', 'pl', 'pm', 'r', 'dart', 'scala', 'hs', 'ex', 'exs', 'xml', 'gradle',
-  'groovy', 'clj', 'erl', 'vb', 'asm',
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'py',
+  'pyw',
+  'rs',
+  'go',
+  'json',
+  'jsonc',
+  'yaml',
+  'yml',
+  'toml',
+  'md',
+  'mdx',
+  'html',
+  'htm',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'vue',
+  'svelte',
+  'sql',
+  'c',
+  'h',
+  'cc',
+  'cpp',
+  'cxx',
+  'hpp',
+  'hh',
+  'java',
+  'rb',
+  'php',
+  'swift',
+  'kt',
+  'kts',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'lua',
+  'pl',
+  'pm',
+  'r',
+  'dart',
+  'scala',
+  'hs',
+  'ex',
+  'exs',
+  'xml',
+  'gradle',
+  'groovy',
+  'clj',
+  'erl',
+  'vb',
+  'asm',
 ]);
 const EXTENSIONLESS_CODE = new Set(['makefile', 'dockerfile', 'gemfile', 'rakefile', 'procfile']);
 
@@ -182,16 +308,38 @@ const EXTENSIONLESS_CODE = new Set(['makefile', 'dockerfile', 'gemfile', 'rakefi
 const CODE_COLOUR: Record<string, string> = {
   typescript: '#E3B341',
   javascript: '#E3B341',
-  ts: '#E3B341', tsx: '#E3B341', js: '#E3B341', jsx: '#E3B341', mjs: '#E3B341', cjs: '#E3B341',
-  python: '#4EC9B0', py: '#4EC9B0', pyw: '#4EC9B0',
-  rust: '#FF7A45', rs: '#FF7A45',
+  ts: '#E3B341',
+  tsx: '#E3B341',
+  js: '#E3B341',
+  jsx: '#E3B341',
+  mjs: '#E3B341',
+  cjs: '#E3B341',
+  python: '#4EC9B0',
+  py: '#4EC9B0',
+  pyw: '#4EC9B0',
+  rust: '#FF7A45',
+  rs: '#FF7A45',
   go: '#67E8F9',
-  json: '#C084FC', jsonc: '#C084FC', yaml: '#C084FC', yml: '#C084FC', toml: '#C084FC',
-  markdown: '#7DD3FC', md: '#7DD3FC', mdx: '#7DD3FC',
-  html: '#F87171', htm: '#F87171', css: '#F87171', scss: '#F87171', sass: '#F87171',
-  less: '#F87171', vue: '#F87171', svelte: '#F87171',
+  json: '#C084FC',
+  jsonc: '#C084FC',
+  yaml: '#C084FC',
+  yml: '#C084FC',
+  toml: '#C084FC',
+  markdown: '#7DD3FC',
+  md: '#7DD3FC',
+  mdx: '#7DD3FC',
+  html: '#F87171',
+  htm: '#F87171',
+  css: '#F87171',
+  scss: '#F87171',
+  sass: '#F87171',
+  less: '#F87171',
+  vue: '#F87171',
+  svelte: '#F87171',
   sql: '#86EFAC',
-  c: '#86EFAC', cpp: '#86EFAC', bash: '#86EFAC',
+  c: '#86EFAC',
+  cpp: '#86EFAC',
+  bash: '#86EFAC',
 };
 const CODE_FALLBACK_COLOUR = '#86EFAC';
 
@@ -270,18 +418,30 @@ function iconFor(style: FileStyle) {
   const cls = `w-4 h-4 shrink-0 ${style.iconColor}`;
   // Purely decorative: the file name is right next to the icon in text.
   switch (style.kind) {
-    case 'directory': return <Folder aria-hidden="true" className={cls} />;
-    case 'symlink': return <Link2 aria-hidden="true" className={cls} />;
-    case 'executable': return <FileTerminal aria-hidden="true" className={cls} />;
-    case 'code': return <FileCode aria-hidden="true" className={cls} />;
-    case 'image': return <ImageIcon aria-hidden="true" className={cls} />;
-    case 'video': return <FileVideoCamera aria-hidden="true" className={cls} />;
-    case 'audio': return <FileAudio aria-hidden="true" className={cls} />;
-    case 'archive': return <Archive aria-hidden="true" className={cls} />;
-    case 'config': return <FileCog aria-hidden="true" className={cls} />;
-    case 'notebook': return <FileSpreadsheet aria-hidden="true" className={cls} />;
-    case 'document': return <FileText aria-hidden="true" className={cls} />;
-    default: return <FileBox aria-hidden="true" className={cls} />;
+    case 'directory':
+      return <Folder aria-hidden="true" className={cls} />;
+    case 'symlink':
+      return <Link2 aria-hidden="true" className={cls} />;
+    case 'executable':
+      return <FileTerminal aria-hidden="true" className={cls} />;
+    case 'code':
+      return <FileCode aria-hidden="true" className={cls} />;
+    case 'image':
+      return <ImageIcon aria-hidden="true" className={cls} />;
+    case 'video':
+      return <FileVideoCamera aria-hidden="true" className={cls} />;
+    case 'audio':
+      return <FileAudio aria-hidden="true" className={cls} />;
+    case 'archive':
+      return <Archive aria-hidden="true" className={cls} />;
+    case 'config':
+      return <FileCog aria-hidden="true" className={cls} />;
+    case 'notebook':
+      return <FileSpreadsheet aria-hidden="true" className={cls} />;
+    case 'document':
+      return <FileText aria-hidden="true" className={cls} />;
+    default:
+      return <FileBox aria-hidden="true" className={cls} />;
   }
 }
 
@@ -302,8 +462,7 @@ const FILE_FILTERS: { id: FilterId; label: string; match: (s: FileStyle) => bool
   },
 ];
 
-
-export const FileManagerView: React.FC<FileManagerViewProps> = () => {
+export const FileManagerView: React.FC = () => {
   const [cwd, setCwd] = useState<string>('');
   const [parent, setParent] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -430,7 +589,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        if (!readOnly && dirty) saveFile();
+        if (!readOnly && dirty) void saveFile();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -443,8 +602,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
   // One classification pass drives the rows, the badges and the chips.
   const filtered = entries
     .map((entry) => ({ entry, style: fileStyle(entry) }))
-    .filter(({ entry, style }) => entry.name.toLowerCase().includes(query) && activeFilter.match(style));
-
+    .filter(
+      ({ entry, style }) => entry.name.toLowerCase().includes(query) && activeFilter.match(style),
+    );
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-125px)] bg-[#0F0F10] text-[#E0E0E5] font-mono text-xs">
@@ -500,8 +660,17 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
             >
               <Home aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
-            <nav aria-label="Breadcrumb" className="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap text-[#88888E]">
-              <button onClick={() => listDir('/')} className="hover:text-[#00FF41]" aria-label="Go to root directory">/</button>
+            <nav
+              aria-label="Breadcrumb"
+              className="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap text-[#88888E]"
+            >
+              <button
+                onClick={() => listDir('/')}
+                className="hover:text-[#00FF41]"
+                aria-label="Go to root directory"
+              >
+                /
+              </button>
               {crumbs.map((part, idx) => (
                 <span key={idx} className="flex items-center">
                   <button
@@ -511,14 +680,21 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
                   >
                     {part}
                   </button>
-                  {idx < crumbs.length - 1 && <span aria-hidden="true" className="px-0.5">/</span>}
+                  {idx < crumbs.length - 1 && (
+                    <span aria-hidden="true" className="px-0.5">
+                      /
+                    </span>
+                  )}
                 </span>
               ))}
             </nav>
           </div>
 
           <div className="relative">
-            <Search aria-hidden="true" className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#55555E]" />
+            <Search
+              aria-hidden="true"
+              className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#55555E]"
+            />
             <input
               type="text"
               value={search}
@@ -530,7 +706,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
           </div>
 
           {/* Filter chips — classified with the same helper as the rows */}
-          <div role="group" aria-label="Filter by file type" className="flex flex-wrap items-center gap-1">
+          <div
+            role="group"
+            aria-label="Filter by file type"
+            className="flex flex-wrap items-center gap-1"
+          >
             {FILE_FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -575,7 +755,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
           )}
         </div>
 
-        <div role="group" aria-label="Directory contents" className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div
+          role="group"
+          aria-label="Directory contents"
+          className="flex-1 overflow-y-auto p-2 space-y-1"
+        >
           {filtered.map(({ entry, style }) => {
             const isSelected = selected?.path === entry.path;
             return (
@@ -583,7 +767,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
                 key={entry.id}
                 role="button"
                 tabIndex={0}
-                aria-label={entry.type === 'directory' ? `Open directory ${entry.name}` : `Open file ${entry.name}`}
+                aria-label={
+                  entry.type === 'directory'
+                    ? `Open directory ${entry.name}`
+                    : `Open file ${entry.name}`
+                }
                 onClick={() => (entry.type === 'directory' ? listDir(entry.path) : openFile(entry))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
@@ -600,7 +788,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
               >
                 <div className="flex items-center gap-2 overflow-hidden">
                   {entry.isLink && style.kind !== 'symlink' && (
-                    <Link2 className="w-3 h-3 text-[#22D3EE] shrink-0" title={entry.target || 'symbolic link'} />
+                    <Link2
+                      className="w-3 h-3 text-[#22D3EE] shrink-0"
+                      title={entry.target || 'symbolic link'}
+                    />
                   )}
                   {iconFor(style)}
                   <div className="truncate">
@@ -617,7 +808,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-[10px] text-[#88888E]">{entry.permissions}</div>
-                  <div className="text-[10px] text-[#55555E]">{humanSize(entry.size, entry.type)}</div>
+                  <div className="text-[10px] text-[#55555E]">
+                    {humanSize(entry.size, entry.type)}
+                  </div>
                 </div>
               </div>
             );
@@ -630,7 +823,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
                   {query ? <> “{search}”</> : null}
                   {kindFilter !== 'all' ? (
                     <>
-                      {' '}in <span className="text-[#88888E]">{activeFilter.label}</span>
+                      {' '}
+                      in <span className="text-[#88888E]">{activeFilter.label}</span>
                     </>
                   ) : null}
                   .
@@ -677,27 +871,40 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
             </div>
 
             {status && (
-              <div role="status" aria-live="polite" className="bg-[#00FF41]/10 border-b border-[#00FF41]/30 text-[#00FF41] px-4 py-2 flex items-center gap-2">
+              <div
+                role="status"
+                aria-live="polite"
+                className="bg-[#00FF41]/10 border-b border-[#00FF41]/30 text-[#00FF41] px-4 py-2 flex items-center gap-2"
+              >
                 <CheckCircle aria-hidden="true" className="w-4 h-4" />
                 <span>{status}</span>
               </div>
             )}
             {error && (
-              <div role="alert" className="bg-[#FF5555]/10 border-b border-[#FF5555]/30 text-[#FF5555] px-4 py-2 flex items-center gap-2">
+              <div
+                role="alert"
+                className="bg-[#FF5555]/10 border-b border-[#FF5555]/30 text-[#FF5555] px-4 py-2 flex items-center gap-2"
+              >
                 <AlertCircle aria-hidden="true" className="w-4 h-4" />
                 <span>{error}</span>
               </div>
             )}
             {readOnly && (
               <div className="bg-[#FFBD2E]/10 border-b border-[#FFBD2E]/30 text-[#FFBD2E] px-4 py-2 text-[11px]">
-                Read-only — either the role selector is set to “viewer”, or this file is binary / too large to edit here.
+                Read-only — either the role selector is set to “viewer”, or this file is binary /
+                too large to edit here.
               </div>
             )}
 
             <div className="flex-1 flex overflow-hidden">
-              <div aria-hidden="true" className="w-10 bg-[#161618] border-r border-[#2A2A2E] py-3 text-right pr-2 text-[#55555E] select-none overflow-hidden">
+              <div
+                aria-hidden="true"
+                className="w-10 bg-[#161618] border-r border-[#2A2A2E] py-3 text-right pr-2 text-[#55555E] select-none overflow-hidden"
+              >
                 {content.split('\n').map((_, idx) => (
-                  <div key={idx} className="leading-relaxed">{idx + 1}</div>
+                  <div key={idx} className="leading-relaxed">
+                    {idx + 1}
+                  </div>
                 ))}
               </div>
               <textarea
@@ -747,7 +954,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
             </div>
             <div className="space-y-3">
               <div>
-                <label htmlFor="omniterm-new-path" className="block text-[#88888E] mb-1 font-bold">Absolute path</label>
+                <label htmlFor="omniterm-new-path" className="block text-[#88888E] mb-1 font-bold">
+                  Absolute path
+                </label>
                 <input
                   id="omniterm-new-path"
                   type="text"
@@ -758,7 +967,12 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
                 />
               </div>
               <div>
-                <label htmlFor="omniterm-new-content" className="block text-[#88888E] mb-1 font-bold">Initial content</label>
+                <label
+                  htmlFor="omniterm-new-content"
+                  className="block text-[#88888E] mb-1 font-bold"
+                >
+                  Initial content
+                </label>
                 <textarea
                   id="omniterm-new-content"
                   value={newContent}
@@ -770,7 +984,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = () => {
               {error && <p className="text-[#FF5555]">{error}</p>}
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-[#2A2A2E]">
-              <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded bg-[#202024] text-[#88888E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]">
+              <button
+                onClick={() => setShowNew(false)}
+                className="px-3 py-1.5 rounded bg-[#202024] text-[#88888E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+              >
                 Cancel
               </button>
               <button

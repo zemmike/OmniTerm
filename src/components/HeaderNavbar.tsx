@@ -3,18 +3,14 @@ import {
   Terminal,
   FolderTree,
   Activity,
-  Bot,
-  Settings,
   Bell,
   CheckCircle2,
   AlertTriangle,
   Shield,
   Monitor,
-  UserCheck,
-  ChevronDown,
   SlidersHorizontal,
 } from 'lucide-react';
-import { OSPreset, UserRole, SystemAlert } from '../types';
+import { UserRole, SystemAlert } from '../types';
 import { TERMINAL_THEMES } from '../lib/themeUtils';
 
 interface HeaderNavbarProps {
@@ -30,14 +26,12 @@ interface HeaderNavbarProps {
 export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   activeTab,
   setActiveTab,
-  setUserRole,
   currentTheme,
   setCurrentTheme,
   alerts,
   markAlertsAsRead,
 }) => {
   const [showAlertsMenu, setShowAlertsMenu] = useState(false);
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
   const themeButtonRef = useRef<HTMLButtonElement>(null);
@@ -141,7 +135,10 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#0A0A0B] border border-[#2A2A2E] text-[10px] text-[#88888E]"
             role="status"
           >
-            <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-[#00FF41] animate-pulse" />
+            <span
+              aria-hidden="true"
+              className="w-1.5 h-1.5 rounded-full bg-[#00FF41] animate-pulse"
+            />
             <span className="text-[#00FF41]">ONLINE</span>
           </div>
         </div>
@@ -207,7 +204,10 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             >
               <Bell aria-hidden="true" className="w-3.5 h-3.5" />
               {unreadAlerts.length > 0 && (
-                <span aria-hidden="true" className="absolute -top-1 -right-1 w-2 h-2 bg-[#FF5555] rounded-full" />
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 w-2 h-2 bg-[#FF5555] rounded-full"
+                />
               )}
             </button>
 
@@ -260,8 +260,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
       >
         {primaryNavItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            activeTab === item.id;
+          const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
@@ -277,7 +276,10 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
                   : 'border-transparent text-[#88888E] hover:text-[#E0E0E5] hover:bg-[#202024]'
               }`}
             >
-              <Icon aria-hidden="true" className={`w-3.5 h-3.5 ${isActive ? 'text-[#00FF41]' : 'text-[#55555E]'}`} />
+              <Icon
+                aria-hidden="true"
+                className={`w-3.5 h-3.5 ${isActive ? 'text-[#00FF41]' : 'text-[#55555E]'}`}
+              />
               <span>{item.label}</span>
             </button>
           );

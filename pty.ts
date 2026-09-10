@@ -26,7 +26,9 @@ let ptyLoadError: string | null = null;
 function loadPty(): any {
   if (ptyLib || ptyLoadError) return ptyLib;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // node-pty is a native module that is loaded lazily: a missing/incompatible
+    // build must degrade to "unavailable" rather than throw at import time.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     ptyLib = require('node-pty');
   } catch (err: any) {
     ptyLoadError = err?.message || String(err);
@@ -37,11 +39,17 @@ function loadPty(): any {
 export function ptyStatus() {
   loadPty();
   const shell = process.env.SHELL || '/bin/bash';
-  return { available: !!ptyLib, error: ptyLoadError, shell, integration: buildShellLaunch(shell).integration };
+  return {
+    available: !!ptyLib,
+    error: ptyLoadError,
+    shell,
+    integration: buildShellLaunch(shell).integration,
+  };
 }
 
 // ---------------------------------------------------------------- integration
-const DATA_DIR = process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const DATA_DIR =
+  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
 
 /** Bash rc that loads the user's real config and adds OmniTerm's OSC hooks. */
 function bashIntegrationRc(): string {
@@ -135,9 +143,7 @@ function zshIntegrationDir(): string {
   // Only initialise completions if the user's own config did not, and always
   // with -i so an insecure directory is ignored rather than queried.
   const compinitFallback =
-    'if ! (( $+functions[compdef] )); then\n' +
-    '  autoload -Uz compinit && compinit -i\n' +
-    'fi\n';
+    'if ! (( $+functions[compdef] )); then\n' + '  autoload -Uz compinit && compinit -i\n' + 'fi\n';
   const files: Record<string, string> = {
     '.zshenv': banner + compfix + sourceUser('.zshenv'),
     '.zprofile': banner + sourceUser('.zprofile'),
@@ -162,8 +168,8 @@ const FISH_INIT = [
   '  set -l __ot_host (hostname 2>/dev/null; or echo localhost)',
   '  set -l __ot_cmd (history --max=1 2>/dev/null | head -c 400)',
   '  set -l __ot_b64 (printf "%s" "$__ot_cmd" | base64 -w0 2>/dev/null)',
-  "  printf '\\033]133;D;%s;%s\\007' $__ot_code \"$__ot_b64\"",
-  "  printf '\\033]7;file://%s%s\\007' $__ot_host \"$PWD\"",
+  '  printf \'\\033]133;D;%s;%s\\007\' $__ot_code "$__ot_b64"',
+  '  printf \'\\033]7;file://%s%s\\007\' $__ot_host "$PWD"',
   'end',
   'function __omniterm_preexec --on-event fish_preexec',
   "  printf '\\033]133;C\\007'",
@@ -176,7 +182,10 @@ let fishInitOk: boolean | null = null;
 function fishSupportsInit(shell: string): boolean {
   if (fishInitOk !== null) return fishInitOk;
   try {
-    execFileSync(shell, ['--init-command=true', '-c', 'exit 0'], { stdio: 'ignore', timeout: 5000 });
+    execFileSync(shell, ['--init-command=true', '-c', 'exit 0'], {
+      stdio: 'ignore',
+      timeout: 5000,
+    });
     fishInitOk = true;
   } catch {
     fishInitOk = false;
@@ -215,7 +224,12 @@ export function buildShellLaunch(shell: string): ShellLaunch {
     }
   } else if (kind === 'fish') {
     if (fishSupportsInit(shell)) {
-      return { kind, args: ['-l', '-i', `--init-command=${FISH_INIT}`], env: {}, integration: 'fish osc133' };
+      return {
+        kind,
+        args: ['-l', '-i', `--init-command=${FISH_INIT}`],
+        env: {},
+        integration: 'fish osc133',
+      };
     }
   }
   // POSIX sh (dash, ash, busybox) has no -l flag, so it gets a plain
@@ -349,7 +363,13 @@ function handleChunk(s: Session, chunk: string) {
           at: new Date().toISOString(),
           durationMs,
         });
-        broadcast(s, { type: 'command', command: trimmed, exitCode: s.lastExit, durationMs, cwd: s.cwd });
+        broadcast(s, {
+          type: 'command',
+          command: trimmed,
+          exitCode: s.lastExit,
+          durationMs,
+          cwd: s.cwd,
+        });
       }
     } else if (code === '7') {
       const m = payload.match(/file:\/\/[^/]*(\/.*)$/);
@@ -384,7 +404,10 @@ function broadcast(s: Session, payload: unknown) {
 export function shellHistory(prefix: string, limit: number): string[] {
   const shell = path.basename(process.env.SHELL || 'bash');
   const candidates = shell.startsWith('zsh')
-    ? [path.join(os.homedir(), '.zsh_history'), path.join(process.env.ZDOTDIR || os.homedir(), '.zsh_history')]
+    ? [
+        path.join(os.homedir(), '.zsh_history'),
+        path.join(process.env.ZDOTDIR || os.homedir(), '.zsh_history'),
+      ]
     : shell.startsWith('fish')
       ? [path.join(os.homedir(), '.local', 'share', 'fish', 'fish_history')]
       : [path.join(os.homedir(), '.bash_history')];
@@ -455,7 +478,7 @@ function trackInput(s: Session, data: string) {
 
 function spawnSession(
   opts: { id: string; cwd?: string; cols?: number; rows?: number; env?: Record<string, string> },
-  attach?: WebSocket
+  attach?: WebSocket,
 ) {
   const pty = loadPty();
   if (!pty) throw new Error(`node-pty unavailable: ${ptyLoadError}`);
@@ -564,7 +587,7 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
           try {
             session = spawnSession(
               { id, cwd: msg.cwd, cols: msg.cols, rows: msg.rows, env: msg.env },
-              ws
+              ws,
             );
           } catch (err: any) {
             ws.send(JSON.stringify({ type: 'error', message: err?.message || String(err) }));
@@ -580,7 +603,7 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
             pid: session.proc?.pid ?? null,
             created: session.createdAt,
             integration: session.integration,
-          })
+          }),
         );
         return;
       }
@@ -590,7 +613,9 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
       if (msg.type === 'history') {
         const prefix = String(msg.prefix || '').trim();
         const limit = Math.max(1, Math.min(1000, Number(msg.limit) || 200));
-        const fromSession = [...session.history].reverse().filter((c) => !prefix || c.startsWith(prefix));
+        const fromSession = [...session.history]
+          .reverse()
+          .filter((c) => !prefix || c.startsWith(prefix));
         const fromFile = shellHistory(prefix, limit).filter((c) => !fromSession.includes(c));
         ws.send(
           JSON.stringify({
@@ -598,7 +623,7 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
             requestId: msg.requestId || '',
             prefix,
             items: [...fromSession, ...fromFile].slice(0, limit),
-          })
+          }),
         );
         return;
       }

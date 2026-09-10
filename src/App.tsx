@@ -12,7 +12,7 @@ import { TerminalTab, SystemAlert } from './types';
 export default function App() {
   // Deep link: the desktop shell can open a specific tab (?tab=backups).
   const [activeTab, setActiveTab] = useState<string>(
-    () => new URLSearchParams(window.location.search).get('tab') || 'terminal'
+    () => new URLSearchParams(window.location.search).get('tab') || 'terminal',
   );
   const [settings] = useSettings();
   const [currentTheme, setCurrentTheme] = useState<string>(settings.theme);
@@ -52,8 +52,10 @@ export default function App() {
         if (!cancelled) setLatency(null);
       }
     };
-    poll();
-    const timer = setInterval(poll, 5000);
+    void poll();
+    const timer = setInterval(() => {
+      void poll();
+    }, 5000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -80,7 +82,6 @@ export default function App() {
   // Alerts come from the host; there are none until something real happens.
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
 
-
   // Adopt the real host environment on startup: real home directory, real
   // platform preset and a shell banner that reflects this machine.
   useEffect(() => {
@@ -93,7 +94,9 @@ export default function App() {
         // the scrollback here: the PTY session produces that for real.
         const realCwd = typeof env.cwd === 'string' ? env.cwd : '';
         setTabs((prev) =>
-          prev.map((t, idx) => (idx === 0 ? { ...t, osPreset: 'linux', title: 'Terminal', cwd: realCwd } : t))
+          prev.map((t, idx) =>
+            idx === 0 ? { ...t, osPreset: 'linux', title: 'Terminal', cwd: realCwd } : t,
+          ),
         );
       })
       .catch(() => undefined);
@@ -128,7 +131,7 @@ export default function App() {
             setTabs={setTabs}
             activeTabId={activeTabId}
             setActiveTabId={setActiveTabId}
-                currentTheme={currentTheme}
+            currentTheme={currentTheme}
             onOpenSettings={() => setActiveTab('settings')}
           />
         )}
@@ -137,11 +140,7 @@ export default function App() {
 
         {activeTab === 'health' && <ServerHealthView />}
 
-
-
-
         {activeTab === 'settings' && <SettingsView />}
-
       </main>
 
       {/* Persistent OmniTerm OS Status Footer */}
@@ -168,7 +167,9 @@ export default function App() {
           <span className="text-[#2A2A2E] hidden md:inline">|</span>
           <div>
             <span className="text-[#55555E]">API: </span>
-            <span className={latency !== null && latency < 50 ? 'text-[#00FF41]' : 'text-[#EAB308]'}>
+            <span
+              className={latency !== null && latency < 50 ? 'text-[#00FF41]' : 'text-[#EAB308]'}
+            >
               {latency !== null ? `${latency}ms` : '—'}
             </span>
           </div>

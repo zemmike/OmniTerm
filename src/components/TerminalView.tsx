@@ -1,7 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, Folder, ChevronDown, GitBranch, Container, ShieldCheck, Columns2, Rows2, Terminal as TerminalIcon } from 'lucide-react';
+import {
+  Plus,
+  X,
+  Folder,
+  ChevronDown,
+  GitBranch,
+  Container,
+  ShieldCheck,
+  Columns2,
+  Rows2,
+  Terminal as TerminalIcon,
+} from 'lucide-react';
 import TerminalPane, { PaneApi } from './TerminalPane';
-import { TerminalTab, OSPreset } from '../types';
+import { TerminalTab } from '../types';
 import { useSettings } from '../settings';
 import { actionForEvent } from '../keys';
 
@@ -27,7 +38,8 @@ interface TabLayout {
 }
 
 const LAST_DIR_KEY = 'omniterm_last_dir';
-const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+const newId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 function makeTab(cwd: string, colorTheme: string, index: number): TerminalTab {
   return {
@@ -42,18 +54,33 @@ function makeTab(cwd: string, colorTheme: string, index: number): TerminalTab {
   };
 }
 
-export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabId, onOpenSettings }: Props) {
+export default function TerminalView({
+  tabs,
+  setTabs,
+  activeTabId,
+  setActiveTabId,
+  onOpenSettings,
+}: Props) {
   const [settings] = useSettings();
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
-  const [repo, setRepo] = useState<{ isRepo: boolean; branch: string | null; changed: number; untracked: number } | null>(null);
+  const [repo, setRepo] = useState<{
+    isRepo: boolean;
+    branch: string | null;
+    changed: number;
+    untracked: number;
+  } | null>(null);
   const [docker, setDocker] = useState<{ available: boolean; running: number } | null>(null);
-  const [ptyBackend, setPtyBackend] = useState<{ available: boolean; error: string | null } | null>(null);
+  const [ptyBackend, setPtyBackend] = useState<{ available: boolean; error: string | null } | null>(
+    null,
+  );
   const [cwdByTab, setCwdByTab] = useState<Record<string, string>>({});
   const [chooserOpen, setChooserOpen] = useState(false);
   const [chooserPath, setChooserPath] = useState('');
   const [matches, setMatches] = useState<{ name: string; path: string; type: string }[]>([]);
-  const shellInfo = useRef<Record<string, { shell: string; pid: number | null; integration?: string }>>({});
+  const shellInfo = useRef<
+    Record<string, { shell: string; pid: number | null; integration?: string }>
+  >({});
   const apiRef = useRef<Record<string, PaneApi>>({});
   // Element to hand focus back to when the directory chooser closes.
   const chooserReturnRef = useRef<HTMLElement | null>(null);
@@ -66,9 +93,13 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
       const existing = layouts[tabId];
       if (existing) return existing;
       const sessionId = `session-${tabId}`;
-      return { panes: [{ id: newId('pane'), sessionId, title: 'shell' }], orientation: 'vertical', activeId: sessionId };
+      return {
+        panes: [{ id: newId('pane'), sessionId, title: 'shell' }],
+        orientation: 'vertical',
+        activeId: sessionId,
+      };
     },
-    [layouts]
+    [layouts],
   );
 
   const activeLayout = activeTab ? layoutFor(activeTab.id) : null;
@@ -111,8 +142,10 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         /* status strip is best effort */
       }
     };
-    load();
-    const timer = setInterval(load, 15000);
+    void load();
+    const timer = setInterval(() => {
+      void load();
+    }, 15000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -127,12 +160,15 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
   }, []);
 
   // ------------------------------------------------------------ pane helpers
-  const mutateLayout = useCallback((tabId: string, fn: (l: TabLayout) => TabLayout) => {
-    setLayouts((prev) => {
-      const current = prev[tabId] || layoutFor(tabId);
-      return { ...prev, [tabId]: fn(current) };
-    });
-  }, [layoutFor]);
+  const mutateLayout = useCallback(
+    (tabId: string, fn: (l: TabLayout) => TabLayout) => {
+      setLayouts((prev) => {
+        const current = prev[tabId] || layoutFor(tabId);
+        return { ...prev, [tabId]: fn(current) };
+      });
+    },
+    [layoutFor],
+  );
 
   const splitPane = useCallback(
     (tabId: string, orientation: 'vertical' | 'horizontal', _sourceSession?: string) => {
@@ -146,7 +182,7 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         };
       });
     },
-    [mutateLayout]
+    [mutateLayout],
   );
 
   const closePane = useCallback(
@@ -163,14 +199,14 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         return { ...l, panes, activeId: panes[panes.length - 1].sessionId };
       });
     },
-    [mutateLayout]
+    [mutateLayout],
   );
 
   const focusPane = useCallback(
     (tabId: string, sessionId: string) => {
       mutateLayout(tabId, (l) => (l.activeId === sessionId ? l : { ...l, activeId: sessionId }));
     },
-    [mutateLayout]
+    [mutateLayout],
   );
 
   const focusedApi = useCallback((): PaneApi | null => {
@@ -192,7 +228,7 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
       setActiveTabId(tab.id);
       if (dir) localStorage.setItem(LAST_DIR_KEY, dir);
     },
-    [activeCwd, setTabs, setActiveTabId, settings.theme, tabs.length]
+    [activeCwd, setTabs, setActiveTabId, settings.theme, tabs.length],
   );
 
   const closeTab = useCallback(
@@ -204,7 +240,7 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         return next;
       });
     },
-    [activeTabId, setActiveTabId, setTabs]
+    [activeTabId, setActiveTabId, setTabs],
   );
 
   const cycleTab = useCallback(
@@ -214,7 +250,7 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
       const next = tabs[(index + direction + tabs.length) % tabs.length];
       if (next) setActiveTabId(next.id);
     },
-    [activeTabId, setActiveTabId, tabs]
+    [activeTabId, setActiveTabId, tabs],
   );
 
   // Left/Right move between session tabs, Home/End jump to the ends.
@@ -248,6 +284,20 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
     window.requestAnimationFrame(() => document.getElementById(`term-tab-${nextId}`)?.focus());
   };
 
+  // Font size is part of the shared settings, so the Settings tab and the
+  // terminal controls can never disagree.
+  const [, updateSettings] = useSettings();
+  // Plain callback despite the old `use*` name — it never called a hook, it just
+  // writes the shared settings store; `settings.fontSize` is read on each call.
+  const changeFontSize = useCallback(
+    (delta: -1 | 0 | 1) => {
+      const current = settings.fontSize;
+      const next = delta === 0 ? 13 : Math.min(28, Math.max(8, current + delta));
+      updateSettings({ fontSize: next });
+    },
+    [settings.fontSize, updateSettings],
+  );
+
   // ------------------------------------------------------- app-level shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -278,13 +328,15 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         case 'splitDown':
           return run(() => activeTab && splitPane(activeTab.id, 'horizontal'));
         case 'closePane':
-          return run(() => activeTab && activeLayout && closePane(activeTab.id, activeLayout.activeId));
+          return run(
+            () => activeTab && activeLayout && closePane(activeTab.id, activeLayout.activeId),
+          );
         case 'fontUp':
-          return run(() => useSettingsFont(+1));
+          return run(() => changeFontSize(+1));
         case 'fontDown':
-          return run(() => useSettingsFont(-1));
+          return run(() => changeFontSize(-1));
         case 'fontReset':
-          return run(() => useSettingsFont(0));
+          return run(() => changeFontSize(0));
         case 'settings':
           return run(() => onOpenSettings?.());
         default: {
@@ -299,29 +351,33 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTab, activeLayout, addTab, closeTab, closePane, cycleTab, focusedApi, onOpenSettings, splitPane]);
-
-  // Font size is part of the shared settings, so the Settings tab and the
-  // terminal controls can never disagree.
-  const [, updateSettings] = useSettings();
-  const useSettingsFont = (delta: -1 | 0 | 1) => {
-    const current = settings.fontSize;
-    const next = delta === 0 ? 13 : Math.min(28, Math.max(8, current + delta));
-    updateSettings({ fontSize: next });
-  };
+  }, [
+    activeTab,
+    activeLayout,
+    addTab,
+    changeFontSize,
+    closeTab,
+    closePane,
+    cycleTab,
+    focusedApi,
+    onOpenSettings,
+    splitPane,
+  ]);
 
   // ----------------------------------------------------- directory completion
   useEffect(() => {
     if (!chooserOpen) return;
     let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/complete?path=${encodeURIComponent(chooserPath)}`);
-        const data = await res.json();
-        if (!cancelled) setMatches(data.matches || []);
-      } catch {
-        if (!cancelled) setMatches([]);
-      }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/complete?path=${encodeURIComponent(chooserPath)}`);
+          const data = await res.json();
+          if (!cancelled) setMatches(data.matches || []);
+        } catch {
+          if (!cancelled) setMatches([]);
+        }
+      })();
     }, 120);
     return () => {
       cancelled = true;
@@ -354,7 +410,11 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
   }
 
   return (
-    <div ref={rootRef} className="flex flex-col bg-[#0A0A0B]" style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}>
+    <div
+      ref={rootRef}
+      className="flex flex-col bg-[#0A0A0B]"
+      style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}
+    >
       {/* ------------------------------------------------------------- tab bar */}
       <div className="flex items-center gap-1 border-b border-[#1E1E22] px-2 py-1 bg-[#0F0F10] shrink-0">
         <div
@@ -381,11 +441,19 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                   }
                 }}
                 className={`group flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
-                  isTabActive ? 'border-[#2A2A2E] bg-[#161618] text-[#E0E0E5]' : 'border-transparent text-[#88888E] hover:text-[#E0E0E5]'
+                  isTabActive
+                    ? 'border-[#2A2A2E] bg-[#161618] text-[#E0E0E5]'
+                    : 'border-transparent text-[#88888E] hover:text-[#E0E0E5]'
                 }`}
               >
-                <TerminalIcon aria-hidden="true" className="w-3 h-3" style={{ color: isTabActive ? 'var(--ui-accent)' : undefined }} />
-                <span className="max-w-[120px] truncate">{isTabActive ? tabCwdShort : tab.title}</span>
+                <TerminalIcon
+                  aria-hidden="true"
+                  className="w-3 h-3"
+                  style={{ color: isTabActive ? 'var(--ui-accent)' : undefined }}
+                />
+                <span className="max-w-[120px] truncate">
+                  {isTabActive ? tabCwdShort : tab.title}
+                </span>
                 {tabs.length > 1 && (
                   <button
                     type="button"
@@ -432,7 +500,9 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         {/* pane layout controls */}
         <div className="flex items-center gap-1">
           {activeLayout.panes.length > 1 && (
-            <span className="text-[10px] text-[#55555E] mr-1">{activeLayout.panes.length} panes</span>
+            <span className="text-[10px] text-[#55555E] mr-1">
+              {activeLayout.panes.length} panes
+            </span>
           )}
           <button
             onClick={() => splitPane(activeTab.id, 'vertical')}
@@ -448,7 +518,9 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
             className={`p-1 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
             title="Split down (Ctrl+Shift+O)"
             aria-label="Split down"
-            aria-pressed={activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1}
+            aria-pressed={
+              activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1
+            }
           >
             <Rows2 aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
@@ -456,7 +528,9 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
             {repo?.isRepo ? (
               <>
                 <GitBranch aria-hidden="true" className="w-3 h-3" /> {repo.branch}
-                {repo.changed > 0 && <span className="text-[#EAB308]"> · {repo.changed} changed</span>}
+                {repo.changed > 0 && (
+                  <span className="text-[#EAB308]"> · {repo.changed} changed</span>
+                )}
               </>
             ) : (
               'not a git repository'
@@ -467,16 +541,18 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
           </span>
           <div className="flex items-center gap-1 text-[10px] text-[#55555E] ml-2">
             <button
-              onClick={() => useSettingsFont(-1)}
+              onClick={() => changeFontSize(-1)}
               className="px-1 hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               title="Smaller (Ctrl+-)"
               aria-label="Decrease font size"
             >
               <span aria-hidden="true">−</span>
             </button>
-            <span className="font-mono" aria-hidden="true">{settings.fontSize}</span>
+            <span className="font-mono" aria-hidden="true">
+              {settings.fontSize}
+            </span>
             <button
-              onClick={() => useSettingsFont(1)}
+              onClick={() => changeFontSize(1)}
               className="px-1 hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
               title="Larger (Ctrl+=)"
               aria-label="Increase font size"
@@ -500,9 +576,18 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
               aria-labelledby={`term-tab-${tab.id}`}
               tabIndex={-1}
               className="absolute inset-0"
-              style={{ visibility: isCurrent ? 'visible' : 'hidden', pointerEvents: isCurrent ? 'auto' : 'none' }}
+              style={{
+                visibility: isCurrent ? 'visible' : 'hidden',
+                pointerEvents: isCurrent ? 'auto' : 'none',
+              }}
             >
-              <div className={layout.orientation === 'vertical' ? 'flex flex-row w-full h-full' : 'flex flex-col w-full h-full'}>
+              <div
+                className={
+                  layout.orientation === 'vertical'
+                    ? 'flex flex-row w-full h-full'
+                    : 'flex flex-col w-full h-full'
+                }
+              >
                 {layout.panes.map((pane, index) => {
                   const isActive = layout.activeId === pane.sessionId;
                   return (
@@ -510,9 +595,18 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                       key={pane.sessionId}
                       className="relative flex-1 min-w-0 min-h-0"
                       style={{
-                        borderLeft: layout.orientation === 'vertical' && index > 0 ? '1px solid #1E1E22' : undefined,
-                        borderTop: layout.orientation === 'horizontal' && index > 0 ? '1px solid #1E1E22' : undefined,
-                        boxShadow: isActive && layout.panes.length > 1 ? 'inset 0 0 0 1px var(--ui-accent)' : undefined,
+                        borderLeft:
+                          layout.orientation === 'vertical' && index > 0
+                            ? '1px solid #1E1E22'
+                            : undefined,
+                        borderTop:
+                          layout.orientation === 'horizontal' && index > 0
+                            ? '1px solid #1E1E22'
+                            : undefined,
+                        boxShadow:
+                          isActive && layout.panes.length > 1
+                            ? 'inset 0 0 0 1px var(--ui-accent)'
+                            : undefined,
                       }}
                       onMouseDown={() => focusPane(tab.id, pane.sessionId)}
                     >
@@ -523,13 +617,21 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                         settings={settings}
                         registerApi={registerApi}
                         onFocusPane={() => focusPane(tab.id, pane.sessionId)}
-                        onAction={(actionId, sessionId) => splitPane(tab.id, actionId === 'splitRight' ? 'vertical' : 'horizontal', sessionId)}
+                        onAction={(actionId, sessionId) =>
+                          splitPane(
+                            tab.id,
+                            actionId === 'splitRight' ? 'vertical' : 'horizontal',
+                            sessionId,
+                          )
+                        }
                         onReady={(info) => {
                           shellInfo.current[pane.sessionId] = info;
                         }}
                         onCwdChange={(cwd) => {
                           if (cwd) {
-                            setCwdByTab((prev) => (prev[tab.id] === cwd ? prev : { ...prev, [tab.id]: cwd }));
+                            setCwdByTab((prev) =>
+                              prev[tab.id] === cwd ? prev : { ...prev, [tab.id]: cwd },
+                            );
                             localStorage.setItem(LAST_DIR_KEY, cwd);
                           }
                         }}
@@ -561,12 +663,15 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         <span className="flex items-center gap-1 text-[#00C853]" role="status">
           <ShieldCheck aria-hidden="true" className="w-3 h-3" />
           real PTY · {shellInfo.current[activeLayout.activeId]?.shell?.split('/').pop() || 'shell'}
-          {shellInfo.current[activeLayout.activeId]?.integration && shellInfo.current[activeLayout.activeId]?.integration !== 'none'
+          {shellInfo.current[activeLayout.activeId]?.integration &&
+          shellInfo.current[activeLayout.activeId]?.integration !== 'none'
             ? ` · audit: ${shellInfo.current[activeLayout.activeId]?.integration}`
             : ''}
         </span>
         <span>{activeCwd || '~'}</span>
-        <span className="text-[#4A4A52]">Ctrl+Shift+E split · Ctrl+Shift+O split down · Ctrl+Shift+W close pane · Ctrl+, settings</span>
+        <span className="text-[#4A4A52]">
+          Ctrl+Shift+E split · Ctrl+Shift+O split down · Ctrl+Shift+W close pane · Ctrl+, settings
+        </span>
         {ptyBackend && !ptyBackend.available && (
           <span className="text-[#FF5555]" role="status">
             terminal backend unavailable: {ptyBackend.error}
@@ -576,7 +681,10 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
 
       {/* ------------------------------------------------------ directory chooser */}
       {chooserOpen && (
-        <div className="absolute inset-0 z-40 bg-black/60 flex items-start justify-center pt-20" onClick={() => setChooserOpen(false)}>
+        <div
+          className="absolute inset-0 z-40 bg-black/60 flex items-start justify-center pt-20"
+          onClick={() => setChooserOpen(false)}
+        >
           <div
             role="dialog"
             aria-modal="true"
@@ -617,14 +725,22 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                       setChooserOpen(false);
                     }
                   }}
-                  aria-label={m.type === 'directory' ? `Open directory ${m.name}` : `Use directory ${m.name}`}
+                  aria-label={
+                    m.type === 'directory' ? `Open directory ${m.name}` : `Use directory ${m.name}`
+                  }
                   className="w-full text-left px-3 py-1.5 text-[11px] font-mono text-[#C9C9CF] hover:bg-[#202024] flex items-center gap-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
                 >
-                  {m.type === 'directory' ? <Folder aria-hidden="true" className="w-3 h-3 text-[#3B82F6]" /> : <ChevronDown aria-hidden="true" className="w-3 h-3 text-[#55555E]" />}
+                  {m.type === 'directory' ? (
+                    <Folder aria-hidden="true" className="w-3 h-3 text-[#3B82F6]" />
+                  ) : (
+                    <ChevronDown aria-hidden="true" className="w-3 h-3 text-[#55555E]" />
+                  )}
                   {m.name}
                 </button>
               ))}
-              {matches.length === 0 && <div className="px-3 py-3 text-[11px] text-[#55555E]">No matches.</div>}
+              {matches.length === 0 && (
+                <div className="px-3 py-3 text-[11px] text-[#55555E]">No matches.</div>
+              )}
             </div>
           </div>
         </div>

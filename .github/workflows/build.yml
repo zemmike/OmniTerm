@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   typecheck:
-    name: Typecheck
+    name: Lint, types and formatting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,14 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      # Three separate gates now: `npm run lint` used to just be tsc, which
+      # meant no eslint, no format check, and a lint "pass" that proved nothing.
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Formatting
+        run: npm run format:check
 
   test:
     name: Tests (terminal + API)

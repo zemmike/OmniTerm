@@ -19,7 +19,14 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
-import { attachTerminalSocket, onPtyCommand, ptyStatus, listSessions, killSession, killAllSessions } from './pty';
+import {
+  attachTerminalSocket,
+  onPtyCommand,
+  ptyStatus,
+  listSessions,
+  killSession,
+  killAllSessions,
+} from './pty';
 
 const HOST = process.env.OMNITERM_HOST || '127.0.0.1';
 // Fail closed. A server that executes shell commands must never expose an
@@ -73,7 +80,9 @@ app.use('/api', (req, res, next) => {
   const provided = Buffer.from(String(req.get('x-omniterm-token') || req.query.token || ''));
   const expected = Buffer.from(APP_TOKEN);
   if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
-    return res.status(401).json({ error: 'Unauthorized: missing or invalid OmniTerm session token.' });
+    return res
+      .status(401)
+      .json({ error: 'Unauthorized: missing or invalid OmniTerm session token.' });
   }
   next();
 });
@@ -94,7 +103,7 @@ app.use((req, res, next) => {
       "base-uri 'self'",
       "form-action 'none'",
       "frame-ancestors 'none'",
-    ].join('; ')
+    ].join('; '),
   );
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -105,7 +114,8 @@ app.use((req, res, next) => {
 // ------------------- PERSISTENT COMMAND AUDIT TRAIL ------------------- //
 // Every command OmniTerm runs is appended to a JSONL file, so the log tab and
 // the /audit export describe what really happened on this machine.
-const AUDIT_DIR = process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const AUDIT_DIR =
+  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
 const AUDIT_FILE = path.join(AUDIT_DIR, 'activity.jsonl');
 
 type AuditEntry = {
@@ -175,8 +185,19 @@ const systemAlerts: Array<{
   read: boolean;
 }> = [];
 
-function pushAlert(title: string, message: string, type: 'cpu_high' | 'disk_warning' | 'security_denied' | 'backup_failed' | 'network_spike') {
-  systemAlerts.unshift({ id: `alt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), title, message, type, read: false });
+function pushAlert(
+  title: string,
+  message: string,
+  type: 'cpu_high' | 'disk_warning' | 'security_denied' | 'backup_failed' | 'network_spike',
+) {
+  systemAlerts.unshift({
+    id: `alt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    title,
+    message,
+    type,
+    read: false,
+  });
   if (systemAlerts.length > 50) systemAlerts.length = 50;
 }
 
@@ -198,11 +219,30 @@ function permissionsString(mode: number): string {
 function languageOf(name: string): string {
   const ext = path.extname(name).toLowerCase();
   const map: Record<string, string> = {
-    '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript',
-    '.json': 'json', '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash', '.py': 'python',
-    '.md': 'markdown', '.yml': 'yaml', '.yaml': 'yaml', '.toml': 'toml', '.css': 'css',
-    '.html': 'html', '.sql': 'sql', '.rs': 'rust', '.go': 'go', '.c': 'c', '.cpp': 'cpp',
-    '.conf': 'nginx', '.service': 'ini', '.env': 'ini', '.log': 'text',
+    '.ts': 'typescript',
+    '.tsx': 'typescript',
+    '.js': 'javascript',
+    '.jsx': 'javascript',
+    '.json': 'json',
+    '.sh': 'bash',
+    '.bash': 'bash',
+    '.zsh': 'bash',
+    '.py': 'python',
+    '.md': 'markdown',
+    '.yml': 'yaml',
+    '.yaml': 'yaml',
+    '.toml': 'toml',
+    '.css': 'css',
+    '.html': 'html',
+    '.sql': 'sql',
+    '.rs': 'rust',
+    '.go': 'go',
+    '.c': 'c',
+    '.cpp': 'cpp',
+    '.conf': 'nginx',
+    '.service': 'ini',
+    '.env': 'ini',
+    '.log': 'text',
   };
   if (map[ext]) return map[ext];
   if (IMAGE_EXT.has(ext)) return 'image';
@@ -213,7 +253,7 @@ function describeEntry(dir: string, name: string) {
   const full = path.join(dir, name);
   const st = fs.lstatSync(full);
   const isDir = st.isDirectory();
-  let isLink = st.isSymbolicLink();
+  const isLink = st.isSymbolicLink();
   let target: string | null = null;
   if (isLink) {
     try {
@@ -269,7 +309,12 @@ function listDirectory(target: string) {
 function runQuick(cmd: string, args: string[], cwd?: string) {
   try {
     const res = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 6000 });
-    return { ok: res.status === 0, out: (res.stdout || '').trim(), err: (res.stderr || '').trim(), status: res.status };
+    return {
+      ok: res.status === 0,
+      out: (res.stdout || '').trim(),
+      err: (res.stderr || '').trim(),
+      status: res.status,
+    };
   } catch (err: any) {
     return { ok: false, out: '', err: err.message, status: -1 };
   }
@@ -279,11 +324,25 @@ function repoStatus(dir?: string) {
   const cwd = resolveCwd(dir);
   const inside = runQuick('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'], cwd);
   if (!inside.ok || inside.out !== 'true') {
-    return { isRepo: false, cwd, branch: null, changed: 0, untracked: 0, ahead: 0, behind: 0, toplevel: null, lastCommit: null };
+    return {
+      isRepo: false,
+      cwd,
+      branch: null,
+      changed: 0,
+      untracked: 0,
+      ahead: 0,
+      behind: 0,
+      toplevel: null,
+      lastCommit: null,
+    };
   }
 
   const toplevel = runQuick('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], cwd).out || cwd;
-  const status = runQuick('git', ['-C', toplevel, 'status', '--porcelain=v1', '--branch'], toplevel);
+  const status = runQuick(
+    'git',
+    ['-C', toplevel, 'status', '--porcelain=v1', '--branch'],
+    toplevel,
+  );
   const lines = status.out.split('\n').filter(Boolean);
   const header = lines.find((l) => l.startsWith('##')) || '';
   const files = lines.filter((l) => !l.startsWith('##'));
@@ -313,7 +372,12 @@ function dockerStatus() {
   if (!ping.ok) {
     return { available: false, serverVersion: null, running: 0, total: 0, containers: [] as any[] };
   }
-  const ps = runQuick('docker', ['ps', '-a', '--format', '{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}']);
+  const ps = runQuick('docker', [
+    'ps',
+    '-a',
+    '--format',
+    '{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}',
+  ]);
   const containers = ps.out
     .split('\n')
     .filter(Boolean)
@@ -331,7 +395,21 @@ function dockerStatus() {
 }
 
 function toolchainStatus() {
-  const tools = ['git', 'node', 'npm', 'python3', 'docker', 'ollama', 'kubectl', 'cargo', 'go', 'rg', 'fd', 'jq', 'tmux'];
+  const tools = [
+    'git',
+    'node',
+    'npm',
+    'python3',
+    'docker',
+    'ollama',
+    'kubectl',
+    'cargo',
+    'go',
+    'rg',
+    'fd',
+    'jq',
+    'tmux',
+  ];
   return tools.map((tool) => {
     const found = runQuick('bash', ['-lc', `command -v ${tool}`]);
     if (!found.ok) return { name: tool, installed: false, version: null, path: null };
@@ -354,14 +432,18 @@ function securityPosture() {
     proc.includes('systemd-resolve') ||
     proc.includes('chronyd');
 
-  const listening = runQuick('bash', ['-lc', "ss -tulpnH 2>/dev/null | awk '{print $1, $5, $7}' | head -40"]).out
-    .split('\n')
+  const listening = runQuick('bash', [
+    '-lc',
+    "ss -tulpnH 2>/dev/null | awk '{print $1, $5, $7}' | head -40",
+  ])
+    .out.split('\n')
     .filter(Boolean)
     .map((line) => {
       const parts = line.split(/\s+/);
       const addr = parts[1] || '';
       const idx = addr.lastIndexOf(':');
-      const process = (parts.slice(2).join(' ') || '-').replace(/users:\(\(|\)\)/g, '').split(',')[0] || '-';
+      const process =
+        (parts.slice(2).join(' ') || '-').replace(/users:\(\(|\)\)/g, '').split(',')[0] || '-';
       return {
         proto: (parts[0] || '').toLowerCase(),
         address: idx > 0 ? addr.slice(0, idx) : addr,
@@ -371,13 +453,34 @@ function securityPosture() {
       };
     });
 
-  const ufw = runQuick('bash', ['-lc', 'command -v ufw >/dev/null && ufw status 2>/dev/null | head -1 || echo "ufw not installed"']);
-  const apparmor = runQuick('bash', ['-lc', 'command -v aa-status >/dev/null && aa-status --enabled 2>/dev/null && echo enabled || echo unknown']);
-  const sudoers = runQuick('bash', ['-lc', "getent group sudo wheel 2>/dev/null | cut -d: -f1,4"]).out;
-  const sshKeys = runQuick('bash', ['-lc', 'find ~/.ssh -maxdepth 1 -name "id_*" ! -name "*.pub" 2>/dev/null | wc -l']);
-  const authorized = runQuick('bash', ['-lc', 'test -f ~/.ssh/authorized_keys && wc -l < ~/.ssh/authorized_keys || echo 0']);
-  const sshd = runQuick('bash', ['-lc', "systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo inactive"]);
-  const worldWritable = runQuick('bash', ['-lc', "find /etc -maxdepth 2 -type f -perm -o+w 2>/dev/null | wc -l"]);
+  const ufw = runQuick('bash', [
+    '-lc',
+    'command -v ufw >/dev/null && ufw status 2>/dev/null | head -1 || echo "ufw not installed"',
+  ]);
+  const apparmor = runQuick('bash', [
+    '-lc',
+    'command -v aa-status >/dev/null && aa-status --enabled 2>/dev/null && echo enabled || echo unknown',
+  ]);
+  const sudoers = runQuick('bash', [
+    '-lc',
+    'getent group sudo wheel 2>/dev/null | cut -d: -f1,4',
+  ]).out;
+  const sshKeys = runQuick('bash', [
+    '-lc',
+    'find ~/.ssh -maxdepth 1 -name "id_*" ! -name "*.pub" 2>/dev/null | wc -l',
+  ]);
+  const authorized = runQuick('bash', [
+    '-lc',
+    'test -f ~/.ssh/authorized_keys && wc -l < ~/.ssh/authorized_keys || echo 0',
+  ]);
+  const sshd = runQuick('bash', [
+    '-lc',
+    'systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo inactive',
+  ]);
+  const worldWritable = runQuick('bash', [
+    '-lc',
+    'find /etc -maxdepth 2 -type f -perm -o+w 2>/dev/null | wc -l',
+  ]);
 
   return {
     firewall: ufw.out.split('\n')[0] || 'unknown',
@@ -394,7 +497,6 @@ function securityPosture() {
   };
 }
 
-
 /**
  * Copilot used by the `ai` terminal command and the /api/ai/copilot endpoint.
  * Which provider answers is entirely up to the user's settings; this helper
@@ -403,7 +505,10 @@ function securityPosture() {
 async function askCopilot(prompt: string, cwd: string): Promise<string> {
   const config = loadAiConfig();
   try {
-    const reply = await aiChat(config.systemPrompt, `Working directory: ${cwd}\nRequest: ${prompt}`);
+    const reply = await aiChat(
+      config.systemPrompt,
+      `Working directory: ${cwd}\nRequest: ${prompt}`,
+    );
     return `${reply.text}\n\n[${reply.source} \u00b7 ${reply.latencyMs}ms]`;
   } catch (err: any) {
     return (
@@ -422,9 +527,32 @@ const SHELL =
 // Commands that need a real TTY (full-screen / prompt driven). We run one
 // command per request over pipes, so these would just hang until the timeout.
 const INTERACTIVE_ONLY = new Set([
-  'vi', 'vim', 'nvim', 'nano', 'emacs', 'pico', 'less', 'more', 'most',
-  'top', 'htop', 'btop', 'watch', 'man', 'passwd', 'ssh', 'telnet', 'sftp',
-  'ftp', 'tmux', 'screen', 'ncdu', 'irssi', 'w3m', 'lynx', 'gdb',
+  'vi',
+  'vim',
+  'nvim',
+  'nano',
+  'emacs',
+  'pico',
+  'less',
+  'more',
+  'most',
+  'top',
+  'htop',
+  'btop',
+  'watch',
+  'man',
+  'passwd',
+  'ssh',
+  'telnet',
+  'sftp',
+  'ftp',
+  'tmux',
+  'screen',
+  'ncdu',
+  'irssi',
+  'w3m',
+  'lynx',
+  'gdb',
 ]);
 
 export const DEFAULT_CWD =
@@ -520,7 +648,12 @@ function runShellCommand(command: string, cwd: string) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ output: `[OmniTerm] Failed to run command: ${err.message}`, status: 'error', cwd, exitCode: null });
+      resolve({
+        output: `[OmniTerm] Failed to run command: ${err.message}`,
+        status: 'error',
+        cwd,
+        exitCode: null,
+      });
     });
     child.on('close', finish);
   });
@@ -637,37 +770,41 @@ function processCount() {
 
 function topProcesses() {
   try {
-    const out = spawnSync('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], {
-      encoding: 'utf8',
-      timeout: 4000,
-    }).stdout || '';
-    return out
-      .trim()
-      .split('\n')
-      .slice(1)
-      // The sampler itself is always near the top of its own snapshot (ps can
-      // briefly show high CPU), and that is not a fact about the machine.
-      .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
-      .slice(0, 5)
-      .map((row) => {
-        // `comm` can contain spaces ("npm run build"), which shifts a
-        // positional parse and puts a number in the user column. Parse the
-        // fixed columns from the left and the numeric ones from the right.
-        const cols = row.trim().split(/\s+/);
-        if (cols.length < 5) return { pid: 0, name: 'unknown', cpu: 0, memory: 0, user: 'unknown' };
-        const pid = Number(cols[0]) || 0;
-        const user = cols[cols.length - 1] || 'unknown';
-        const mem = Number(cols[cols.length - 2]) || 0;
-        const cpu = Number(cols[cols.length - 3]) || 0;
-        return {
-          pid,
-          name: cols.slice(1, cols.length - 3).join(' ') || 'unknown',
-          cpu,
-          memory: Number(((mem / 100) * (os.totalmem() / 1048576)).toFixed(1)),
-          user,
-        };
-      })
-      .filter((proc) => proc.pid > 0);
+    const out =
+      spawnSync('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], {
+        encoding: 'utf8',
+        timeout: 4000,
+      }).stdout || '';
+    return (
+      out
+        .trim()
+        .split('\n')
+        .slice(1)
+        // The sampler itself is always near the top of its own snapshot (ps can
+        // briefly show high CPU), and that is not a fact about the machine.
+        .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
+        .slice(0, 5)
+        .map((row) => {
+          // `comm` can contain spaces ("npm run build"), which shifts a
+          // positional parse and puts a number in the user column. Parse the
+          // fixed columns from the left and the numeric ones from the right.
+          const cols = row.trim().split(/\s+/);
+          if (cols.length < 5)
+            return { pid: 0, name: 'unknown', cpu: 0, memory: 0, user: 'unknown' };
+          const pid = Number(cols[0]) || 0;
+          const user = cols[cols.length - 1] || 'unknown';
+          const mem = Number(cols[cols.length - 2]) || 0;
+          const cpu = Number(cols[cols.length - 3]) || 0;
+          return {
+            pid,
+            name: cols.slice(1, cols.length - 3).join(' ') || 'unknown',
+            cpu,
+            memory: Number(((mem / 100) * (os.totalmem() / 1048576)).toFixed(1)),
+            user,
+          };
+        })
+        .filter((proc) => proc.pid > 0)
+    );
   } catch {
     return [];
   }
@@ -719,11 +856,19 @@ function memoryBreakdown() {
     swapTotal,
     swapFree,
     usedPercent: total > 0 ? Number((((total - available) / total) * 100).toFixed(1)) : 0,
-    swapPercent: swapTotal > 0 ? Number((((swapTotal - swapFree) / swapTotal) * 100).toFixed(1)) : 0,
+    swapPercent:
+      swapTotal > 0 ? Number((((swapTotal - swapFree) / swapTotal) * 100).toFixed(1)) : 0,
   };
 }
 
-type PsMemRow = { pid: number; name: string; rssKb: number; percent: number; cpu: number; user: string };
+type PsMemRow = {
+  pid: number;
+  name: string;
+  rssKb: number;
+  percent: number;
+  cpu: number;
+  user: string;
+};
 
 /**
  * Every process, sorted by resident set size. Parsed from both ends of the row
@@ -764,7 +909,15 @@ function psMemoryRows(): PsMemRow[] {
 function topMemoryProcesses(rows: PsMemRow[]) {
   return rows.slice(0, 8).map((r) => {
     const rssMb = Number((r.rssKb / 1024).toFixed(1));
-    return { pid: r.pid, name: r.name, cpu: r.cpu, memory: rssMb, user: r.user, rssMb, percent: r.percent };
+    return {
+      pid: r.pid,
+      name: r.name,
+      cpu: r.cpu,
+      memory: rssMb,
+      user: r.user,
+      rssMb,
+      percent: r.percent,
+    };
   });
 }
 
@@ -797,7 +950,12 @@ function swapUsage() {
   const totalMb = Number(((info.SwapTotal ?? 0) / 1024).toFixed(1));
   const freeMb = Number(((info.SwapFree ?? 0) / 1024).toFixed(1));
   const usedMb = Number((totalMb - freeMb).toFixed(1));
-  return { totalMb, freeMb, usedMb, percent: totalMb > 0 ? Number(((usedMb / totalMb) * 100).toFixed(1)) : 0 };
+  return {
+    totalMb,
+    freeMb,
+    usedMb,
+    percent: totalMb > 0 ? Number(((usedMb / totalMb) * 100).toFixed(1)) : 0,
+  };
 }
 
 // Physical, device-backed filesystems only. Pseudo-filesystems, container
@@ -809,7 +967,14 @@ function mountedFilesystems() {
   try {
     const lines = fs.readFileSync('/proc/mounts', 'utf8').split('\n').filter(Boolean);
     const seen = new Set<string>();
-    const mounts: Array<{ path: string; device: string; fs: string; usedGb: number; totalGb: number; percent: number }> = [];
+    const mounts: Array<{
+      path: string;
+      device: string;
+      fs: string;
+      usedGb: number;
+      totalGb: number;
+      percent: number;
+    }> = [];
     for (const line of lines) {
       const parts = line.split(' ');
       const device = parts[0] || '';
@@ -928,14 +1093,20 @@ function procStatCpu() {
   return { aggregate, cores };
 }
 
-function perCoreUsage(before: ReturnType<typeof procStatCpu>, after: ReturnType<typeof procStatCpu>) {
+function perCoreUsage(
+  before: ReturnType<typeof procStatCpu>,
+  after: ReturnType<typeof procStatCpu>,
+) {
   return after.cores
     .map((c) => {
       const b = before.cores.find((x) => x.core === c.core);
       if (!b) return null;
       const idleDelta = c.idle - b.idle;
       const totalDelta = c.total - b.total || 1;
-      return { core: c.core, usage: Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))) };
+      return {
+        core: c.core,
+        usage: Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))),
+      };
     })
     .filter((c): c is { core: number; usage: number } => !!c)
     .sort((a, b) => a.core - b.core);
@@ -994,7 +1165,11 @@ app.get('/api/health', async (req, res) => {
     status: cpuUsage > 92 ? 'degraded' : 'healthy',
     cpuUsage,
     cpuCores: os.cpus().length,
-    loadAverage: { one: Number(load[0].toFixed(2)), five: Number(load[1].toFixed(2)), fifteen: Number(load[2].toFixed(2)) },
+    loadAverage: {
+      one: Number(load[0].toFixed(2)),
+      five: Number(load[1].toFixed(2)),
+      fifteen: Number(load[2].toFixed(2)),
+    },
     memoryUsage: {
       usedMb,
       totalMb,
@@ -1073,8 +1248,9 @@ app.post('/api/terminal/execute', async (req, res) => {
   // terminal, and the OS user's own permissions are the control there.)
   if (READ_ONLY) {
     const mutating =
-      /^(sudo|su|doas|rm|rmdir|mv|cp|dd|mkfs\.?\w*|chmod|chown|chattr|truncate|tee|shred|kill|pkill|killall|shutdown|reboot|poweroff|systemctl|service|apt|apt-get|dpkg|dnf|yum|pacman|snap|pip|pip3|npm|yarn|pnpm|mount|umount|useradd|usermod|passwd)\b/.test(trimmed) ||
-      /(^|[^>])>{1,2}\s*\S/.test(trimmed);
+      /^(sudo|su|doas|rm|rmdir|mv|cp|dd|mkfs\.?\w*|chmod|chown|chattr|truncate|tee|shred|kill|pkill|killall|shutdown|reboot|poweroff|systemctl|service|apt|apt-get|dpkg|dnf|yum|pacman|snap|pip|pip3|npm|yarn|pnpm|mount|umount|useradd|usermod|passwd)\b/.test(
+        trimmed,
+      ) || /(^|[^>])>{1,2}\s*\S/.test(trimmed);
     if (mutating) {
       appendAuditLog({
         id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1095,7 +1271,6 @@ app.post('/api/terminal/execute', async (req, res) => {
       });
     }
   }
-
 
   // ---- OmniTerm built-ins (handled by the app, not the shell) ----
   const parts = trimmed.split(/\s+/);
@@ -1137,7 +1312,10 @@ app.post('/api/terminal/execute', async (req, res) => {
     const recentLogs = activityLogs.slice(0, 25).reverse();
     output =
       recentLogs
-        .map((l, i) => `  ${(i + 1).toString().padStart(4, ' ')}  ${l.details.replace('Executed: ', '')}`)
+        .map(
+          (l, i) =>
+            `  ${(i + 1).toString().padStart(4, ' ')}  ${l.details.replace('Executed: ', '')}`,
+        )
         .join('\n') || '  1  welcome\n  2  help';
     syntaxType = 'bash';
   } else if (lower === 'help') {
@@ -1171,7 +1349,7 @@ app.post('/api/terminal/execute', async (req, res) => {
       const result = spawnSync(
         'tar',
         ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', nextCwd, '.'],
-        { timeout: 120_000 }
+        { timeout: 120_000 },
       );
       if (result.status !== 0) {
         output = `[OmniTerm backup] tar failed: ${(result.stderr || '').toString().trim() || `exit ${result.status}`}`;
@@ -1249,7 +1427,11 @@ const aiChatHandler = async (req: any, res: any) => {
     const reply = await aiChat(systemInstruction, userPrompt);
     res.json({ result: reply.text, mode, source: reply.source, latencyMs: reply.latencyMs });
   } catch (err: any) {
-    res.status(502).json({ result: `[AI Error] ${err.message || 'provider call failed'}`, mode, source: 'error' });
+    res.status(502).json({
+      result: `[AI Error] ${err.message || 'provider call failed'}`,
+      mode,
+      source: 'error',
+    });
   }
 };
 
@@ -1367,11 +1549,14 @@ app.post('/api/files/save', (req, res) => {
     const existed = fs.existsSync(target);
     if (!existed) {
       const parent = path.dirname(target);
-      if (!fs.existsSync(parent)) return res.status(400).json({ error: `Directory does not exist: ${parent}` });
+      if (!fs.existsSync(parent))
+        return res.status(400).json({ error: `Directory does not exist: ${parent}` });
     }
     // Write via a temp file so a crash cannot leave a half-written config behind.
     const tmp = `${target}.omniterm-${process.pid}.tmp`;
-    fs.writeFileSync(tmp, String(content ?? ''), { mode: existed ? fs.statSync(target).mode : 0o644 });
+    fs.writeFileSync(tmp, String(content ?? ''), {
+      mode: existed ? fs.statSync(target).mode : 0o644,
+    });
     fs.renameSync(tmp, target);
 
     appendAuditLog({
@@ -1422,7 +1607,6 @@ app.get('/api/ai/status', async (_req, res) => {
   });
 });
 
-
 // 7. Interactive terminal sessions & path completion
 app.get('/api/terminal/status', (req, res) => {
   const state = ptyStatus();
@@ -1464,9 +1648,15 @@ app.get('/api/complete', (req, res) => {
           }
         }
         const pretty = full.startsWith(os.homedir()) ? `~${full.slice(os.homedir().length)}` : full;
-        return { name: e.name, path: pretty + (isDir ? '/' : ''), type: isDir ? 'directory' : 'file' };
+        return {
+          name: e.name,
+          path: pretty + (isDir ? '/' : ''),
+          type: isDir ? 'directory' : 'file',
+        };
       })
-      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1))
+      .sort((a, b) =>
+        a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1,
+      )
       .slice(0, 40);
     res.json({ input: raw, directory: dir, matches: entries });
   } catch (err: any) {
@@ -1540,10 +1730,16 @@ app.post('/api/backups/run', (req, res) => {
   const archive = path.join(BACKUP_DIR, `snapshot-${stamp}.tar.gz`);
   try {
     fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-    const result = spawnSync('tar', ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', dir, '.'], { timeout: 300_000 });
+    const result = spawnSync(
+      'tar',
+      ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', dir, '.'],
+      { timeout: 300_000 },
+    );
     if (result.status !== 0) {
       pushAlert('Backup failed', `tar exited ${result.status} for ${dir}`, 'backup_failed');
-      return res.status(500).json({ error: (result.stderr || '').toString().trim() || `tar exited ${result.status}` });
+      return res
+        .status(500)
+        .json({ error: (result.stderr || '').toString().trim() || `tar exited ${result.status}` });
     }
     const sizeMb = Number((fs.statSync(archive).size / 1048576).toFixed(2));
     appendAuditLog({
@@ -1556,13 +1752,17 @@ app.post('/api/backups/run', (req, res) => {
       ip: '127.0.0.1',
       severity: 'info',
     });
-    res.json({ success: true, path: archive, sizeMb, source: dir, restore: `tar -xzf "${archive}" -C <target-dir>` });
+    res.json({
+      success: true,
+      path: archive,
+      sizeMb,
+      source: dir,
+      restore: `tar -xzf "${archive}" -C <target-dir>`,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
-
-
 
 // 8. API Documentation Endpoint
 app.get('/api/api-docs', (req, res) => {
@@ -1571,33 +1771,62 @@ app.get('/api/api-docs', (req, res) => {
     info: {
       title: 'OmniTerm local API',
       version: '2.4.0',
-      description: 'The API the OmniTerm desktop app calls on this machine: shell execution, file access, host metrics, snapshots and the AI provider.',
+      description:
+        'The API the OmniTerm desktop app calls on this machine: shell execution, file access, host metrics, snapshots and the AI provider.',
     },
     paths: {
       '/api/health': {
-        get: { summary: 'Get real-time server health metrics (CPU, Memory, Disk, Network)', responses: { 200: { description: 'Server metrics object' } } },
+        get: {
+          summary: 'Get real-time server health metrics (CPU, Memory, Disk, Network)',
+          responses: { 200: { description: 'Server metrics object' } },
+        },
       },
       '/api/terminal/execute': {
-        post: { summary: 'Run one command in your real shell', responses: { 200: { description: 'Execution result' } } },
+        post: {
+          summary: 'Run one command in your real shell',
+          responses: { 200: { description: 'Execution result' } },
+        },
       },
       '/api/ai/copilot': {
-        post: { summary: 'Ask the configured AI provider (any OpenAI-compatible API, Anthropic, Gemini or a local Ollama)', responses: { 200: { description: 'AI generated response' } } },
+        post: {
+          summary:
+            'Ask the configured AI provider (any OpenAI-compatible API, Anthropic, Gemini or a local Ollama)',
+          responses: { 200: { description: 'AI generated response' } },
+        },
       },
       '/api/ai/settings': {
-        get: { summary: 'Read the AI provider settings (the API key itself is never returned)', responses: { 200: { description: 'Provider, base URL, model, key presence, presets' } } },
-        post: { summary: 'Save AI provider settings', responses: { 200: { description: 'Updated settings' } } },
+        get: {
+          summary: 'Read the AI provider settings (the API key itself is never returned)',
+          responses: { 200: { description: 'Provider, base URL, model, key presence, presets' } },
+        },
+        post: {
+          summary: 'Save AI provider settings',
+          responses: { 200: { description: 'Updated settings' } },
+        },
       },
       '/api/ai/test': {
-        post: { summary: 'Send a real request to the provider and report the result', responses: { 200: { description: 'ok, latency, reply or error' } } },
+        post: {
+          summary: 'Send a real request to the provider and report the result',
+          responses: { 200: { description: 'ok, latency, reply or error' } },
+        },
       },
       '/api/ai/models': {
-        get: { summary: 'List the models the configured provider offers', responses: { 200: { description: 'Model ids' } } },
+        get: {
+          summary: 'List the models the configured provider offers',
+          responses: { 200: { description: 'Model ids' } },
+        },
       },
       '/api/files': {
-        get: { summary: 'List a real directory on this machine', responses: { 200: { description: 'Entries with real size, mode and mtime' } } },
+        get: {
+          summary: 'List a real directory on this machine',
+          responses: { 200: { description: 'Entries with real size, mode and mtime' } },
+        },
       },
       '/api/backups': {
-        get: { summary: 'List the snapshots really on disk', responses: { 200: { description: 'Snapshot archives with size and path' } } },
+        get: {
+          summary: 'List the snapshots really on disk',
+          responses: { 200: { description: 'Snapshot archives with size and path' } },
+        },
       },
     },
   });
@@ -1635,8 +1864,14 @@ async function startServer() {
   }
 
   process.on('exit', () => killAllSessions());
-  process.on('SIGINT', () => { killAllSessions(); process.exit(0); });
-  process.on('SIGTERM', () => { killAllSessions(); process.exit(0); });
+  process.on('SIGINT', () => {
+    killAllSessions();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    killAllSessions();
+    process.exit(0);
+  });
 
   // Interactive shell commands land in the same audit trail as one-shot execs.
   onPtyCommand((e) => {
@@ -1658,8 +1893,12 @@ async function startServer() {
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[OmniTerm] Local API ready on http://${HOST}:${PORT} (shell: ${SHELL})`);
     if (APP_TOKEN_GENERATED) {
-      console.log(`[OmniTerm] No OMNITERM_TOKEN was set, so one was generated for this run: ${APP_TOKEN}`);
-      console.log('[OmniTerm] Send it as the x-omniterm-token header; the API rejects requests without it.');
+      console.log(
+        `[OmniTerm] No OMNITERM_TOKEN was set, so one was generated for this run: ${APP_TOKEN}`,
+      );
+      console.log(
+        '[OmniTerm] Send it as the x-omniterm-token header; the API rejects requests without it.',
+      );
     }
     console.log(`[OmniTerm] Working directory: ${DEFAULT_CWD}`);
   });
@@ -1669,8 +1908,8 @@ async function startServer() {
   console.log(
     ptyState.available
       ? '[OmniTerm] Terminal backend: node-pty ready (real interactive shell)'
-      : `[OmniTerm] Terminal backend: node-pty UNAVAILABLE — ${ptyState.error}`
+      : `[OmniTerm] Terminal backend: node-pty UNAVAILABLE — ${ptyState.error}`,
   );
 }
 
-startServer();
+void startServer();

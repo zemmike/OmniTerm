@@ -22,7 +22,9 @@ import {
 // The suite is skipped (with an explicit reason) when the build artifact is
 // absent — global setup already tried to build it once.
 describe.skipIf(!serverBuilt)(
-  serverBuilt ? 'OmniTerm HTTP API (live server)' : 'OmniTerm HTTP API — SKIPPED: dist/server.cjs not built (run `npm run build:server`)',
+  serverBuilt
+    ? 'OmniTerm HTTP API (live server)'
+    : 'OmniTerm HTTP API — SKIPPED: dist/server.cjs not built (run `npm run build:server`)',
   () => {
     let srv: TestServer;
     let fixtureDir: string;
@@ -229,7 +231,7 @@ describe.skipIf(!serverBuilt)(
 
     // ------------------------------------------------------------- execute --
     describe('POST /api/terminal/execute', () => {
-      it("runs `echo integration-test` and returns its output + exit code 0", async () => {
+      it('runs `echo integration-test` and returns its output + exit code 0', async () => {
         const res = await postJson(srv, '/api/terminal/execute', {
           command: 'echo integration-test',
         });
