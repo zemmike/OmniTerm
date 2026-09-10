@@ -15,6 +15,14 @@ updates:
     labels:
       - dependencies
     groups:
+      # Vite and its React plugin move together: plugin-react 6 requires vite ^8,
+      # and this project pins vite ^6, so a lone bump of either one cannot even
+      # install (npm ci fails with ERESOLVE). One PR, both, or neither.
+      vite-toolchain:
+        applies-to: version-updates
+        patterns:
+          - vite
+          - "@vitejs/plugin-react"
       # Minor and patch bumps arrive as one PR; a runtime major such as Electron
       # changes Chromium and the node-pty ABI, so it stays separate and gets the
       # packaging and .deb install checks on its own.
