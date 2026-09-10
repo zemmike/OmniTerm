@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-10
+
+### Added
+- Releases now publish a `SHA256SUMS` file covering every asset, generated once
+  after both architecture builds finish and verified against the published files
+  before the job is allowed to pass. This is what `install-linux.sh` checks, so
+  its verification step finally has something to verify.
+- `SECURITY.md`: how to report privately, supported versions, and an explicit
+  threat model — what is a vulnerability in a terminal emulator that runs a shell
+  as you (auth bypass, cross-origin reach, path confusion, scheme handling,
+  sandbox escapes) and what is not.
+- Dependabot: weekly npm and GitHub Actions update pull requests. Minor and
+  patch updates are grouped; a runtime major such as Electron stays separate so
+  it gets the packaging and `.deb` install checks on its own.
+
+### Fixed
+- The AI error message no longer tells you to use an "AI Settings tab" that does
+  not exist; it points at the `OMNITERM_AI_*` environment variables and the
+  README.
+- The `.deb` and desktop metadata no longer advertise an "AI copilot sidebar".
+
 ## [1.6.1] - 2026-09-10
 
 ### Fixed
@@ -137,7 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/zemmike/OmniTerm/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/zemmike/OmniTerm/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/zemmike/OmniTerm/compare/v1.4.1...v1.5.0

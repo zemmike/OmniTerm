@@ -2,9 +2,11 @@ name: Release
 
 # Tag a commit with e.g. `v1.0.0` and push the tag:
 #   git tag v1.0.0 && git push origin v1.0.0
-# This builds the Ubuntu/Debian installer plus portable builds and attaches
-# them to a GitHub Release, so users can install with:
-#   sudo apt install ./OmniTerm-1.0.0-x64.deb
+# This builds the Ubuntu/Debian installer plus portable builds and attaches them
+# to a GitHub Release, so users can install with:
+#   sudo apt install ./OmniTerm-1.0.0-amd64.deb
+# A SHA256SUMS file covering every asset is published by the `checksums` job
+# below, which install-linux.sh verifies before it installs anything.
 
 on:
   push:
@@ -112,3 +114,42 @@ jobs:
             release/*.rpm
             release/*.tar.gz
           if-no-files-found: error
+
+  # Both matrix legs publish assets, so the checksums have to be computed once,
+  # afterwards, over everything the release actually carries — otherwise each leg
+  # would write a partial SHA256SUMS and the last one would win.
+  checksums:
+    name: Publish SHA256SUMS
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download every published asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p sums
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir sums --clobber
+          ls -l sums
+
+      - name: Generate and publish SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd sums
+          rm -f SHA256SUMS
+          # Bare file names with two spaces between the hash and the name: the
+          # format `sha256sum -c` expects, and the name install-linux.sh greps
+          # for when it verifies the .deb it is about to install.
+          sha256sum *.deb *.AppImage *.rpm *.tar.gz > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS --repo "${GITHUB_REPOSITORY}" --clobber
+
+      - name: Verify the published checksums against the published files
+        run: |
+          set -euo pipefail
+          cd sums
+          sha256sum -c SHA256SUMS

@@ -408,7 +408,8 @@ async function askCopilot(prompt: string, cwd: string): Promise<string> {
   } catch (err: any) {
     return (
       `[AI] ${err.message}\n` +
-      'Set up a provider in the AI Settings tab (any OpenAI-compatible API, Anthropic, Gemini, or a local Ollama).'
+      'Set up a provider with the OMNITERM_AI_* environment variables (any OpenAI-compatible API, Anthropic, Gemini, or a local Ollama)' +
+      ' or in ~/.local/share/omniterm/ai-config.json — see the AI section of the README.'
     );
   }
 }
@@ -1256,7 +1257,8 @@ app.post('/api/ai/copilot', aiChatHandler);
 // Neutral alias: /api/ai/copilot predates the provider switch.
 app.post('/api/ai/chat', aiChatHandler);
 
-// The AI Settings tab: read the current setup, save a new one, prove it works.
+// Read the current AI setup, save a new one, prove it works. There is no AI tab
+// in the UI any more; these serve the `ai` command and the settings file.
 app.get('/api/ai/settings', async (_req, res) => {
   try {
     res.json(await aiSettingsForUi());

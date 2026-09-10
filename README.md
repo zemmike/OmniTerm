@@ -313,6 +313,17 @@ entries with their exit codes) against a throwaway `$HOME`.
 - Hash-chained audit entries (tamper-evident retention) and a signed apt repo.
 - Per-tab tab titles.
 
+## Security
+
+Report vulnerabilities privately — see [SECURITY.md](SECURITY.md) for the policy,
+the supported versions and the threat model, which spells out what counts as a bug
+in a tool whose job is to run a shell as you. Dependabot opens weekly dependency
+update pull requests.
+
+Every release publishes a `SHA256SUMS` file covering all its assets, and
+`install-linux.sh` verifies the `.deb` against it before installing anything.
+
+
 ## Licence
 
 OmniTerm is released under the MIT Licence. See [LICENSE](LICENSE) for the
