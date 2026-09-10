@@ -1,64 +1,148 @@
 {
-  "name": "react-example",
+  "name": "omniterm",
+  "productName": "OmniTerm",
+  "desktopName": "omniterm.desktop",
+  "version": "1.0.0",
+  "description": "Professional terminal emulator for Linux and macOS with real shell execution, AI copilot, file manager and server health monitoring.",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "main": "electron-main.cjs",
+  "license": "MIT",
+  "author": {
+    "name": "Michael (zemmike)",
+    "email": "zemuim@gmail.com"
+  },
+  "homepage": "https://github.com/zemmike/OmniTerm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zemmike/OmniTerm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zemmike/OmniTerm/issues"
+  },
+  "keywords": [
+    "terminal",
+    "electron",
+    "shell",
+    "developer-tools",
+    "linux"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "build:web": "vite build",
+    "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "npm run build:web && npm run build:server",
+    "start": "NODE_ENV=production node dist/server.cjs",
     "start:desktop": "npm run build && electron .",
     "dist:linux": "npm run build && electron-builder --linux",
-    "dist:appimage": "npm run build && electron-builder --linux AppImage",
     "dist:deb": "npm run build && electron-builder --linux deb",
+    "dist:appimage": "npm run build && electron-builder --linux AppImage",
+    "dist:rpm": "npm run build && electron-builder --linux rpm",
     "dist:tar": "npm run build && electron-builder --linux tar.gz",
     "preview": "vite preview",
     "clean": "rm -rf dist release server.js",
     "lint": "tsc --noEmit"
   },
   "build": {
-    "appId": "com.omniterm.devterminal",
+    "appId": "app.zemike.omniterm",
     "productName": "OmniTerm",
+    "copyright": "Copyright \u00a9 2026 Michael (zemmike)",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
       "electron-main.cjs",
+      "preload.cjs",
+      "build/icon.png",
+      "assets/**/*",
       "package.json"
     ],
+    "extraMetadata": {
+      "main": "electron-main.cjs"
+    },
     "linux": {
       "target": [
-        "AppImage",
         "deb",
+        "AppImage",
         "tar.gz"
       ],
-      "category": "Development;Utility;System;",
-      "synopsis": "DevTerminal Pro & AI Copilot Suite",
-      "description": "Professional terminal emulator with AI Copilot, system file manager, real-time server health monitoring, and automated backup automation."
+      "executableName": "omniterm",
+      "syncDesktopName": true,
+      "category": "Development;Utility;System;TerminalEmulator",
+      "icon": "build/icon.png",
+      "synopsis": "OmniTerm \u2014 professional terminal & AI copilot suite",
+      "description": "OmniTerm is a modern terminal emulator for Linux with real shell execution, multi-tab sessions, an AI copilot sidebar, system file manager, live server health monitoring and backup automation.",
+      "maintainer": "Michael (zemmike) <zemuim@gmail.com>",
+      "vendor": "zemmike",
+      "desktop": {
+        "entry": {
+          "Name": "OmniTerm",
+          "GenericName": "Terminal Emulator",
+          "Comment": "Professional terminal & AI copilot suite",
+          "Categories": "Development;System;TerminalEmulator;Utility;",
+          "Keywords": "terminal;shell;cli;bash;developer;console;ai;",
+          "StartupWMClass": "omniterm",
+          "Terminal": "false",
+          "Type": "Application"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libsecret-1-0"
+      ],
+      "recommends": [
+        "libappindicator3-1"
+      ],
+      "afterInstall": "build/deb-postinst.sh",
+      "afterRemove": "build/deb-postrm.sh"
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24"
+    "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3",
-    "@types/express": "^4.17.21"
+    "vite": "^6.2.3"
+  },
+  "allowScripts": {
+    "electron@38.8.6": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "protobufjs@7.6.6": true,
+    "@google/genai@2.21.0": true
   }
 }

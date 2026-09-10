@@ -1,0 +1,114 @@
+name: Release
+
+# Tag a commit with e.g. `v1.0.0` and push the tag:
+#   git tag v1.0.0 && git push origin v1.0.0
+# This builds the Ubuntu/Debian installer plus portable builds and attaches
+# them to a GitHub Release, so users can install with:
+#   sudo apt install ./OmniTerm-1.0.0-x64.deb
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to stamp on the artifacts (e.g. 1.0.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            targets: deb AppImage tar.gz rpm
+          - arch: arm64
+            targets: deb tar.gz
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Resolve version
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into package.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ steps.vars.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          node -p "require('./package.json').version"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure Electron runtime binary is present
+        run: |
+          if [ ! -x node_modules/electron/dist/electron ]; then
+            node node_modules/electron/install.js
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Package for Linux
+        run: npx electron-builder --linux ${{ matrix.targets }} --${{ matrix.arch }} --publish never
+
+      - name: Verify the .deb installs
+        run: |
+          set -e
+          DEB=$(ls release/*.deb | head -1)
+          dpkg-deb --info "$DEB"
+          sudo apt-get update
+          sudo apt-get install -y "./$DEB"
+          command -v omniterm
+          dpkg -s omniterm | head -12
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: OmniTerm ${{ steps.vars.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          files: |
+            release/*.deb
+            release/*.AppImage
+            release/*.rpm
+            release/*.tar.gz
+            release/latest-linux.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniterm-linux-${{ matrix.arch }}-${{ steps.vars.outputs.version }}
+          path: |
+            release/*.deb
+            release/*.AppImage
+            release/*.rpm
+            release/*.tar.gz
+          if-no-files-found: error

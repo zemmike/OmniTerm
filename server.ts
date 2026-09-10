@@ -1,12 +1,33 @@
 import express from 'express';
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
+import { spawn, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.OMNITERM_HOST || '127.0.0.1';
+const APP_TOKEN = process.env.OMNITERM_TOKEN || '';
+const EXEC_TIMEOUT_MS = Number(process.env.OMNITERM_EXEC_TIMEOUT_MS) || 60_000;
+const MAX_OUTPUT_BYTES = 400_000;
 
-app.use(express.json());
+app.use(express.json({ limit: '4mb' }));
+
+// ---------------------------------------------------------------------------
+// Local API guard.
+// This server executes real shell commands, so a page served from the internet
+// must never be able to POST to it. Every /api call needs the per-launch token
+// that the desktop shell hands to the renderer (see preload.cjs).
+// ---------------------------------------------------------------------------
+app.use('/api', (req, res, next) => {
+  if (!APP_TOKEN) return next();
+  const provided = req.get('x-omniterm-token') || String(req.query.token || '');
+  if (provided !== APP_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized: missing or invalid OmniTerm session token.' });
+  }
+  next();
+});
 
 // In-Memory Data Stores for Server Operations
 const activityLogs: Array<{
@@ -239,6 +260,30 @@ let backupTasks = [
   },
 ];
 
+const AI_MODEL = process.env.OMNITERM_AI_MODEL || 'gemini-2.5-flash';
+
+// Helper: ask the AI copilot directly from a terminal command
+async function askCopilot(mode: string, prompt: string, cwd: string): Promise<string> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    return `[OmniTerm AI] No GEMINI_API_KEY configured. Set it in File > Environment (.env) to enable the copilot.`;
+  }
+  try {
+    const response = await ai.models.generateContent({
+      model: AI_MODEL,
+      contents: `Working directory: ${cwd}\nRequest: ${prompt}`,
+      config: {
+        systemInstruction:
+          'You are OmniTerm Copilot, an expert Linux shell assistant. Answer with concrete, runnable commands and keep it short.',
+        temperature: 0.2,
+      },
+    });
+    return response.text || '[OmniTerm AI] Empty response.';
+  } catch (err: any) {
+    return `[OmniTerm AI Error] ${err.message}`;
+  }
+}
+
 // Helper: Gemini AI Client
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -253,57 +298,296 @@ function getGeminiClient() {
   });
 }
 
+// ------------------- REAL EXECUTION ENGINE ------------------- //
+
+const SHELL =
+  process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/bash';
+
+// Commands that need a real TTY (full-screen / prompt driven). We run one
+// command per request over pipes, so these would just hang until the timeout.
+const INTERACTIVE_ONLY = new Set([
+  'vi', 'vim', 'nvim', 'nano', 'emacs', 'pico', 'less', 'more', 'most',
+  'top', 'htop', 'btop', 'watch', 'man', 'passwd', 'ssh', 'telnet', 'sftp',
+  'ftp', 'tmux', 'screen', 'ncdu', 'irssi', 'w3m', 'lynx', 'gdb',
+]);
+
+export const DEFAULT_CWD =
+  process.env.OMNITERM_CWD && fs.existsSync(process.env.OMNITERM_CWD)
+    ? process.env.OMNITERM_CWD
+    : os.homedir();
+
+function resolveCwd(candidate?: string): string {
+  try {
+    if (candidate && fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      return candidate;
+    }
+  } catch {
+    /* fall through to default */
+  }
+  return DEFAULT_CWD;
+}
+
+function detectSyntax(command: string, output: string): string {
+  const bin = command.trim().split(/\s+/)[0];
+  if (['git', 'npm', 'docker', 'ls', 'ps', 'df', 'free', 'systemctl'].includes(bin)) return 'bash';
+  if (bin === 'node') return 'node';
+  if (bin.startsWith('python')) return 'python';
+  if (/^\s*[[{]/.test(output)) return 'json';
+  return 'text';
+}
+
+function runShellCommand(command: string, cwd: string) {
+  return new Promise<{
+    output: string;
+    status: 'success' | 'error';
+    cwd: string;
+    exitCode: number | null;
+  }>((resolve) => {
+    const child = spawn(SHELL, ['-lc', command], {
+      cwd,
+      env: { ...process.env, TERM: 'xterm-256color', OMNITERM: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let output = '';
+    let truncated = false;
+    let timedOut = false;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, EXEC_TIMEOUT_MS);
+
+    const append = (chunk: Buffer) => {
+      if (output.length + chunk.length > MAX_OUTPUT_BYTES) {
+        truncated = true;
+        return;
+      }
+      output += chunk.toString('utf8');
+    };
+
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
+      let finalOutput = output.replace(/\s+$/, '');
+      if (truncated) {
+        finalOutput += `\n\n[OmniTerm] Output truncated at ${MAX_OUTPUT_BYTES} bytes.`;
+      }
+      if (timedOut) {
+        finalOutput += `\n\n[OmniTerm] Command exceeded the ${EXEC_TIMEOUT_MS / 1000}s timeout and was killed.`;
+      } else if (signal) {
+        finalOutput += `\n\n[OmniTerm] Command terminated by signal ${signal}.`;
+      }
+      if (!finalOutput) {
+        finalOutput = code === 0 ? '(no output)' : `(exited with code ${code})`;
+      }
+
+      resolve({
+        output: finalOutput,
+        status: code === 0 && !timedOut ? 'success' : 'error',
+        cwd,
+        exitCode: code,
+      });
+    };
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ output: `[OmniTerm] Failed to run command: ${err.message}`, status: 'error', cwd, exitCode: null });
+    });
+    child.on('close', finish);
+  });
+}
+
 // ------------------- API ENDPOINTS ------------------- //
 
-// 1. Server Health Metrics Endpoint
-app.get('/api/health', (req, res) => {
-  const memoryTotal = 16384; // 16GB
-  const memoryUsed = 6840 + Math.floor(Math.sin(Date.now() / 3000) * 300);
-  const memoryFree = memoryTotal - memoryUsed;
+// ------------------- REAL SYSTEM METRICS HELPERS ------------------- //
+function cpuSnapshot() {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of os.cpus()) {
+    const t = cpu.times;
+    idle += t.idle;
+    total += t.idle + t.user + t.nice + t.sys + t.irq;
+  }
+  return { idle, total };
+}
 
-  const uptime = Math.floor((Date.now() - 1754980000000) / 1000) % 864000 + 43200;
+let prevNet: { rx: number; tx: number; at: number } | null = null;
+function networkRates() {
+  try {
+    const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
+    let rx = 0;
+    let tx = 0;
+    for (const line of lines) {
+      const [iface, rest] = line.split(':');
+      if (!rest || iface.trim() === 'lo') continue;
+      const cols = rest.trim().split(/\s+/);
+      rx += Number(cols[0]) || 0;
+      tx += Number(cols[8]) || 0;
+    }
+    const now = Date.now();
+    const prev = prevNet;
+    prevNet = { rx, tx, at: now };
+    if (!prev || now === prev.at) return { rxKbps: 0, txKbps: 0 };
+    const seconds = (now - prev.at) / 1000;
+    return {
+      rxKbps: Math.max(0, Math.round(((rx - prev.rx) * 8) / 1000 / seconds)),
+      txKbps: Math.max(0, Math.round(((tx - prev.tx) * 8) / 1000 / seconds)),
+    };
+  } catch {
+    return { rxKbps: 0, txKbps: 0 };
+  }
+}
+
+function diskUsage() {
+  try {
+    const st: any = (fs as any).statfsSync ? (fs as any).statfsSync(os.homedir()) : null;
+    if (st) {
+      const total = (st.blocks * st.bsize) / 1073741824;
+      const free = (st.bavail * st.bsize) / 1073741824;
+      const used = total - free;
+      return {
+        usedGb: Number(used.toFixed(1)),
+        totalGb: Number(total.toFixed(1)),
+        percent: Number(((used / total) * 100).toFixed(1)),
+      };
+    }
+  } catch {
+    /* fall through */
+  }
+  return { usedGb: 0, totalGb: 0, percent: 0 };
+}
+
+function activeConnectionCount() {
+  let count = 0;
+  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    try {
+      const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+      for (const line of lines.slice(1)) {
+        if (line.trim().split(/\s+/)[6] === '01') count += 1;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return count;
+}
+
+function processCount() {
+  try {
+    return fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d)).length;
+  } catch {
+    return 0;
+  }
+}
+
+function topProcesses() {
+  try {
+    const out = spawnSync('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], {
+      encoding: 'utf8',
+      timeout: 4000,
+    }).stdout || '';
+    return out
+      .trim()
+      .split('\n')
+      .slice(1, 6)
+      .map((row) => {
+        const cols = row.trim().split(/\s+/);
+        const pid = Number(cols[0]) || 0;
+        const cpu = Number(cols[2]) || 0;
+        const mem = Number(cols[3]) || 0;
+        return {
+          pid,
+          name: cols[1] || 'unknown',
+          cpu,
+          memory: Number(((mem / 100) * (os.totalmem() / 1048576)).toFixed(1)),
+          user: cols[4] || 'unknown',
+        };
+      })
+      .filter((proc) => proc.pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+// 1. Server Health Metrics Endpoint (real host metrics)
+app.get('/api/health', async (req, res) => {
+  const before = cpuSnapshot();
+  await new Promise((r) => setTimeout(r, 150));
+  const after = cpuSnapshot();
+
+  const idleDelta = after.idle - before.idle;
+  const totalDelta = after.total - before.total || 1;
+  const cpuUsage = Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
+
+  const totalMb = Math.round(os.totalmem() / 1048576);
+  const freeMb = Math.round(os.freemem() / 1048576);
+  const usedMb = totalMb - freeMb;
+  const load = os.loadavg();
 
   res.json({
-    status: 'healthy',
-    cpuUsage: Math.floor(22 + Math.random() * 15 + Math.sin(Date.now() / 2000) * 10),
-    cpuCores: 8,
+    status: cpuUsage > 92 ? 'degraded' : 'healthy',
+    cpuUsage,
+    cpuCores: os.cpus().length,
+    loadAverage: { one: Number(load[0].toFixed(2)), five: Number(load[1].toFixed(2)), fifteen: Number(load[2].toFixed(2)) },
     memoryUsage: {
-      usedMb: memoryUsed,
-      totalMb: memoryTotal,
-      freeMb: memoryFree,
-      percent: Math.round((memoryUsed / memoryTotal) * 100),
+      usedMb,
+      totalMb,
+      freeMb,
+      percent: Math.round((usedMb / totalMb) * 100),
     },
-    diskUsage: {
-      usedGb: 142.5,
-      totalGb: 500,
-      percent: 28.5,
-    },
-    networkIO: {
-      rxKbps: Math.floor(120 + Math.random() * 80),
-      txKbps: Math.floor(450 + Math.random() * 200),
-    },
-    uptimeSeconds: uptime,
-    processCount: 148,
-    activeConnections: 12,
-    topProcesses: [
-      { pid: 3000, name: 'node (server.ts)', cpu: 4.2, memory: 185.4, user: 'node' },
-      { pid: 1420, name: 'nginx-proxy', cpu: 1.8, memory: 42.1, user: 'www-data' },
-      { pid: 882, name: 'dockerd', cpu: 6.5, memory: 412.0, user: 'root' },
-      { pid: 2104, name: 'zsh-terminal-session', cpu: 0.9, memory: 28.5, user: 'dev_alex' },
-      { pid: 3120, name: 'claude-ai-agent-cli', cpu: 3.1, memory: 142.8, user: 'dev_alex' },
-    ],
+    diskUsage: diskUsage(),
+    networkIO: networkRates(),
+    uptimeSeconds: Math.floor(os.uptime()),
+    processCount: processCount(),
+    activeConnections: activeConnectionCount(),
+    topProcesses: topProcesses(),
     systemInfo: {
-      os: 'Linux (Cloud Run Container / DevTerminal)',
-      arch: 'x86_64',
-      hostname: 'devterminal-core-01',
-      kernel: '6.6.0-v8-aistudio',
+      os: `${os.type()} ${os.release()}`,
+      arch: os.arch(),
+      hostname: os.hostname(),
+      kernel: os.release(),
       nodeVersion: process.version,
+      distro: process.env.OMNITERM_DISTRO || '',
     },
   });
 });
 
+// 1b. Real environment info (drives the initial working directory / preset)
+app.get('/api/env', (req, res) => {
+  res.json({
+    platform: process.platform,
+    osPreset: process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
+    home: os.homedir(),
+    cwd: DEFAULT_CWD,
+    user: (() => {
+      try {
+        return os.userInfo().username;
+      } catch {
+        return process.env.USER || 'user';
+      }
+    })(),
+    hostname: os.hostname(),
+    shell: SHELL,
+    version: process.env.OMNITERM_VERSION || '1.0.0',
+    aiEnabled: Boolean(process.env.GEMINI_API_KEY),
+  });
+});
+
 // 2. Terminal Command Execution API
-app.post('/api/terminal/execute', (req, res) => {
+app.post('/api/terminal/execute', async (req, res) => {
   const { command, cwd = '/home/user', userRole = 'developer', osPreset = 'macos' } = req.body;
   const startTime = Date.now();
 
@@ -361,127 +645,125 @@ app.post('/api/terminal/execute', (req, res) => {
     severity: 'info',
   });
 
-  // Custom Simulator for Commands
+  // ---- OmniTerm built-ins (handled by the app, not the shell) ----
+  const parts = trimmed.split(/\s+/);
+  const bin = (parts[0] || '').toLowerCase();
   let output = '';
-  let status: 'success' | 'error' = 'success';
+  let status: 'success' | 'error' | 'denied' = 'success';
   let syntaxType: any = 'text';
+  let nextCwd = resolveCwd(cwd);
+  let exitCode: number | null = 0;
+  let handledByApp = true;
 
-  if (lower === 'clear') {
+  if (lower === 'clear' || lower === 'cls') {
     output = '__CLEAR__';
-  } else if (lower === 'pwd') {
-    output = cwd;
-  } else if (lower === 'whoami') {
-    output = `user: dev_alex (role: ${userRole}, os: ${osPreset})`;
-  } else if (lower === 'date') {
-    output = new Date().toUTCString();
-  } else if (lower === 'ls' || lower === 'ls -la' || lower === 'dir') {
-    output = `drwxr-xr-x 5 root root 4096 Aug 12 07:30 .
-drwxr-xr-x 3 root root 4096 Aug 12 07:00 ..
--rw-r--r-- 1 dev_alex dev_alex  650 Aug 12 06:20 config.json
--rwxr-xr-x 1 dev_alex dev_alex 1120 Aug 12 02:15 deploy.sh
--rwxr-xr-x 1 admin_sys admin_sys 1840 Aug 10 11:00 backup_cron.py
-drwxr-xr-x 2 dev_alex dev_alex 4096 Aug 12 07:15 src/
-drwxr-xr-x 4 root root 4096 Aug 11 14:32 etc/`;
-    syntaxType = 'bash';
-  } else if (lower.startsWith('cat ')) {
-    const filename = trimmed.substring(4).trim();
-    const found = virtualFilesystem.find((f) => f.name === filename || f.path.endsWith(filename));
-    if (found) {
-      output = found.content || '[Empty File]';
-      syntaxType = found.language || 'text';
-    } else {
-      output = `cat: ${filename}: No such file or directory`;
+  } else if (bin === 'cd') {
+    const raw = parts.slice(1).join(' ').trim() || os.homedir();
+    const target = raw.replace(/^~(?=$|\/)/, os.homedir());
+    const resolved = path.resolve(nextCwd, target);
+    try {
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        nextCwd = fs.realpathSync(resolved);
+        output = nextCwd;
+      } else {
+        output = `cd: ${raw}: No such file or directory`;
+        status = 'error';
+      }
+    } catch (err: any) {
+      output = `cd: ${err.message}`;
       status = 'error';
     }
-  } else if (lower === 'ps' || lower === 'top' || lower === 'htop') {
-    output = `PID   USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
- 3000 node      20   0  845200 185400  38200 S   4.2   1.1   0:14.22 node server.ts
- 1420 www-data  20   0  124100  42100  12000 S   1.8   0.3   0:05.10 nginx
-  882 root      20   0 1120000 412000  98200 S   6.5   2.5   1:42.88 dockerd
- 3120 dev_alex  20   0  312000 142800  28100 S   3.1   0.9   0:08.50 claude-cli`;
-    syntaxType = 'bash';
-  } else if (lower.startsWith('echo ')) {
-    output = trimmed.substring(5).replace(/^['"]|['"]$/g, '');
-  } else if (lower.startsWith('node ') || lower === 'node') {
-    if (trimmed === 'node -v' || trimmed === 'node --version') {
-      output = process.version;
-    } else {
-      output = `[Node.js v22 Run Engine] Executing inline script...\n> Script completed with return code 0`;
-      syntaxType = 'node';
-    }
-  } else if (lower.startsWith('python ') || lower.startsWith('python3 ')) {
-    output = `[Python 3.11 Execution Engine]\nInitializing environment...\nProcess finished with exit code 0`;
-    syntaxType = 'python';
-  } else if (lower.startsWith('ping ')) {
-    const host = trimmed.split(' ')[1] || 'google.com';
-    output = `PING ${host} (142.250.190.46): 56 data bytes
-64 bytes from 142.250.190.46: icmp_seq=0 ttl=116 time=12.4 ms
-64 bytes from 142.250.190.46: icmp_seq=1 ttl=116 time=11.8 ms
-64 bytes from 142.250.190.46: icmp_seq=2 ttl=116 time=12.1 ms
---- ${host} ping statistics ---
-3 packets transmitted, 3 packets received, 0.0% packet loss`;
-  } else if (lower.startsWith('git ')) {
-    if (lower.includes('status')) {
-      output = `On branch main
-Your branch is up to date with 'origin/main'.
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-	modified:   src/App.tsx
-	modified:   server.ts
-
-no changes added to commit (use "git add" and/or "git commit")`;
-    } else if (lower.includes('log')) {
-      output = `* commit a4f8e91 (HEAD -> main, origin/main)
-| Author: DevTerminal Agent <agent@aistudio.build>
-| Date:   Wed Aug 12 07:20:00 2026 -0700
-|     feat: add real-time encryption and backup automation engine
-* commit 82e11a2
-  Author: DevTerminal Agent <agent@aistudio.build>
-  Date:   Wed Aug 12 06:45:00 2026 -0700
-      feat: setup multi-tab terminal interface and permission guards`;
-    } else {
-      output = `[git engine] Command '${trimmed}' executed successfully.`;
-    }
-  } else if (lower.startsWith('docker ')) {
-    output = `CONTAINER ID   IMAGE                 COMMAND                  CREATED        STATUS        PORTS                  NAMES
-c8f9210a4e     devterminal:latest    "node server.cjs"        2 hours ago    Up 2 hours    0.0.0.0:3000->3000/tcp devterm_app
-f109a24d8b     redis:7-alpine        "docker-entrypoint.s…"   5 hours ago    Up 5 hours    6379/tcp               redis_cache`;
-  } else if (lower === 'backup run' || lower.startsWith('backup ')) {
-    output = `[BACKUP ENGINE] Initiating scheduled snapshot backup task...\nTarget: AWS S3 (bucket: devterminal-backups-2026)\nCompression: Gzip level 9\nEncryption: AES-256-GCM\n[SUCCESS] Backup completed! Snapshot ID: snap-20260812-9921 (Size: 1,240 MB)`;
-  } else if (lower.startsWith('sudo ')) {
-    output = `[sudo] password for ${userRole}: ********
-Elevated execution granted for command: '${trimmed.substring(5)}'
-Operation completed successfully.`;
+  } else if (lower === 'pwd') {
+    output = nextCwd;
+  } else if (bin === 'welcome') {
+    output =
+      `OmniTerm v${process.env.OMNITERM_VERSION || '1.0.0'} — real shell engine (${SHELL})\n` +
+      `User: ${os.userInfo().username}@${os.hostname()}  |  Platform: ${os.type()} ${os.arch()}\n` +
+      `Working directory: ${nextCwd}\n` +
+      `Type 'help' for OmniTerm built-ins. Everything else is executed by your real shell.`;
   } else if (lower === 'history') {
     const recentLogs = activityLogs.slice(0, 25).reverse();
-    output = recentLogs.map((l, i) => `  ${(i + 1).toString().padStart(4, ' ')}  ${l.details.replace('Executed: ', '')}`).join('\n') || '  1  welcome\n  2  help';
+    output =
+      recentLogs
+        .map((l, i) => `  ${(i + 1).toString().padStart(4, ' ')}  ${l.details.replace('Executed: ', '')}`)
+        .join('\n') || '  1  welcome\n  2  help';
     syntaxType = 'bash';
   } else if (lower === 'help') {
-    output = `DevTerminal Pro - Supported CLI Commands:
-  • ls / dir          - List filesystem directory contents
-  • cat <file>        - Display file content
-  • pwd / whoami      - Show current working path and user identity
-  • ps / top          - Display active system process monitor
-  • node <script>     - Execute Node.js scripts
-  • python <script>   - Run Python scripts
-  • ping <host>       - Network diagnosis
-  • git status/log    - Inspection of source control
-  • docker ps         - Inspect running container runtime
-  • backup run        - Execute instant system backup snapshot
-  • claude <prompt>   - Execute AI Coder Copilot command
-  • gemini <prompt>   - Execute Gemini Terminal Assistant
-  • history           - Print past command history list
-  • clear             - Clear terminal viewport (Ctrl+L)`;
+    output =
+      `OmniTerm ${process.env.OMNITERM_VERSION || '1.0.0'} — built-in commands:\n` +
+      `  cd <dir>            - Change the session working directory\n` +
+      `  pwd                 - Print the session working directory\n` +
+      `  clear               - Clear the terminal viewport (Ctrl+L)\n` +
+      `  history             - Show commands run in this session\n` +
+      `  backup [run]        - Snapshot the current directory to ~/OmniTerm/backups\n` +
+      `  ai <prompt>         - Ask the AI copilot from the terminal\n` +
+      `  claude|gemini <p>   - AI copilot aliases\n` +
+      `  help                - This list\n\n` +
+      `Everything else (ls, git, docker, npm, python3, ...) runs in your real shell (${SHELL}) ` +
+      `with your real environment. Full-screen TTY apps (vim, top, ssh) are not supported yet — ` +
+      `use the 'Files' and 'Health' tabs for browsing and monitoring.`;
+    syntaxType = 'bash';
+  } else if (bin === 'ai' || bin === 'claude' || bin === 'gemini' || bin === 'cursor') {
+    const prompt = parts.slice(1).join(' ').trim();
+    if (!prompt) {
+      output = `[OmniTerm AI] Usage: ${bin} <your question about this system or a command>`;
+    } else {
+      output = await askCopilot(bin === 'claude' ? 'claude-coder' : bin === 'gemini' ? 'gemini-cli' : 'cursor-agent', prompt, nextCwd);
+      syntaxType = 'bash';
+    }
+  } else if (bin === 'backup') {
+    const destDir = path.join(os.homedir(), 'OmniTerm', 'backups');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const archive = path.join(destDir, `snapshot-${stamp}.tar.gz`);
+    try {
+      fs.mkdirSync(destDir, { recursive: true });
+      const result = spawnSync(
+        'tar',
+        ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', nextCwd, '.'],
+        { timeout: 120_000 }
+      );
+      if (result.status !== 0) {
+        output = `[OmniTerm backup] tar failed: ${(result.stderr || '').toString().trim() || `exit ${result.status}`}`;
+        status = 'error';
+      } else {
+        const sizeMb = fs.statSync(archive).size / 1048576;
+        output =
+          `[OmniTerm backup] Snapshot of ${nextCwd}\n` +
+          `Archive: ${archive}\nSize: ${sizeMb.toFixed(2)} MB\n` +
+          `Restore with: tar -xzf "${archive}" -C <target-dir>`;
+        syntaxType = 'bash';
+      }
+    } catch (err: any) {
+      output = `[OmniTerm backup] ${err.message}`;
+      status = 'error';
+    }
+  } else if (INTERACTIVE_ONLY.has(bin)) {
+    output =
+      `[OmniTerm] '${bin}' needs an interactive TTY and is not supported in this terminal pane yet.\n` +
+      `Use non-interactive equivalents: ps aux (instead of top), cat/head/tail (instead of less), ` +
+      `git --no-pager <cmd>.`;
+    status = 'error';
   } else {
-    output = `command executed: '${trimmed}'\nReturn code: 0\n[DevTerminal Execution Engine - ${osPreset.toUpperCase()} Preset]`;
+    handledByApp = false;
+  }
+
+  // ---- Everything else runs for real in the user's shell ----
+  if (!handledByApp) {
+    const result = await runShellCommand(trimmed, nextCwd);
+    output = result.output;
+    status = result.status;
+    nextCwd = result.cwd;
+    exitCode = result.exitCode;
+    syntaxType = detectSyntax(trimmed, output);
   }
 
   res.json({
     output,
     status,
     executionTimeMs: Date.now() - startTime,
-    cwd,
+    cwd: nextCwd,
+    exitCode,
+    real: true,
     syntaxType,
   });
 });
@@ -518,7 +800,7 @@ app.post('/api/ai/copilot', async (req, res) => {
     const userPrompt = `Action: ${action}\nUser Query: ${prompt}\nRecent Terminal Context Logs:\n${contextLogs}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: AI_MODEL,
       contents: userPrompt,
       config: {
         systemInstruction,
@@ -529,7 +811,7 @@ app.post('/api/ai/copilot', async (req, res) => {
     res.json({
       result: response.text || 'No response generated.',
       mode,
-      source: 'gemini-3.6-flash',
+      source: AI_MODEL,
     });
   } catch (err: any) {
     console.error('Gemini API Error in /api/ai/copilot:', err);
@@ -684,21 +966,30 @@ app.get('/api/api-docs', (req, res) => {
 // ------------------- VITE SETUP & SERVER BINDING ------------------- //
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    // Dev only: vite is a devDependency, so it is imported lazily to keep the
+    // packaged production server free of any vite requirement.
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // The bundled server lives next to the built frontend (dist/server.cjs +
+    // dist/index.html + dist/assets), so resolve statics from __dirname rather
+    // than the process cwd — the desktop shell runs us from the user data dir.
+    const distPath = fs.existsSync(path.join(__dirname, 'index.html'))
+      ? __dirname
+      : path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[DevTerminal Pro Server] Listening on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`[OmniTerm] Local API ready on http://${HOST}:${PORT} (shell: ${SHELL})`);
+    console.log(`[OmniTerm] Working directory: ${DEFAULT_CWD}`);
   });
 }
 

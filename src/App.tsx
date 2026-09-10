@@ -129,6 +129,45 @@ export default function App() {
     },
   ]);
 
+  // Adopt the real host environment on startup: real home directory, real
+  // platform preset and a shell banner that reflects this machine.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/env')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((env) => {
+        if (!env || cancelled) return;
+        const preset = (env.osPreset || 'linux') as OSPreset;
+        setOsPreset(preset);
+        setTabs((prev) =>
+          prev.map((t, idx) =>
+            idx === 0
+              ? {
+                  ...t,
+                  osPreset: preset,
+                  title: `Main Session (${String(preset).toUpperCase()})`,
+                  cwd: env.cwd,
+                  history: t.history.map((h) => ({
+                    ...h,
+                    cwd: env.cwd,
+                    os: preset,
+                    output:
+                      `OmniTerm v${env.version} — real shell engine on ${env.hostname}\n` +
+                      `User: ${env.user}  |  Shell: ${env.shell}\n` +
+                      `Working directory: ${env.cwd}\n` +
+                      `Type 'help' for OmniTerm built-ins — everything else runs for real.`,
+                  })),
+                }
+              : t,
+          ),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const markAlertsAsRead = () => {
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
   };

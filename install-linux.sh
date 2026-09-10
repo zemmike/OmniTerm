@@ -1,72 +1,73 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# OmniTerm - Automated Linux Setup & Build Script
+# OmniTerm installer for Ubuntu / Debian / Linux Mint / Pop!_OS
+#
+# Downloads the newest OmniTerm .deb from GitHub Releases and installs it with
+# apt, so every system dependency is resolved automatically.
+#
+#   curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash
+#
+# Prefer to keep the package around?  Download the .deb from
+# https://github.com/zemmike/OmniTerm/releases and run:
+#   sudo apt install ./OmniTerm-x.y.z-x64.deb
 # ==============================================================================
-set -e
+set -euo pipefail
 
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+REPO="zemmike/OmniTerm"
+APP="OmniTerm"
 
-echo -e "${BLUE}======================================================${NC}"
-echo -e "${GREEN}      OmniTerm - Linux Desktop Setup & Packaging      ${NC}"
-echo -e "${BLUE}======================================================${NC}"
+GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+info()  { echo -e "${BLUE}==>${NC} $*"; }
+ok()    { echo -e "${GREEN} ✓${NC} $*"; }
+warn()  { echo -e "${YELLOW} !${NC} $*"; }
+die()   { echo -e "${RED} ✗${NC} $*" >&2; exit 1; }
 
-# Check for Node.js
-if ! command -v node &> /dev/null; then
-    echo -e "${RED}[ERROR] Node.js is not installed.${NC}"
-    echo "Please install Node.js (v18+ recommended) via your distribution package manager or https://nodejs.org"
-    exit 1
-fi
+[ "$(uname -s)" = "Linux" ] || die "This installer is for Linux only."
 
-echo -e "${GREEN}[1/4] Checking Node.js runtime environment...${NC}"
-echo "Node Version: $(node -v)"
-echo "NPM Version: $(npm -v)"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|amd64) DEB_ARCH="x64" ;;
+  aarch64|arm64) DEB_ARCH="arm64" ;;
+  *) die "Unsupported CPU architecture: $ARCH" ;;
+esac
 
-# Install dependencies
-echo -e "${GREEN}[2/4] Installing project dependencies...${NC}"
-npm install
+command -v apt >/dev/null 2>&1 || die "No 'apt' found. Use the AppImage or tarball from the releases page instead."
 
-# Compile full-stack bundle
-echo -e "${GREEN}[3/4] Building production React frontend and Express server...${NC}"
-npm run build
+info "Looking up the latest ${APP} release for linux/${DEB_ARCH}…"
 
-# Desktop shortcut installation option
-echo -e "${GREEN}[4/4] Configuring Linux system desktop integration...${NC}"
-mkdir -p "$HOME/.local/bin"
-mkdir -p "$HOME/.local/share/applications"
-
-# Create binary launcher script
-LAUNCHER_PATH="$HOME/.local/bin/omniterm"
-cat << 'EOF' > "$LAUNCHER_PATH"
-#!/usr/bin/env bash
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-PROJECT_DIR="$(dirname "$(dirname "$DIR")")"
-
-# Navigate to OmniTerm project directory or current dir
-if [ -f "./dist/server.cjs" ]; then
-    node dist/server.cjs
-elif [ -d "$HOME/omniterm" ]; then
-    cd "$HOME/omniterm" && node dist/server.cjs
+if command -v curl >/dev/null 2>&1; then
+  FETCH="curl -fsSL"
+elif command -v wget >/dev/null 2>&1; then
+  FETCH="wget -qO-"
 else
-    echo "Starting OmniTerm server..."
-    node "$DIR/dist/server.cjs"
+  die "Neither curl nor wget is installed."
 fi
-EOF
-chmod +x "$LAUNCHER_PATH"
 
-# Copy desktop entry
-cp omniterm.desktop "$HOME/.local/share/applications/omniterm.desktop" 2>/dev/null || true
+RELEASES_JSON="$($FETCH "https://api.github.com/repos/${REPO}/releases")"
+DEB_URL="$(printf '%s' "$RELEASES_JSON" \
+  | grep -o "https://[^\"]*\.deb" \
+  | grep -- "-${DEB_ARCH}\.deb" \
+  | head -1 || true)"
 
-echo ""
-echo -e "${GREEN}======================================================${NC}"
-echo -e "${GREEN}  ✓ OmniTerm build & setup completed successfully!   ${NC}"
-echo -e "${GREEN}======================================================${NC}"
-echo ""
-echo -e "${YELLOW}To launch OmniTerm:${NC}"
-echo "  1. Start directly:          npm start"
-echo "  2. Build standalone .deb:   npx electron-builder --linux deb"
-echo "  3. Build .AppImage:         npx electron-builder --linux AppImage"
-echo ""
+if [ -z "$DEB_URL" ]; then
+  warn "No published .deb found for ${DEB_ARCH} yet."
+  echo "    Build it yourself in three commands:"
+  echo "      git clone https://github.com/${REPO}.git omniterm && cd omniterm"
+  echo "      npm install && npm run build"
+  echo "      npx electron-builder --linux deb --${DEB_ARCH}"
+  exit 1
+fi
+
+TMP_DEB="$(mktemp -d)/$(basename "$DEB_URL")"
+info "Downloading $(basename "$DEB_URL")…"
+$FETCH "$DEB_URL" > "$TMP_DEB"
+ok "Downloaded $(du -h "$TMP_DEB" | cut -f1)"
+
+info "Installing with apt (sudo required)…"
+sudo apt-get install -y "$TMP_DEB" || sudo apt-get install -f -y
+rm -f "$TMP_DEB"
+
+echo
+ok "${APP} is installed."
+echo "   Start it from your application menu, or run:  omniterm"
+echo "   Uninstall with:  sudo apt remove omniterm"

@@ -1,0 +1,84 @@
+name: Build Linux packages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  package:
+    name: Package (${{ matrix.arch }})
+    needs: typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            targets: deb AppImage tar.gz rpm
+          - arch: arm64
+            targets: deb tar.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure Electron runtime binary is present
+        run: |
+          if [ ! -x node_modules/electron/dist/electron ]; then
+            node node_modules/electron/install.js
+          fi
+
+      - name: Build web bundle + backend
+        run: npm run build
+
+      - name: Build Linux packages
+        run: npx electron-builder --linux ${{ matrix.targets }} --${{ matrix.arch }} --publish never
+
+      - name: Install the produced .deb to prove it is valid
+        if: matrix.arch == 'x64'
+        run: |
+          set -e
+          DEB=$(ls release/*.deb | head -1)
+          echo "Inspecting $DEB"
+          dpkg-deb --info "$DEB" | head -30
+          sudo apt-get update
+          sudo apt-get install -y "./$DEB"
+          command -v omniterm
+          test -f /usr/share/applications/omniterm.desktop
+          ls -l /usr/share/icons/hicolor/512x512/apps/omniterm.png
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniterm-linux-${{ matrix.arch }}
+          path: |
+            release/*.deb
+            release/*.AppImage
+            release/*.rpm
+            release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
