@@ -3,7 +3,7 @@
 //
 // The token arrives via `additionalArguments` (process.argv), which is the
 // reliable channel inside a sandboxed preload; process.env is the fallback.
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 const argToken = (process.argv || []).find((arg) => arg.startsWith('--omniterm-token='));
 const TOKEN = argToken ? argToken.slice('--omniterm-token='.length) : (process.env.OMNITERM_TOKEN || '').trim();
@@ -15,6 +15,9 @@ const VERSION = argVersion
 
 contextBridge.exposeInMainWorld('omniterm', {
   token: TOKEN,
+  // Clicking a link in the terminal goes through the main process, which
+  // validates the scheme before handing it to the OS.
+  openExternal: (url) => ipcRenderer.invoke('omniterm:open-external', String(url)),
   version: VERSION,
   platform: process.platform,
   isDesktop: true,

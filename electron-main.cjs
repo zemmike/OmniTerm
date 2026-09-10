@@ -8,7 +8,7 @@
  *  3. hand the renderer a per-launch session token,
  *  4. shut the backend down cleanly when the window closes.
  */
-const { app, BrowserWindow, Menu, shell, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, nativeImage, ipcMain } = require('electron');
 const path = require('path');
 const os = require('os');
 const net = require('net');
@@ -216,7 +216,26 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', stopBackendServer);
   process.on('exit', stopBackendServer);
 
-  app.whenReady().then(async () => {
+  /**
+ * Opening a link from terminal output. Only http(s) and file URLs are ever
+ * passed to the OS: terminal output is attacker-controlled (an SSH banner, a
+ * log line), and handing an arbitrary scheme to the desktop handler is how
+ * terminal emulators have been turned into RCE vectors.
+ */
+ipcMain.handle('omniterm:open-external', (_event, rawUrl) => {
+  const value = String(rawUrl || '');
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return false;
+  shell.openExternal(parsed.toString());
+  return true;
+});
+
+app.whenReady().then(async () => {
     openLogFile();
     log(`[main] OmniTerm ${VERSION} starting on ${process.platform} (electron ${process.versions.electron})`);
     try {

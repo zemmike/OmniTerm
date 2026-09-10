@@ -12,6 +12,7 @@ import {
   Monitor,
   UserCheck,
   ChevronDown,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { OSPreset, UserRole, SystemAlert } from '../types';
 import { TERMINAL_THEMES } from '../lib/themeUtils';
@@ -50,9 +51,8 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   const primaryNavItems = [
     { id: 'terminal', label: 'Terminal', icon: Terminal },
     { id: 'files', label: 'Files', icon: FolderTree },
-    { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'health', label: 'System Health', icon: Activity },
-    { id: 'system', label: 'System & Security', icon: Settings },
+    { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
   ];
 
   return (
@@ -160,18 +160,11 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
         {primaryNavItems.map((item) => {
           const Icon = item.icon;
           const isActive =
-            activeTab === item.id ||
-            (item.id === 'system' && ['rbac-logs', 'plugins', 'backups', 'security', 'api-tests'].includes(activeTab));
+            activeTab === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => {
-                if (item.id === 'system' && !['rbac-logs', 'plugins', 'backups', 'security', 'api-tests'].includes(activeTab)) {
-                  setActiveTab('rbac-logs');
-                } else {
-                  setActiveTab(item.id);
-                }
-              }}
+              onClick={() => setActiveTab(item.id)}
               className={`px-3 py-1.5 border-b-2 text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 whitespace-nowrap transition-all ${
                 isActive
                   ? 'border-[#00FF41] text-[#00FF41] bg-[#0A0A0B]'

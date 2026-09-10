@@ -60,6 +60,8 @@ __omniterm_osc() {
   printf '\\033]133;D;%s;%s\\007' "$__ot_code" "$__ot_b64"
   printf '\\033]7;file://%s%s\\007' "\${HOSTNAME:-localhost}" "$PWD"
 }
+# PS0 is printed after a command is read and before it runs: the start marker.
+PS0='\\033]133;C\\007'
 PROMPT_COMMAND="__omniterm_osc\${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 `;
   try {
@@ -92,11 +94,16 @@ __omniterm_precmd() {
   printf '\\033]133;D;%s;%s\\007' "$__ot_code" "$__ot_b64"
   printf '\\033]7;file://%s%s\\007' "\${HOST:-\${HOSTNAME:-localhost}}" "$PWD"
 }
+__omniterm_preexec() {
+  printf '\\033]133;C\\007'
+}
 autoload -Uz add-zsh-hook 2>/dev/null
 if command -v add-zsh-hook >/dev/null 2>&1; then
   add-zsh-hook precmd __omniterm_precmd
+  add-zsh-hook preexec __omniterm_preexec
 else
   precmd_functions+=(__omniterm_precmd)
+  preexec_functions+=(__omniterm_preexec)
 fi
 `;
 
@@ -138,6 +145,9 @@ const FISH_INIT = [
   '  set -l __ot_b64 (printf "%s" "$__ot_cmd" | base64 -w0 2>/dev/null)',
   "  printf '\\033]133;D;%s;%s\\007' $__ot_code \"$__ot_b64\"",
   "  printf '\\033]7;file://%s%s\\007' $__ot_host \"$PWD\"",
+  'end',
+  'function __omniterm_preexec --on-event fish_preexec',
+  "  printf '\\033]133;C\\007'",
   'end',
 ].join('\n');
 
@@ -197,6 +207,8 @@ export interface PtyCommandEvent {
   exitCode: number | null;
   cwd: string;
   at: string;
+  /** Milliseconds between the 133;C and 133;D markers, when the shell reports both. */
+  durationMs?: number | null;
 }
 
 interface Session {
@@ -215,6 +227,10 @@ interface Session {
   integration: string;
   /** True once the shell has emitted at least one 133;D marker. */
   integrationSeen: boolean;
+  /** When the current command started (OSC 133;C), for its duration. */
+  startedAt: number | null;
+  /** Commands run in this session, most recent last (max 500). */
+  history: string[];
   /** Replayed to a client that attaches after the shell already spoke. */
   backlog: string;
 }
@@ -275,7 +291,9 @@ function handleChunk(s: Session, chunk: string) {
   }
 
   out = out.replace(OSC_RE, (_m, code: string, payload: string) => {
-    if (code === '133' && payload.startsWith('D;')) {
+    if (code === '133' && payload.startsWith('C')) {
+      s.startedAt = Date.now();
+    } else if (code === '133' && payload.startsWith('D;')) {
       const rest = payload.slice(2);
       const semi = rest.indexOf(';');
       const exitRaw = semi === -1 ? rest : rest.slice(0, semi);
@@ -292,14 +310,21 @@ function handleChunk(s: Session, chunk: string) {
       s.integrationSeen = true;
       s.lastExit = Number.isFinite(Number(exitRaw)) ? Number(exitRaw) : null;
       s.typed = '';
+      const durationMs = s.startedAt ? Date.now() - s.startedAt : null;
+      s.startedAt = null;
       if (command.trim()) {
+        const trimmed = command.trim();
+        if (s.history[s.history.length - 1] !== trimmed) s.history.push(trimmed);
+        if (s.history.length > 500) s.history.shift();
         commandListener?.({
           sessionId: s.id,
-          command: command.trim(),
+          command: trimmed,
           exitCode: s.lastExit,
           cwd: s.cwd,
           at: new Date().toISOString(),
+          durationMs,
         });
+        broadcast(s, { type: 'command', command: trimmed, exitCode: s.lastExit, durationMs, cwd: s.cwd });
       }
     } else if (code === '7') {
       const m = payload.match(/file:\/\/[^/]*(\/.*)$/);
@@ -315,6 +340,64 @@ function handleChunk(s: Session, chunk: string) {
   }
   s.backlog += out;
   if (s.backlog.length > BACKLOG_LIMIT) s.backlog = s.backlog.slice(-BACKLOG_LIMIT);
+}
+
+/** Send an event to every client watching this session. */
+function broadcast(s: Session, payload: unknown) {
+  const text = JSON.stringify(payload);
+  for (const client of s.clients) {
+    if (client.readyState === WebSocket.OPEN) client.send(text);
+  }
+}
+
+/**
+ * The shell's own history file, newest first, filtered by prefix. This is how
+ * Up/Down can offer `git ...` commands from before the app was even started.
+ * Formats differ per shell: bash writes one command per line, zsh prefixes
+ * ': <start>:<duration>;', fish writes '- cmd: <command>'.
+ */
+export function shellHistory(prefix: string, limit: number): string[] {
+  const shell = path.basename(process.env.SHELL || 'bash');
+  const candidates = shell.startsWith('zsh')
+    ? [path.join(os.homedir(), '.zsh_history'), path.join(process.env.ZDOTDIR || os.homedir(), '.zsh_history')]
+    : shell.startsWith('fish')
+      ? [path.join(os.homedir(), '.local', 'share', 'fish', 'fish_history')]
+      : [path.join(os.homedir(), '.bash_history')];
+
+  const out: string[] = [];
+  for (const file of candidates) {
+    let text = '';
+    try {
+      const size = fs.statSync(file).size;
+      const fd = fs.openSync(file, 'r');
+      const start = Math.max(0, size - 512 * 1024);
+      const buf = Buffer.alloc(size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      fs.closeSync(fd);
+      text = buf.toString('utf8');
+    } catch {
+      continue;
+    }
+    const lines = text.split('\n');
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      let cmd = lines[i];
+      if (!cmd) continue;
+      if (shell.startsWith('fish')) {
+        const m = cmd.match(/^- cmd:\s?(.*)$/);
+        if (!m) continue;
+        cmd = m[1].replace(/\\n/g, ' ').trim();
+      } else if (shell.startsWith('zsh')) {
+        const m = cmd.match(/^: \d+:\d+;(.*)$/);
+        cmd = m ? m[1] : cmd;
+      }
+      cmd = cmd.trim();
+      if (!cmd || cmd.startsWith('#')) continue;
+      if (prefix && !cmd.startsWith(prefix)) continue;
+      if (!out.includes(cmd)) out.push(cmd);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
 }
 
 function trackInput(s: Session, data: string) {
@@ -374,6 +457,8 @@ function spawnSession(
     lastExit: null,
     integration: launch.integration,
     integrationSeen: false,
+    startedAt: null,
+    history: [],
     backlog: '',
   };
   sessions.set(opts.id, session);
@@ -469,12 +554,29 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
             cwd: session.cwd,
             pid: session.proc?.pid ?? null,
             created: session.createdAt,
+            integration: session.integration,
           })
         );
         return;
       }
 
       if (!session) return;
+
+      if (msg.type === 'history') {
+        const prefix = String(msg.prefix || '').trim();
+        const limit = Math.max(1, Math.min(1000, Number(msg.limit) || 200));
+        const fromSession = [...session.history].reverse().filter((c) => !prefix || c.startsWith(prefix));
+        const fromFile = shellHistory(prefix, limit).filter((c) => !fromSession.includes(c));
+        ws.send(
+          JSON.stringify({
+            type: 'history-result',
+            requestId: msg.requestId || '',
+            prefix,
+            items: [...fromSession, ...fromFile].slice(0, limit),
+          })
+        );
+        return;
+      }
 
       if (msg.type === 'input') {
         const data = String(msg.data ?? '');

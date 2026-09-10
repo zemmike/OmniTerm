@@ -1,126 +1,151 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal } from '@xterm/xterm';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Terminal, IDisposable, IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { OMNITERM_TOKEN, IS_DESKTOP } from '../token';
+import { terminalTheme, XtermTheme } from '../themes';
+import { TerminalSettings } from '../settings';
+import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 
-export interface XtermTheme {
-  background: string;
-  foreground: string;
-  cursor: string;
-  selectionBackground: string;
-  black: string;
-  red: string;
-  green: string;
-  yellow: string;
-  blue: string;
-  magenta: string;
-  cyan: string;
-  white: string;
-  brightBlack: string;
-  brightRed: string;
-  brightGreen: string;
-  brightYellow: string;
-  brightBlue: string;
-  brightMagenta: string;
-  brightCyan: string;
-  brightWhite: string;
+export type { XtermTheme };
+
+/** Open a URL through the desktop shell (validated there); fall back to a tab. */
+function openExternal(url: string) {
+  const bridge = (window as any).omniterm;
+  if (IS_DESKTOP && typeof bridge?.openExternal === 'function') {
+    bridge.openExternal(url);
+    return;
+  }
+  if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+export interface PaneApi {
+  copy(): void;
+  paste(): Promise<void>;
+  selectAll(): void;
+  clear(): void;
+  focus(): void;
+  search(query: string, direction: 'next' | 'prev'): void;
+  openSearch(): void;
+  scrollToPrompt(direction: -1 | 1): void;
+  send(text: string): void;
+  /** Handles an app-level action coming from a shortcut. */
+  runAction(actionId: string): boolean;
 }
 
 interface Props {
   sessionId: string;
   cwd?: string;
-  theme: XtermTheme;
-  fontSize: number;
   active: boolean;
-  onReady?: (info: { shell: string; cwd: string; pid: number | null }) => void;
+  settings: TerminalSettings;
+  onReady?: (info: { shell: string; pid: number | null; cwd: string; integration?: string }) => void;
   onExit?: (code: number) => void;
   onCwdChange?: (cwd: string) => void;
-  onError?: (message: string) => void;
+  onFocusPane?: () => void;
+  onAction?: (actionId: string, paneId: string) => void;
+  registerApi?: (id: string, api: PaneApi | null) => void;
 }
 
-/**
- * A real terminal: xterm.js wired to a node-pty session on the loopback API.
- * Everything the shell does — Ctrl+C, tab completion, job control, vim, ssh,
- * colours, aliases from ~/.bashrc — works because this is an actual PTY.
- */
+interface HistoryReply {
+  items: string[];
+}
+
 export default function TerminalPane({
   sessionId,
   cwd,
-  theme,
-  fontSize,
   active,
+  settings,
   onReady,
   onExit,
   onCwdChange,
-  onError,
+  onFocusPane,
+  onAction,
+  registerApi,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const [status, setStatus] = useState<'connecting' | 'ready' | 'exited' | 'error'>('connecting');
+  const wsRef = useRef<WebSocket | null>(null);
+  const [status, setStatus] = useState<'connecting' | 'live' | 'reconnecting' | 'exited' | 'error'>('connecting');
+  const intentionalExit = useRef(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
-  const send = useCallback((payload: unknown) => {
-    const ws = socketRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
-  }, []);
+  // Live settings via refs so handlers always see the current values without
+  // re-creating the terminal.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
-  // ------------------------------------------------------------- xterm setup
+  // The line currently being typed, so Up/Down can filter history by prefix.
+  const lineRef = useRef('');
+  const historyRef = useRef<string[] | null>(null);
+  const historyIndexRef = useRef(-1);
+  const pendingHistory = useRef<{ requestId: string; prefix: string } | null>(null);
+  const markersRef = useRef<IMarker[]>([]);
+  const decorations = useRef<IDisposable[]>([]);
+  const apiRef = useRef<PaneApi | null>(null);
+
   useEffect(() => {
-    if (!hostRef.current) return;
+    const host = hostRef.current;
+    if (!host) return;
 
+    const s = settingsRef.current;
     const term = new Terminal({
-      fontFamily:
-        '"JetBrains Mono", "MesloLGS NF", "Fira Code", "DejaVu Sans Mono", Menlo, Consolas, monospace',
-      fontSize,
-      lineHeight: 1.2,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      scrollback: 10000,
-      allowTransparency: true,
+      fontFamily: s.fontFamily,
+      fontSize: s.fontSize,
+      lineHeight: s.lineHeight,
+      cursorStyle: s.cursorStyle,
+      cursorBlink: s.cursorBlink,
+      scrollback: s.scrollback,
+      theme: terminalTheme(s),
+      allowTransparency: false,
       macOptionIsMeta: true,
-      theme,
+      rightClickSelectsWord: false,
       convertEol: false,
-      // Let the shell own the alternate screen (vim, top, less all work).
       windowsPty: undefined,
+      // Markers and decorations (command status labels, prompt jumping) are
+      // gated behind this flag in xterm.js.
+      allowProposedApi: true,
     });
     const fit = new FitAddon();
     const search = new SearchAddon();
     term.loadAddon(fit);
     term.loadAddon(search);
-    term.loadAddon(new WebLinksAddon());
-    term.open(hostRef.current);
-    fitRef.current = fit;
-    searchRef.current = search;
-    termRef.current = term;
-    if (!IS_DESKTOP) {
-      // Debug aid for headless UI checks (never active in the desktop shell).
-      const w = window as any;
-      w.__otPanes = w.__otPanes || [];
-      w.__otPanes.push({ sessionId, term });
-    }
+    // Links: only http(s) reaches the OS, and only on Ctrl/Cmd+click or an
+    // explicit click on an underlined link.
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        event.preventDefault();
+        openExternal(uri);
+      })
+    );
+
+    host.innerHTML = '';
+    term.open(host);
     try {
       fit.fit();
     } catch {
-      /* container not laid out yet */
+      /* container not laid out yet — the ResizeObserver below will retry */
     }
+    termRef.current = term;
+    fitRef.current = fit;
+    searchRef.current = search;
 
-    // ---------------------------------------------------------- websocket
-    const url = `ws://127.0.0.1:${window.location.port || '80'}/term?token=${encodeURIComponent(OMNITERM_TOKEN)}`;
+    // ------------------------------------------------------------- transport
+    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${location.port}/term?token=${encodeURIComponent(OMNITERM_TOKEN)}`;
     const ws = new WebSocket(url);
-    socketRef.current = ws;
+    wsRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(
-        JSON.stringify({ type: 'start', sessionId, cwd, cols: term.cols, rows: term.rows })
-      );
+    const send = (msg: unknown) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
+
+    ws.onopen = () => send({ type: 'start', sessionId, cwd, cols: term.cols, rows: term.rows });
 
     ws.onmessage = (event) => {
       let msg: any;
@@ -130,85 +155,211 @@ export default function TerminalPane({
         return;
       }
       if (msg.type === 'data') {
-        try {
-          term.write(msg.data);
-          if (!IS_DESKTOP) {
-            const w = window as any;
-            w.__otWrites = w.__otWrites || { bytes: 0, last: '' };
-            w.__otWrites.bytes += String(msg.data).length;
-            w.__otWrites.last = String(msg.data).slice(-40);
-          }
-        } catch (err: any) {
-          (window as any).__otWriteErr = String(err && err.message ? err.message : err);
-        }
+        term.write(msg.data);
       } else if (msg.type === 'ready') {
-        setStatus('ready');
-        onReady?.({ shell: msg.shell, cwd: msg.cwd, pid: msg.pid });
-        term.focus();
+        setStatus('live');
+        onReady?.({ shell: msg.shell, pid: msg.pid ?? null, cwd: msg.cwd, integration: msg.integration });
       } else if (msg.type === 'exit') {
+        intentionalExit.current = true;
         setStatus('exited');
-        term.write(`\r\n\x1b[33m[process exited with code ${msg.exitCode}]\x1b[0m\r\n`);
         onExit?.(msg.exitCode);
+      } else if (msg.type === 'cwd') {
+        onCwdChange?.(msg.cwd);
+      } else if (msg.type === 'history-result') {
+        if (pendingHistory.current && pendingHistory.current.requestId === msg.requestId) {
+          historyRef.current = Array.isArray(msg.items) ? msg.items : [];
+          pendingHistory.current = null;
+          applyHistory(1);
+        }
+      } else if (msg.type === 'command') {
+        if (msg.cwd) onCwdChange?.(msg.cwd);
+        decorateCommand(msg);
       } else if (msg.type === 'error') {
+        setError(msg.message);
         setStatus('error');
-        term.write(`\r\n\x1b[31m[OmniTerm] ${msg.message}\x1b[0m\r\n`);
-        onError?.(msg.message);
       }
     };
 
     ws.onerror = () => {
       setStatus('error');
-      onError?.('terminal socket error');
+      setError(`cannot reach the terminal service on ${location.host}`);
     };
 
     ws.onclose = () => {
-      setStatus((s) => (s === 'ready' ? 'exited' : s));
+      if (!termRef.current) return;
+      // The backend keeps a session alive after a socket closes (tab switches,
+      // remounts), so treat it as a reconnect, not a dead shell.
+      setStatus((prev) => (prev === 'live' ? 'reconnecting' : prev));
     };
 
-    // ------------------------------------------------------------- data flow
+    // ------------------------------------------------------------ decorations
+    function decorateCommand(msg: { exitCode: number | null; durationMs?: number | null; command?: string }) {
+      try {
+        decorateCommandInner(msg);
+      } catch {
+        /* decorations are a nicety: never let them break the terminal */
+      }
+    }
+
+    function decorateCommandInner(msg: { exitCode: number | null; durationMs?: number | null; command?: string }) {
+      if (typeof term.registerMarker !== 'function' || typeof term.registerDecoration !== 'function') return;
+      const marker = term.registerMarker(0);
+      if (!marker) return;
+      const ok = msg.exitCode === 0;
+      const bits: string[] = [];
+      if (msg.exitCode !== null && msg.exitCode !== undefined) bits.push(`exit ${msg.exitCode}`);
+      if (msg.durationMs != null) bits.push(`${msg.durationMs >= 1000 ? `${(msg.durationMs / 1000).toFixed(1)}s` : `${msg.durationMs}ms`}`);
+      const label = bits.join(' · ');
+      markersRef.current.push(marker);
+      if (markersRef.current.length > 200) {
+        const dropped = markersRef.current.shift();
+        try {
+          dropped?.dispose();
+        } catch {
+          /* already gone */
+        }
+      }
+
+      if (!settingsRef.current.commandDecorations || !label) return;
+      const width = Math.min(22, term.cols);
+      const dec = term.registerDecoration({
+        marker,
+        width,
+        x: Math.max(0, term.cols - width),
+        layer: 'top',
+        backgroundColor: ok ? 'rgba(34,197,94,0.14)' : 'rgba(248,113,113,0.16)',
+        overviewRulerOptions: { color: ok ? '#22C55E' : '#F87171', position: 'right' },
+      });
+      dec?.onRender((el) => {
+        el.textContent = ok && msg.exitCode === 0 ? label : `✗ ${label}`;
+        // The renderer anchors the element at its column and ignores `x`, so the
+        // position is forced here: full-row width, text against the right edge.
+        el.style.cssText =
+          `position:absolute;left:0;right:0;width:100%;text-align:right;padding-right:10px;` +
+          `color:${ok ? '#22C55E' : '#F87171'};opacity:0.9;font-size:11px;pointer-events:none;`;
+      });
+      if (dec) decorations.current.push(dec);
+      if (decorations.current.length > 100) decorations.current.shift()?.dispose();
+    }
+
+    // ------------------------------------------------------------- input side
     const dataSub = term.onData((data) => {
-      send({ type: 'input', data });
+      // Track the line under the cursor so Up/Down can use it as a prefix.
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          lineRef.current = '';
+          historyRef.current = null;
+          historyIndexRef.current = -1;
+        } else if (ch === '\u007f' || ch === '\b') {
+          lineRef.current = lineRef.current.slice(0, -1);
+        } else if (ch === '\u0003' || ch === '\u0015' || ch === '\u000c') {
+          lineRef.current = '';
+        } else if (ch >= ' ') {
+          lineRef.current += ch;
+        }
+      }
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
     });
 
-    const resizeSub = term.onResize(({ cols, rows }) => {
-      send({ type: 'resize', cols, rows });
-    });
+    function applyHistory(direction: -1 | 1) {
+      const items = historyRef.current;
+      if (!items || items.length === 0) return false;
+      let idx = historyIndexRef.current + (direction === -1 ? 1 : -1);
+      if (idx < 0) idx = 0;
+      if (idx > items.length - 1) {
+        // Past the newest match: clear the line back to the original prefix.
+        historyIndexRef.current = -1;
+        term.write('');
+        send({ type: 'input', data: '\u0015' });
+        lineRef.current = '';
+        return true;
+      }
+      historyIndexRef.current = idx;
+      const entry = items[idx];
+      // Ctrl+U kills the current line, then the entry is typed in its place.
+      send({ type: 'input', data: `\u0015${entry}` });
+      lineRef.current = entry;
+      return true;
+    }
 
-    // ----------------------------------------------------- clipboard & keys
+    function requestHistory(prefix: string) {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      pendingHistory.current = { requestId, prefix };
+      historyIndexRef.current = -1;
+      send({ type: 'history', prefix, limit: 400, requestId });
+    }
+
+    // Prefix-filtered history: typing `git` then Up cycles only git commands.
+    // Note: attachCustomKeyEventHandler returns void (it replaces the handler),
+    // so there is nothing to dispose here.
     term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
-      const ctrl = event.ctrlKey || event.metaKey;
-      if (ctrl && event.shiftKey && (event.key === 'C' || event.key === 'c')) {
-        const selection = term.getSelection();
-        if (selection) navigator.clipboard.writeText(selection).catch(() => undefined);
-        return false;
+      if (event.type !== 'keydown') return true;
+      const s2 = settingsRef.current;
+
+      // App-level shortcuts are handled by the parent (TerminalView).
+      if (event.ctrlKey && event.shiftKey || (event.ctrlKey && !event.shiftKey && ['PageUp', 'PageDown', 'Tab'].includes(event.key))) {
+        // let the parent's window listener deal with it
+        return true;
       }
-      if (ctrl && event.shiftKey && (event.key === 'V' || event.key === 'v')) {
-        navigator.clipboard
-          .readText()
-          .then((text) => text && send({ type: 'input', data: text }))
-          .catch(() => undefined);
-        return false;
-      }
-      if (ctrl && event.shiftKey && (event.key === 'F' || event.key === 'f')) {
-        setSearchOpen(true);
-        return false;
+
+      if (s2.prefixHistory && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+        const prefix = lineRef.current.trim();
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          const direction: -1 | 1 = event.key === 'ArrowUp' ? -1 : 1;
+          const haveFresh = historyRef.current && historyRef.current.length > 0;
+          if (!prefix && !haveFresh) return true; // plain shell history
+          if (!haveFresh) {
+            requestHistory(prefix);
+          } else {
+            applyHistory(direction);
+          }
+          event.preventDefault();
+          return false;
+        }
+        if (historyRef.current) {
+          historyRef.current = null;
+          historyIndexRef.current = -1;
+        }
       }
       return true;
     });
 
-    const host = hostRef.current;
-    const onAuxClick = (e: MouseEvent) => {
-      if (e.button === 1) {
-        e.preventDefault();
-        navigator.clipboard
-          .readText()
-          .then((text) => text && send({ type: 'input', data: text }))
-          .catch(() => undefined);
+    // ---------------------------------------------------------- mouse & focus
+    const onMouseDown = (event: MouseEvent) => {
+      onFocusPane?.();
+      setMenu(null);
+      if (event.button === 0) {
+        // Clicking the terminal should always give it the keyboard.
+        term.focus();
       }
     };
+    const onAuxClick = (event: MouseEvent) => {
+      // Middle click pastes, like an X11 terminal.
+      if (event.button === 1 && settingsRef.current.middleClickPaste) {
+        event.preventDefault();
+        pasteFromClipboard(term);
+      }
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      if (!settingsRef.current.contextMenu) return;
+      event.preventDefault();
+      const rect = host.getBoundingClientRect();
+      setMenu({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    };
+    host.addEventListener('mousedown', onMouseDown);
     host.addEventListener('auxclick', onAuxClick);
+    host.addEventListener('contextmenu', onContextMenu);
 
-    // --------------------------------------------------------- size tracking
+    // Copy on select, if enabled.
+    const selSub = term.onSelectionChange(() => {
+      const text = term.getSelection();
+      if (settingsRef.current.copyOnSelect && text && document.hasFocus()) {
+        navigator.clipboard?.writeText(text).catch(() => undefined);
+      }
+    });
+
+    // Keep PTY and grid in step.
+    const resizeSub = term.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
     const observer = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -225,13 +376,110 @@ export default function TerminalPane({
       }
     };
     window.addEventListener('resize', onWindowResize);
+    requestAnimationFrame(() => {
+      try {
+        fit.fit();
+        term.refresh(0, term.rows - 1);
+      } catch {
+        /* ignore */
+      }
+    });
+    if (typeof (document as any).fonts?.ready?.then === 'function') {
+      (document as any).fonts.ready.then(() => {
+        try {
+          fit.fit();
+          term.refresh(0, term.rows - 1);
+        } catch {
+          /* ignore */
+        }
+      });
+    }
+
+    const api: PaneApi = {
+      copy: () => {
+        const text = term.getSelection();
+        if (text) navigator.clipboard?.writeText(text).catch(() => undefined);
+      },
+      paste: () => pasteFromClipboard(term),
+      selectAll: () => term.selectAll(),
+      clear: () => term.clear(),
+      focus: () => term.focus(),
+      search: (query, direction) => {
+        if (!query) return;
+        if (direction === 'next') search.findNext(query, { incremental: true });
+        else search.findPrevious(query, { incremental: true });
+      },
+      openSearch: () => setSearchOpen(true),
+      scrollToPrompt: (direction) => jumpToPrompt(direction),
+      send: (text: string) => send({ type: 'input', data: text }),
+      runAction: (actionId: string) => {
+        switch (actionId) {
+          case 'copy':
+            api.copy();
+            return true;
+          case 'paste':
+            api.paste();
+            return true;
+          case 'selectAll':
+            term.selectAll();
+            return true;
+          case 'clear':
+            term.clear();
+            return true;
+          case 'search':
+            setSearchOpen(true);
+            return true;
+          case 'prevPrompt':
+            jumpToPrompt(-1);
+            return true;
+          case 'nextPrompt':
+            jumpToPrompt(1);
+            return true;
+          default:
+            return false;
+        }
+      },
+    };
+    apiRef.current = api;
+    registerApi?.(sessionId, api);
+
+    function jumpToPrompt(direction: -1 | 1) {
+      markersRef.current = markersRef.current.filter((m) => !m.isDisposed);
+      if (markersRef.current.length === 0) return;
+      const top = term.buffer.active.viewportY;
+      const lines = markersRef.current.map((m) => m.line).sort((a, b) => a - b);
+      const target =
+        direction === -1 ? [...lines].reverse().find((l) => l < top - 1) : lines.find((l) => l > top + 1);
+      if (target !== undefined) term.scrollToLine(Math.max(0, target - 1));
+    }
 
     return () => {
+      registerApi?.(sessionId, null);
+      apiRef.current = null;
       observer.disconnect();
       window.removeEventListener('resize', onWindowResize);
+      host.removeEventListener('mousedown', onMouseDown);
       host.removeEventListener('auxclick', onAuxClick);
+      host.removeEventListener('contextmenu', onContextMenu);
       dataSub.dispose();
+      selSub.dispose();
       resizeSub.dispose();
+      decorations.current.forEach((d) => {
+        try {
+          d.dispose();
+        } catch {
+          /* ignore */
+        }
+      });
+      markersRef.current.forEach((m) => {
+        try {
+          m.dispose();
+        } catch {
+          /* ignore */
+        }
+      });
+      decorations.current = [];
+      markersRef.current = [];
       try {
         ws.close();
       } catch {
@@ -240,81 +488,158 @@ export default function TerminalPane({
       term.dispose();
       termRef.current = null;
     };
-    // The terminal is created once per session; theme/size changes are applied
-    // below without tearing the PTY down.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, cwd]);
 
-  // live theme + font updates (no reconnect, no lost scrollback)
+  // Live option updates: theme, font and cursor change without a reconnect.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = theme;
-  }, [theme]);
-
-  useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-    term.options.fontSize = fontSize;
+    term.options.theme = terminalTheme(settings);
+    term.options.fontFamily = settings.fontFamily;
+    term.options.fontSize = settings.fontSize;
+    term.options.lineHeight = settings.lineHeight;
+    term.options.cursorStyle = settings.cursorStyle;
+    term.options.cursorBlink = settings.cursorBlink;
+    term.options.scrollback = settings.scrollback;
     try {
       fitRef.current?.fit();
     } catch {
       /* ignore */
     }
-  }, [fontSize]);
+  }, [settings.theme, settings.custom, settings.fontFamily, settings.fontSize, settings.lineHeight, settings.cursorStyle, settings.cursorBlink, settings.scrollback]);
 
   useEffect(() => {
-    if (active) {
-      termRef.current?.focus();
-      try {
-        fitRef.current?.fit();
-      } catch {
-        /* ignore */
-      }
-    }
+    if (active) termRef.current?.focus();
   }, [active]);
 
-  const runSearch = (direction: 'next' | 'prev') => {
-    if (!query) return;
-    if (direction === 'next') searchRef.current?.findNext(query);
-    else searchRef.current?.findPrevious(query);
-  };
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSearchOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [searchOpen]);
+
+  // Close the context menu on any outside click.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('blur', close);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('blur', close);
+    };
+  }, [menu]);
+
+  const copy = useCallback(() => apiRef.current?.copy(), []);
+  const paste = useCallback(() => apiRef.current?.paste(), []);
+  const selectAll = useCallback(() => apiRef.current?.selectAll(), []);
+  const clearScreen = useCallback(() => apiRef.current?.clear(), []);
 
   return (
-    <div className="relative w-full h-full bg-[#0A0A0B]">
-      <div ref={hostRef} className="absolute inset-0 px-2 py-1" />
+    <div className="relative w-full h-full" style={{ background: terminalTheme(settings).background }}>
+      <div ref={hostRef} className="absolute inset-0 px-2 py-1" onMouseDown={() => onFocusPane?.()} style={{ cursor: 'text' }} />
+
+      {status !== 'live' && (
+        <div className="absolute left-2 bottom-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-[#EAB308] pointer-events-none">
+          {status === 'connecting' && 'starting shell…'}
+          {status === 'reconnecting' && 'reconnecting…'}
+          {status === 'error' && `error: ${error}`}
+          {status === 'exited' && 'shell exited — close this pane or open a new tab'}
+        </div>
+      )}
 
       {searchOpen && (
-        <div className="absolute top-2 right-3 z-20 flex items-center gap-1 bg-[#161618] border border-[#3A3A40] rounded px-2 py-1 shadow-lg">
+        <div className="absolute top-1 right-2 z-20 flex items-center gap-1 bg-[#161618] border border-[#2A2A2E] rounded px-2 py-1 shadow-lg">
+          <Search className="w-3.5 h-3.5 text-[#88888E]" />
           <input
             autoFocus
-            value={query}
+            value={searchQuery}
             onChange={(e) => {
-              setQuery(e.target.value);
+              setSearchQuery(e.target.value);
               searchRef.current?.findNext(e.target.value, { incremental: true });
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') runSearch(e.shiftKey ? 'prev' : 'next');
-              if (e.key === 'Escape') setSearchOpen(false);
+              if (e.key === 'Enter') {
+                e.shiftKey ? searchRef.current?.findPrevious(searchQuery) : searchRef.current?.findNext(searchQuery);
+              }
             }}
             placeholder="search scrollback"
-            className="bg-transparent text-xs text-zinc-200 outline-none w-44 placeholder-zinc-600"
+            className="bg-transparent outline-none text-[11px] text-[#E0E0E5] w-40 font-mono"
           />
-          <span className="text-[10px] text-zinc-500">Enter / Shift+Enter · Esc</span>
-          <button
-            onClick={() => setSearchOpen(false)}
-            className="text-zinc-500 hover:text-zinc-200 text-xs px-1"
-          >
-            ✕
+          <button title="Previous" onClick={() => searchRef.current?.findPrevious(searchQuery)} className="text-[#88888E] hover:text-[#E0E0E5]">
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button title="Next" onClick={() => searchRef.current?.findNext(searchQuery)} className="text-[#88888E] hover:text-[#E0E0E5]">
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+          <button title="Close" onClick={() => setSearchOpen(false)} className="text-[#88888E] hover:text-[#E0E0E5]">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {status === 'error' && (
-        <div className="absolute bottom-2 left-3 z-20 text-[11px] text-red-400 bg-[#1a1012] border border-red-900/60 rounded px-2 py-1">
-          terminal backend unavailable — run <code>omniterm --doctor</code>
+      {menu && (
+        <div
+          className="absolute z-30 min-w-[170px] bg-[#161618] border border-[#2A2A2E] rounded shadow-2xl py-1 text-[11px] text-[#E0E0E5]"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {[
+            { label: 'Copy', hint: 'Ctrl+Shift+C', run: copy, disabled: false },
+            { label: 'Paste', hint: 'Ctrl+Shift+V', run: paste, disabled: false },
+            { label: 'Select all', hint: 'Ctrl+Shift+A', run: selectAll, disabled: false },
+            { label: 'Search…', hint: 'Ctrl+Shift+F', run: () => setSearchOpen(true), disabled: false },
+            { label: 'Clear screen', hint: 'Ctrl+Shift+K', run: clearScreen, disabled: false },
+          ].map((item) => (
+            <button
+              key={item.label}
+              disabled={item.disabled}
+              onClick={() => {
+                item.run();
+                setMenu(null);
+              }}
+              className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] disabled:opacity-40"
+            >
+              <span>{item.label}</span>
+              <span className="text-[10px] text-[#55555E]">{item.hint}</span>
+            </button>
+          ))}
+          <div className="h-px bg-[#2A2A2E] my-1" />
+          <button
+            onClick={() => {
+              onAction?.('splitRight', sessionId);
+              setMenu(null);
+            }}
+            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024]"
+          >
+            <span>Split right</span>
+            <span className="text-[10px] text-[#55555E]">Ctrl+Shift+E</span>
+          </button>
+          <button
+            onClick={() => {
+              onAction?.('splitDown', sessionId);
+              setMenu(null);
+            }}
+            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024]"
+          >
+            <span>Split down</span>
+            <span className="text-[10px] text-[#55555E]">Ctrl+Shift+O</span>
+          </button>
         </div>
       )}
     </div>
   );
+}
+
+async function pasteFromClipboard(term: Terminal) {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) term.paste(text);
+  } catch {
+    /* clipboard permission denied — nothing to do */
+  }
 }

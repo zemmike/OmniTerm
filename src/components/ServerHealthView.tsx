@@ -9,8 +9,21 @@ import {
   Server,
   RefreshCw,
   Zap,
+  Thermometer,
+  MemoryStick,
+  Database,
+  HardDriveDownload,
 } from 'lucide-react';
 import { ServerHealth } from '../types';
+
+const CARD = 'bg-[#161618] border border-[#2A2A2E] rounded';
+const BAR_BG = 'w-full bg-[#0A0A0B] rounded overflow-hidden border border-[#2A2A2E]';
+
+const fmtMb = (mb: number): string =>
+  mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
+
+const usageColor = (pct: number): string =>
+  pct > 85 ? '#FF5555' : pct > 65 ? '#FFBD2E' : '#00FF41';
 
 export const ServerHealthView: React.FC = () => {
   const [health, setHealth] = useState<ServerHealth | null>(null);
@@ -53,6 +66,26 @@ export const ServerHealthView: React.FC = () => {
     return `${days}d ${hours}h ${mins}m`;
   };
 
+  const mem = health.memoryBreakdown ?? null;
+  const memProcs = health.topMemoryProcesses ?? [];
+  const memGroups = health.memoryByGroup ?? [];
+  const swap = health.swapUsage ?? null;
+  const mounts = health.mounts ?? [];
+  const diskIO = health.diskIO ?? null;
+  const perCore = health.perCoreCpu ?? [];
+  const temp = typeof health.cpuTemperature === 'number' ? health.cpuTemperature : null;
+
+  // Three slices that always sum to the physical RAM total:
+  // used (not reclaimable) + cache/buffers (reclaimable) + free-available.
+  // The cache slice is clamped to MemAvailable so the arithmetic still adds up
+  // when reclaimable cache exceeds what the kernel reports as available.
+  const cacheMb = mem ? mem.buffers + mem.cached : 0;
+  const usedSegMb = mem ? Math.max(0, mem.total - mem.available) : 0;
+  const cacheSegMb = mem ? Math.min(cacheMb, mem.available) : 0;
+  const freeSegMb = mem ? Math.max(0, mem.available - cacheSegMb) : 0;
+  const segTotal = mem ? mem.total || usedSegMb + cacheSegMb + freeSegMb || 1 : 1;
+  const segPct = (mb: number) => `${(mb / segTotal) * 100}%`;
+
   return (
     <div className="p-4 sm:p-6 bg-[#0F0F10] text-[#E0E0E5] font-mono min-h-[calc(100vh-125px)] space-y-6">
       {/* Dashboard Top Title Bar */}
@@ -80,7 +113,7 @@ export const ServerHealthView: React.FC = () => {
       {/* Primary 4 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* CPU Utilization */}
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 space-y-3 relative overflow-hidden">
+        <div className={`${CARD} p-4 space-y-3 relative overflow-hidden`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
               <Cpu className="w-4 h-4 text-[#00FF41]" />
@@ -89,7 +122,7 @@ export const ServerHealthView: React.FC = () => {
             <span className="font-mono font-bold text-[#00FF41]">{health.cpuUsage}%</span>
           </div>
 
-          <div className="w-full bg-[#0A0A0B] h-2.5 rounded overflow-hidden border border-[#2A2A2E]">
+          <div className={`${BAR_BG} h-2.5`}>
             <div
               className={`h-full transition-all duration-500 rounded ${
                 health.cpuUsage > 80
@@ -102,18 +135,25 @@ export const ServerHealthView: React.FC = () => {
             />
           </div>
 
-          <div className="text-[11px] text-[#55555E] flex justify-between font-mono">
-            <span>
+          <div className="text-[11px] text-[#55555E] flex justify-between font-mono gap-2">
+            <span className="whitespace-nowrap">
               Load: {health.loadAverage.one}, {health.loadAverage.five}, {health.loadAverage.fifteen}
             </span>
+            {/* Only rendered when /sys/class/thermal gave a real reading. */}
+            {temp !== null && (
+              <span className="text-[#FFBD2E] whitespace-nowrap flex items-center gap-1" title="CPU temperature (thermal_zone)">
+                <Thermometer className="w-3 h-3" />
+                {temp.toFixed(1)}°C
+              </span>
+            )}
             <span className="truncate max-w-[45%] text-right" title={health.cpuModel || ''}>
-              {health.cpuModel ? health.cpuModel.replace(/\s+/g, ' ').slice(0, 28) : `${health.systemInfo.arch}`}
+              {health.cpuModel ? health.cpuModel.replace(/\s+/g, ' ').slice(0, 22) : `${health.systemInfo.arch}`}
             </span>
           </div>
         </div>
 
         {/* Memory Consumption */}
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 space-y-3">
+        <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
               <Zap className="w-4 h-4 text-[#3B82F6]" />
@@ -124,7 +164,7 @@ export const ServerHealthView: React.FC = () => {
             </span>
           </div>
 
-          <div className="w-full bg-[#0A0A0B] h-2.5 rounded overflow-hidden border border-[#2A2A2E]">
+          <div className={`${BAR_BG} h-2.5`}>
             <div
               className="h-full bg-[#3B82F6] transition-all duration-500 rounded"
               style={{ width: `${health.memoryUsage.percent}%` }}
@@ -138,7 +178,7 @@ export const ServerHealthView: React.FC = () => {
         </div>
 
         {/* Disk Space Storage */}
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 space-y-3">
+        <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
               <HardDrive className="w-4 h-4 text-[#BB86FC]" />
@@ -149,7 +189,7 @@ export const ServerHealthView: React.FC = () => {
             </span>
           </div>
 
-          <div className="w-full bg-[#0A0A0B] h-2.5 rounded overflow-hidden border border-[#2A2A2E]">
+          <div className={`${BAR_BG} h-2.5`}>
             <div
               className="h-full bg-[#BB86FC] transition-all duration-500 rounded"
               style={{ width: `${health.diskUsage.percent}%` }}
@@ -163,7 +203,7 @@ export const ServerHealthView: React.FC = () => {
         </div>
 
         {/* Network I/O */}
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 space-y-3">
+        <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
               <Network className="w-4 h-4 text-[#FFBD2E]" />
@@ -187,9 +227,299 @@ export const ServerHealthView: React.FC = () => {
         </div>
       </div>
 
+      {/* Memory Breakdown — stacked bar + raw /proc/meminfo values */}
+      <div className={`${CARD} p-4 space-y-3`}>
+        <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
+          <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
+            <MemoryStick className="w-4 h-4 text-[#3B82F6]" />
+            <span>MEMORY BREAKDOWN (/proc/meminfo)</span>
+          </span>
+          <span className="text-[11px] text-[#55555E] font-mono">
+            {mem ? `${mem.usedPercent}% of RAM in use (total − available)` : 'unavailable'}
+          </span>
+        </div>
+
+        {!mem ? (
+          <div className="text-xs text-[#88888E]">Memory detail is unavailable — could not read /proc/meminfo.</div>
+        ) : (
+          <>
+            {/* Single stacked bar: used | cache+buffers | free-available */}
+            <div className={`${BAR_BG} h-4 flex`}>
+              <div
+                className="h-full bg-[#3B82F6]"
+                style={{ width: segPct(usedSegMb) }}
+                title={`Used (not reclaimable): ${fmtMb(usedSegMb)}`}
+              />
+              <div
+                className="h-full bg-[#FFBD2E]"
+                style={{ width: segPct(cacheSegMb) }}
+                title={`Cache + buffers (reclaimable): ${fmtMb(cacheMb)} total, ${fmtMb(cacheSegMb)} within available`}
+              />
+              <div
+                className="h-full bg-[#00FF41]"
+                style={{ width: segPct(freeSegMb) }}
+                title={`Free / available: ${fmtMb(freeSegMb)}`}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono">
+              <span className="flex items-center gap-1.5 text-[#88888E]">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#3B82F6] inline-block" />
+                Used · not reclaimable <span className="text-[#E0E0E5]">{fmtMb(usedSegMb)}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[#88888E]">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#FFBD2E] inline-block" />
+                Cache + buffers · reclaimable <span className="text-[#E0E0E5]">{fmtMb(cacheSegMb)}</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-[#88888E]">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#00FF41] inline-block" />
+                Free / available <span className="text-[#E0E0E5]">{fmtMb(freeSegMb)}</span>
+              </span>
+            </div>
+
+            {/* Raw numbers, unit-labelled */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2 text-[11px] font-mono pt-1">
+              {[
+                ['Total', mem.total, '#E0E0E5'],
+                ['Available', mem.available, '#00FF41'],
+                ['Free (MemFree)', mem.free, '#88888E'],
+                ['Buffers', mem.buffers, '#FFBD2E'],
+                ['Cached', mem.cached, '#FFBD2E'],
+                ['Shared (Shmem)', mem.shared, '#88888E'],
+                ['Slab', mem.slab, '#88888E'],
+                ['Dirty', mem.dirty, '#88888E'],
+                ['Swap total', mem.swapTotal, '#3B82F6'],
+                ['Swap free', mem.swapFree, '#3B82F6'],
+              ].map(([label, value, color]) => (
+                <div key={label as string} className="flex flex-col">
+                  <span className="text-[10px] text-[#55555E] uppercase">{label as string}</span>
+                  <span style={{ color: color as string }}>{fmtMb(value as number)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Swap row — hidden when there is no swap at all */}
+            {swap && swap.totalMb > 0 ? (
+              <div className="pt-2 border-t border-[#2A2A2E] space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-[#88888E]">
+                    Swap — {fmtMb(swap.usedMb)} used of {fmtMb(swap.totalMb)} ({fmtMb(swap.freeMb)} free)
+                  </span>
+                  <span style={{ color: usageColor(swap.percent) }}>{swap.percent}%</span>
+                </div>
+                <div className={`${BAR_BG} h-2`}>
+                  <div className="h-full rounded" style={{ width: `${swap.percent}%`, backgroundColor: usageColor(swap.percent) }} />
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-[#2A2A2E] text-[11px] font-mono text-[#55555E]">
+                {swap ? 'Swap — no swap configured on this machine (0 MB).' : 'Swap — unavailable.'}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* What is using your RAM */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Per-process table */}
+        <div className={`${CARD} p-4 space-y-3 lg:col-span-2`}>
+          <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
+            <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
+              <MemoryStick className="w-4 h-4 text-[#3B82F6]" />
+              <span>WHAT IS USING YOUR RAM — TOP PROCESSES BY RSS</span>
+            </span>
+            <span className="text-[11px] text-[#55555E] font-mono">ps --sort=-rss</span>
+          </div>
+
+          {memProcs.length === 0 ? (
+            <div className="text-xs text-[#88888E]">Process memory data is unavailable.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs text-[#E0E0E5]">
+                <thead>
+                  <tr className="border-b border-[#2A2A2E] text-[11px] text-[#55555E] uppercase">
+                    <th className="py-2 px-2">PID</th>
+                    <th className="py-2 px-2">Command</th>
+                    <th className="py-2 px-2 text-right">RSS MB</th>
+                    <th className="py-2 px-2 text-right">%MEM</th>
+                    <th className="py-2 px-2">Owner</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2A2A2E]/60">
+                  {memProcs.map((p) => (
+                    <tr key={p.pid} className="hover:bg-[#202024]">
+                      <td className="py-1.5 px-2 text-[#00FF41] font-bold">{p.pid}</td>
+                      <td className="py-1.5 px-2 font-bold text-[#E0E0E5]">{p.name}</td>
+                      <td className="py-1.5 px-2 text-right text-[#3B82F6]">{p.rssMb}</td>
+                      <td className="py-1.5 px-2 text-right text-[#FFBD2E]">{p.percent}</td>
+                      <td className="py-1.5 px-2 text-[#88888E]">{p.user}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* By-program rollup — the headline answer */}
+        <div className={`${CARD} p-4 space-y-3`}>
+          <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
+            <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
+              <Database className="w-4 h-4 text-[#BB86FC]" />
+              <span>BY PROGRAM (RSS summed)</span>
+            </span>
+            <span className="text-[11px] text-[#55555E] font-mono">top 10</span>
+          </div>
+
+          {memGroups.length === 0 ? (
+            <div className="text-xs text-[#88888E]">Grouped memory data is unavailable.</div>
+          ) : (
+            <div className="space-y-2">
+              {memGroups.map((g) => (
+                <div key={g.name} className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-[#E0E0E5] font-bold truncate max-w-[45%]" title={g.name}>
+                      {g.name}
+                    </span>
+                    <span className="text-[#55555E] whitespace-nowrap">
+                      {g.processes}× · <span className="text-[#3B82F6]">{fmtMb(g.rssMb)}</span> ·{' '}
+                      <span className="text-[#FFBD2E]">{g.percentOfRam}%</span>
+                    </span>
+                  </div>
+                  <div className={`${BAR_BG} h-1.5`}>
+                    <div
+                      className="h-full rounded bg-[#BB86FC]"
+                      style={{ width: `${Math.min(100, g.percentOfRam)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mounts table */}
+      <div className={`${CARD} p-4 space-y-3`}>
+        <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
+          <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-[#BB86FC]" />
+            <span>MOUNTED FILESYSTEMS (statfs on /proc/mounts)</span>
+          </span>
+          <span className="text-[11px] text-[#55555E] font-mono">device-backed only</span>
+        </div>
+
+        {mounts.length === 0 ? (
+          <div className="text-xs text-[#88888E]">No device-backed filesystems detected.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs text-[#E0E0E5]">
+              <thead>
+                <tr className="border-b border-[#2A2A2E] text-[11px] text-[#55555E] uppercase">
+                  <th className="py-2 px-2">Mount</th>
+                  <th className="py-2 px-2">Device</th>
+                  <th className="py-2 px-2">FS</th>
+                  <th className="py-2 px-2 text-right">Used / Total</th>
+                  <th className="py-2 px-2 w-[26%]">Usage</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#2A2A2E]/60">
+                {mounts.map((m) => (
+                  <tr key={m.device} className="hover:bg-[#202024]">
+                    <td className="py-2 px-2 font-bold text-[#E0E0E5]">{m.path}</td>
+                    <td className="py-2 px-2 text-[#88888E]">{m.device}</td>
+                    <td className="py-2 px-2 text-[#55555E]">{m.fs}</td>
+                    <td className="py-2 px-2 text-right text-[#E0E0E5] whitespace-nowrap">
+                      {m.usedGb} / {m.totalGb} GB
+                    </td>
+                    <td className="py-2 px-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`${BAR_BG} h-1.5 flex-1`}>
+                          <div
+                            className="h-full rounded"
+                            style={{ width: `${Math.min(100, m.percent)}%`, backgroundColor: usageColor(m.percent) }}
+                          />
+                        </div>
+                        <span className="text-[11px] w-10 text-right" style={{ color: usageColor(m.percent) }}>
+                          {m.percent}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Disk I/O + Per-core CPU */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Disk I/O */}
+        <div className={`${CARD} p-4 space-y-3`}>
+          <div className="flex items-center justify-between text-xs text-[#88888E]">
+            <span className="font-bold flex items-center gap-1.5">
+              <HardDriveDownload className="w-4 h-4 text-[#BB86FC]" />
+              <span>Disk I/O (live)</span>
+            </span>
+            <span className="font-mono text-[#E0E0E5] font-bold">
+              {diskIO ? diskIO.device || 'no device' : 'unavailable'}
+            </span>
+          </div>
+
+          {!diskIO ? (
+            <div className="text-xs text-[#88888E]">Disk I/O counters are unavailable.</div>
+          ) : (
+            <div className="flex items-center justify-around text-xs font-mono pt-1">
+              <div className="text-[#00FF41] text-center">
+                <span className="text-[10px] text-[#55555E] block">READ</span>
+                <span>{diskIO.readKbps} KB/s</span>
+              </div>
+              <div className="text-[#3B82F6] text-center">
+                <span className="text-[10px] text-[#55555E] block">WRITE</span>
+                <span>{diskIO.writeKbps} KB/s</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Per-core CPU */}
+        <div className={`${CARD} p-4 space-y-3`}>
+          <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
+            <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-[#00FF41]" />
+              <span>PER-CORE CPU ({health.cpuCores} cores)</span>
+            </span>
+            <span className="text-[11px] text-[#55555E] font-mono">/proc/stat · 150ms</span>
+          </div>
+
+          {perCore.length === 0 ? (
+            <div className="text-xs text-[#88888E]">Per-core CPU data is unavailable.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+              {perCore.map((c) => (
+                <div key={c.core} className="flex items-center gap-2 text-[11px] font-mono">
+                  <span className="w-10 text-[#55555E]">cpu{c.core}</span>
+                  <div className={`${BAR_BG} h-1.5 flex-1`}>
+                    <div
+                      className="h-full rounded"
+                      style={{ width: `${c.usage}%`, backgroundColor: usageColor(c.usage) }}
+                    />
+                  </div>
+                  <span className="w-9 text-right" style={{ color: usageColor(c.usage) }}>
+                    {c.usage}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* System Info Banner */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 flex items-center gap-3">
+        <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#00FF41] border border-[#2A2A2E]">
             <Server className="w-5 h-5" />
           </div>
@@ -199,7 +529,7 @@ export const ServerHealthView: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 flex items-center gap-3">
+        <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#3B82F6] border border-[#2A2A2E]">
             <Clock className="w-5 h-5" />
           </div>
@@ -209,7 +539,7 @@ export const ServerHealthView: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 flex items-center gap-3">
+        <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#BB86FC] border border-[#2A2A2E]">
             <Layers className="w-5 h-5" />
           </div>
@@ -223,7 +553,7 @@ export const ServerHealthView: React.FC = () => {
       </div>
 
       {/* Process Monitor Table */}
-      <div className="bg-[#161618] border border-[#2A2A2E] rounded p-4 space-y-3">
+      <div className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
             <Cpu className="w-4 h-4 text-[#00FF41]" />

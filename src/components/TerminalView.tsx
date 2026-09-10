@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, X, Terminal as TerminalIcon, Folder, ChevronDown, GitBranch, Container, ShieldCheck, Minus, RotateCcw } from 'lucide-react';
-import TerminalPane, { XtermTheme } from './TerminalPane';
-import { TerminalTab, OSPreset, UserRole } from '../types';
+import { Plus, X, Folder, ChevronDown, GitBranch, Container, ShieldCheck, Columns2, Rows2, Terminal as TerminalIcon } from 'lucide-react';
+import TerminalPane, { PaneApi } from './TerminalPane';
+import { TerminalTab, OSPreset } from '../types';
+import { useSettings } from '../settings';
+import { actionForEvent } from '../keys';
 
 interface Props {
   tabs: TerminalTab[];
@@ -9,55 +11,29 @@ interface Props {
   activeTabId: string;
   setActiveTabId: (id: string) => void;
   osPreset: OSPreset;
-  userRole: UserRole;
-  currentTheme: string;
+  userRole: string;
+  currentTheme?: string;
+  onOpenSettings?: () => void;
 }
 
-// --------------------------------------------------------------------- themes
-export const TERMINAL_THEMES: Record<string, XtermTheme> = {
-  matrix: {
-    background: '#0A0A0B', foreground: '#D7DAE0', cursor: '#22C55E', selectionBackground: '#264F78',
-    black: '#1B1D22', red: '#F87171', green: '#22C55E', yellow: '#EAB308', blue: '#60A5FA',
-    magenta: '#C084FC', cyan: '#22D3EE', white: '#D7DAE0', brightBlack: '#6B7280', brightRed: '#FCA5A5',
-    brightGreen: '#4ADE80', brightYellow: '#FDE047', brightBlue: '#93C5FD', brightMagenta: '#D8B4FE',
-    brightCyan: '#67E8F9', brightWhite: '#F9FAFB',
-  },
-  dracula: {
-    background: '#1E1F29', foreground: '#F8F8F2', cursor: '#FF79C6', selectionBackground: '#44475A',
-    black: '#21222C', red: '#FF5555', green: '#50FA7B', yellow: '#F1FA8C', blue: '#BD93F9',
-    magenta: '#FF79C6', cyan: '#8BE9FD', white: '#F8F8F2', brightBlack: '#6272A4', brightRed: '#FF6E6E',
-    brightGreen: '#69FF94', brightYellow: '#FFFFA5', brightBlue: '#D6ACFF', brightMagenta: '#FF92DF',
-    brightCyan: '#A4FFFF', brightWhite: '#FFFFFF',
-  },
-  slate: {
-    background: '#12141A', foreground: '#E2E8F0', cursor: '#38BDF8', selectionBackground: '#334155',
-    black: '#1E293B', red: '#F87171', green: '#4ADE80', yellow: '#FACC15', blue: '#60A5FA',
-    magenta: '#C084FC', cyan: '#38BDF8', white: '#E2E8F0', brightBlack: '#64748B', brightRed: '#FCA5A5',
-    brightGreen: '#86EFAC', brightYellow: '#FDE68A', brightBlue: '#93C5FD', brightMagenta: '#D8B4FE',
-    brightCyan: '#7DD3FC', brightWhite: '#F8FAFC',
-  },
-  solarized: {
-    background: '#002B36', foreground: '#93A1A1', cursor: '#B58900', selectionBackground: '#073642',
-    black: '#073642', red: '#DC322F', green: '#859900', yellow: '#B58900', blue: '#268BD2',
-    magenta: '#D33682', cyan: '#2AA198', white: '#EEE8D5', brightBlack: '#586E75', brightRed: '#CB4B16',
-    brightGreen: '#586E75', brightYellow: '#657B83', brightBlue: '#839496', brightMagenta: '#6C71C4',
-    brightCyan: '#93A1A1', brightWhite: '#FDF6E3',
-  },
-  amber: {
-    background: '#0C0A06', foreground: '#F5D0A9', cursor: '#F59E0B', selectionBackground: '#3F2D10',
-    black: '#26180A', red: '#EF4444', green: '#84CC16', yellow: '#F59E0B', blue: '#38BDF8',
-    magenta: '#E879F9', cyan: '#22D3EE', white: '#FDE68A', brightBlack: '#78716C', brightRed: '#FCA5A5',
-    brightGreen: '#BEF264', brightYellow: '#FCD34D', brightBlue: '#7DD3FC', brightMagenta: '#F0ABFC',
-    brightCyan: '#67E8F9', brightWhite: '#FFFBEB',
-  },
-};
+interface PaneState {
+  id: string;
+  sessionId: string;
+  title: string;
+}
 
-const FONT_KEY = 'omniterm_font_size';
+interface TabLayout {
+  panes: PaneState[];
+  orientation: 'vertical' | 'horizontal';
+  activeId: string;
+}
+
 const LAST_DIR_KEY = 'omniterm_last_dir';
+const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 function makeTab(cwd: string, osPreset: OSPreset, colorTheme: string, index: number): TerminalTab {
   return {
-    id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: newId('tab'),
     title: `shell ${index}`,
     osPreset,
     environment: 'local',
@@ -68,16 +44,10 @@ function makeTab(cwd: string, osPreset: OSPreset, colorTheme: string, index: num
   };
 }
 
-export default function TerminalView({
-  tabs,
-  setTabs,
-  activeTabId,
-  setActiveTabId,
-  osPreset,
-  currentTheme,
-}: Props) {
+export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabId, osPreset, onOpenSettings }: Props) {
+  const [settings] = useSettings();
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
-  const [fontSize, setFontSize] = useState<number>(() => Number(localStorage.getItem(FONT_KEY)) || 13);
+
   const [repo, setRepo] = useState<{ isRepo: boolean; branch: string | null; changed: number; untracked: number } | null>(null);
   const [docker, setDocker] = useState<{ available: boolean; running: number } | null>(null);
   const [ptyBackend, setPtyBackend] = useState<{ available: boolean; error: string | null } | null>(null);
@@ -85,11 +55,28 @@ export default function TerminalView({
   const [chooserOpen, setChooserOpen] = useState(false);
   const [chooserPath, setChooserPath] = useState('');
   const [matches, setMatches] = useState<{ name: string; path: string; type: string }[]>([]);
-  const shellInfo = useRef<Record<string, { shell: string; pid: number | null }>>({});
+  const shellInfo = useRef<Record<string, { shell: string; pid: number | null; integration?: string }>>({});
+  const apiRef = useRef<Record<string, PaneApi>>({});
 
-  // The app shell sizes itself with min-height, so percentage heights do not
-  // resolve here. Measure the available space instead of trusting h-full, or
-  // the terminal gets a zero-height box and renders nothing.
+  // ---- pane layout, one entry per tab: a list of panes plus an orientation
+  const [layouts, setLayouts] = useState<Record<string, TabLayout>>({});
+
+  const layoutFor = useCallback(
+    (tabId: string): TabLayout => {
+      const existing = layouts[tabId];
+      if (existing) return existing;
+      const sessionId = `session-${tabId}`;
+      return { panes: [{ id: newId('pane'), sessionId, title: 'shell' }], orientation: 'vertical', activeId: sessionId };
+    },
+    [layouts]
+  );
+
+  const activeLayout = activeTab ? layoutFor(activeTab.id) : null;
+  const activeCwd = (activeTab && (cwdByTab[activeTab.id] || activeTab.cwd)) || '';
+
+  // The app shell sizes itself with min-height, so percentage heights never
+  // resolve; measure the space we actually have or the terminal gets a
+  // zero-height box and renders nothing.
   const rootRef = useRef<HTMLDivElement>(null);
   const [rootH, setRootH] = useState<number | null>(null);
   useEffect(() => {
@@ -106,13 +93,6 @@ export default function TerminalView({
     };
   }, []);
 
-  const theme = TERMINAL_THEMES[currentTheme] || TERMINAL_THEMES.matrix;
-  const activeCwd = cwdByTab[activeTab?.id] || activeTab?.cwd || '';
-
-  useEffect(() => {
-    localStorage.setItem(FONT_KEY, String(fontSize));
-  }, [fontSize]);
-
   // ------------------------------------------------------- status bar (real)
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +108,7 @@ export default function TerminalView({
           setDocker(d);
         }
       } catch {
-        /* status bar is informational */
+        /* status strip is best effort */
       }
     };
     load();
@@ -142,43 +122,85 @@ export default function TerminalView({
   useEffect(() => {
     fetch('/api/terminal/status')
       .then((r) => r.json())
-      .then((d) => setPtyBackend({ available: d.available, error: d.error }))
-      .catch(() => setPtyBackend({ available: false, error: 'API unreachable' }));
+      .then(setPtyBackend)
+      .catch(() => setPtyBackend(null));
   }, []);
 
-  // ------------------------------------------------------------------- tabs
+  // ------------------------------------------------------------ pane helpers
+  const mutateLayout = useCallback((tabId: string, fn: (l: TabLayout) => TabLayout) => {
+    setLayouts((prev) => {
+      const current = prev[tabId] || layoutFor(tabId);
+      return { ...prev, [tabId]: fn(current) };
+    });
+  }, [layoutFor]);
+
+  const splitPane = useCallback(
+    (tabId: string, orientation: 'vertical' | 'horizontal', _sourceSession?: string) => {
+      mutateLayout(tabId, (l) => {
+        if (l.panes.length >= 6) return l; // beyond that it stops being usable
+        const sessionId = newId('session');
+        return {
+          panes: [...l.panes, { id: newId('pane'), sessionId, title: 'shell' }],
+          orientation,
+          activeId: sessionId,
+        };
+      });
+    },
+    [mutateLayout]
+  );
+
+  const closePane = useCallback(
+    (tabId: string, sessionId: string) => {
+      mutateLayout(tabId, (l) => {
+        if (l.panes.length <= 1) return l;
+        delete apiRef.current[sessionId];
+        fetch('/api/terminal/kill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        }).catch(() => undefined);
+        const panes = l.panes.filter((p) => p.sessionId !== sessionId);
+        return { ...l, panes, activeId: panes[panes.length - 1].sessionId };
+      });
+    },
+    [mutateLayout]
+  );
+
+  const focusPane = useCallback(
+    (tabId: string, sessionId: string) => {
+      mutateLayout(tabId, (l) => (l.activeId === sessionId ? l : { ...l, activeId: sessionId }));
+    },
+    [mutateLayout]
+  );
+
+  const focusedApi = useCallback((): PaneApi | null => {
+    if (!activeTab || !activeLayout) return null;
+    return apiRef.current[activeLayout.activeId] || null;
+  }, [activeTab, activeLayout]);
+
+  const registerApi = useCallback((sessionId: string, api: PaneApi | null) => {
+    if (api) apiRef.current[sessionId] = api;
+    else delete apiRef.current[sessionId];
+  }, []);
+
+  // ---------------------------------------------------------------- tab CRUD
   const addTab = useCallback(
     (cwd?: string) => {
-      const dir = cwd || activeCwd || '';
-      setTabs((prev) => {
-        const next = makeTab(dir, osPreset, currentTheme, prev.length + 1);
-        setActiveTabId(next.id);
-        return [...prev, next];
-      });
-      try {
-        localStorage.setItem(LAST_DIR_KEY, dir);
-      } catch {
-        /* ignore */
-      }
+      const dir = cwd || activeCwd || localStorage.getItem(LAST_DIR_KEY) || '';
+      const tab = makeTab(dir, osPreset, settings.theme, tabs.length + 1);
+      setTabs((prev) => [...prev, tab]);
+      setActiveTabId(tab.id);
+      if (dir) localStorage.setItem(LAST_DIR_KEY, dir);
     },
-    [activeCwd, currentTheme, osPreset, setActiveTabId, setTabs]
+    [activeCwd, osPreset, setTabs, setActiveTabId, settings.theme, tabs.length]
   );
 
   const closeTab = useCallback(
-    (id: string) => {
-      fetch('/api/terminal/kill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: id }),
-      }).catch(() => undefined);
+    (tabId: string) => {
       setTabs((prev) => {
-        if (prev.length === 1) return prev; // always keep one shell
-        const idx = prev.findIndex((t) => t.id === id);
-        const next = prev.filter((t) => t.id !== id);
-        if (id === activeTabId) {
-          const fallback = next[Math.max(0, idx - 1)] || next[0];
-          setActiveTabId(fallback.id);
-        }
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((t) => t.id !== tabId);
+        if (tabId === activeTabId && next[0]) setActiveTabId(next[0].id);
         return next;
       });
     },
@@ -186,285 +208,319 @@ export default function TerminalView({
   );
 
   const cycleTab = useCallback(
-    (delta: number) => {
-      const idx = tabs.findIndex((t) => t.id === activeTabId);
-      const next = (idx + delta + tabs.length) % tabs.length;
-      setActiveTabId(tabs[next].id);
+    (direction: -1 | 1) => {
+      const index = tabs.findIndex((t) => t.id === activeTabId);
+      if (index === -1) return;
+      const next = tabs[(index + direction + tabs.length) % tabs.length];
+      if (next) setActiveTabId(next.id);
     },
-    [activeTabId, tabs, setActiveTabId]
+    [activeTabId, setActiveTabId, tabs]
   );
 
-  // -------------------------------------------------------------- shortcuts
+  // ------------------------------------------------------- app-level shortcuts
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (!ctrl) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const action = actionForEvent(e);
+      if (!action) return;
+      const target = e.target as HTMLElement | null;
+      const inTerminal = !!target?.closest?.('.xterm');
+      const isFormField = !inTerminal && /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || '');
+      if (isFormField) return;
 
-      // Tabs
-      if (!e.shiftKey && e.key.toLowerCase() === 't') {
+      const run = (fn: () => void) => {
         e.preventDefault();
-        addTab();
-        return;
-      }
-      if (!e.shiftKey && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        if (activeTab) closeTab(activeTab.id);
-        return;
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        cycleTab(e.shiftKey ? -1 : 1);
-        return;
-      }
-      if (e.altKey && /^[1-9]$/.test(e.key)) {
-        e.preventDefault();
-        const target = tabs[Number(e.key) - 1];
-        if (target) setActiveTabId(target.id);
-        return;
-      }
-      // Font size
-      if (e.key === '=' || e.key === '+') {
-        e.preventDefault();
-        setFontSize((s) => Math.min(28, s + 1));
-        return;
-      }
-      if (e.key === '-' || e.key === '_') {
-        e.preventDefault();
-        setFontSize((s) => Math.max(8, s - 1));
-        return;
-      }
-      if (e.key === '0') {
-        e.preventDefault();
-        setFontSize(13);
+        e.stopPropagation();
+        fn();
+      };
+
+      switch (action) {
+        case 'newTab':
+          return run(() => addTab());
+        case 'closeTab':
+          return run(() => activeTab && closeTab(activeTab.id));
+        case 'nextTab':
+          return run(() => cycleTab(1));
+        case 'prevTab':
+          return run(() => cycleTab(-1));
+        case 'splitRight':
+          return run(() => activeTab && splitPane(activeTab.id, 'vertical'));
+        case 'splitDown':
+          return run(() => activeTab && splitPane(activeTab.id, 'horizontal'));
+        case 'closePane':
+          return run(() => activeTab && activeLayout && closePane(activeTab.id, activeLayout.activeId));
+        case 'fontUp':
+          return run(() => useSettingsFont(+1));
+        case 'fontDown':
+          return run(() => useSettingsFont(-1));
+        case 'fontReset':
+          return run(() => useSettingsFont(0));
+        case 'settings':
+          return run(() => onOpenSettings?.());
+        default: {
+          // Clipboard / terminal actions belong to the focused pane.
+          const api = focusedApi();
+          if (api && api.runAction(action)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [activeTab, addTab, closeTab, cycleTab, setActiveTabId, tabs]);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTab, activeLayout, addTab, closeTab, closePane, cycleTab, focusedApi, onOpenSettings, splitPane]);
 
-  // ------------------------------------------------- folder autocomplete API
+  // Font size is part of the shared settings, so the Settings tab and the
+  // terminal controls can never disagree.
+  const [, updateSettings] = useSettings();
+  const useSettingsFont = (delta: -1 | 0 | 1) => {
+    const current = settings.fontSize;
+    const next = delta === 0 ? 13 : Math.min(28, Math.max(8, current + delta));
+    updateSettings({ fontSize: next });
+  };
+
+  // ----------------------------------------------------- directory completion
   useEffect(() => {
     if (!chooserOpen) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      fetch(`/api/complete?path=${encodeURIComponent(chooserPath)}`, { signal: controller.signal })
-        .then((r) => r.json())
-        .then((d) => setMatches(d.matches || []))
-        .catch(() => undefined);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/complete?path=${encodeURIComponent(chooserPath)}`);
+        const data = await res.json();
+        if (!cancelled) setMatches(data.matches || []);
+      } catch {
+        if (!cancelled) setMatches([]);
+      }
     }, 120);
     return () => {
-      controller.abort();
+      cancelled = true;
       clearTimeout(timer);
     };
   }, [chooserPath, chooserOpen]);
 
-  const openChooser = () => {
-    setChooserPath(activeCwd || '~/');
-    setChooserOpen(true);
-  };
+  const tabCwdShort = useMemo(() => {
+    const label = activeCwd || '~';
+    return label.split('/').filter(Boolean).pop() || '/';
+  }, [activeCwd]);
 
-  const statusText = useMemo(() => {
-    if (!repo) return 'checking…';
-    if (!repo.isRepo) return 'not a git repository';
-    const parts = [repo.branch || 'detached'];
-    if (repo.changed) parts.push(`${repo.changed} changed`);
-    if (repo.untracked) parts.push(`${repo.untracked} untracked`);
-    return parts.join(' · ');
-  }, [repo]);
+  if (!activeTab || !activeLayout) {
+    return <div className="p-6 text-xs text-[#88888E]">No terminal session.</div>;
+  }
 
   return (
-    <div
-      ref={rootRef}
-      className="flex flex-col bg-[#0A0A0B]"
-      style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}
-    >
-      {/* ------------------------------------------------ tab bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-[#111113] border-b border-[#2A2A2E] select-none">
-        {tabs.map((tab) => {
-          const isActive = tab.id === activeTabId;
-          const label = (cwdByTab[tab.id] || tab.cwd || '~').replace(/\/+$/, '') || '/';
-          const short = label.split('/').filter(Boolean).pop() || '/';
-          return (
+    <div ref={rootRef} className="flex flex-col bg-[#0A0A0B]" style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}>
+      {/* ------------------------------------------------------------- tab bar */}
+      <div className="flex items-center gap-1 border-b border-[#1E1E22] px-2 py-1 bg-[#0F0F10] shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {tabs.map((tab) => (
             <div
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
-              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t text-xs cursor-pointer border-t border-x ${
-                isActive
-                  ? 'bg-[#0A0A0B] text-zinc-100 border-[#2A2A2E]'
-                  : 'bg-[#151517] text-zinc-500 border-transparent hover:text-zinc-300'
+              className={`group flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] cursor-pointer border ${
+                tab.id === activeTabId ? 'border-[#2A2A2E] bg-[#161618] text-[#E0E0E5]' : 'border-transparent text-[#88888E] hover:text-[#E0E0E5]'
               }`}
-              title={`${tab.title} — ${label}`}
             >
-              <TerminalIcon className="w-3.5 h-3.5" style={{ color: isActive ? theme.green : undefined }} />
-              <span className="font-mono">{short}</span>
+              <TerminalIcon className="w-3 h-3" style={{ color: tab.id === activeTabId ? 'var(--ui-accent)' : undefined }} />
+              <span className="max-w-[120px] truncate">{tab.id === activeTabId ? tabCwdShort : tab.title}</span>
               {tabs.length > 1 && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 hover:text-red-400"
+                  className="opacity-0 group-hover:opacity-100 text-[#55555E] hover:text-[#FF5555]"
                   title="Close tab (Ctrl+W)"
                 >
                   <X className="w-3 h-3" />
                 </button>
               )}
             </div>
-          );
-        })}
-
-        <button
-          onClick={() => addTab()}
-          className="p-1.5 rounded hover:bg-[#1F1F23] text-zinc-500 hover:text-green-400"
-          title="New shell in current directory (Ctrl+T)"
-        >
-          <Plus className="w-4 h-4" />
+          ))}
+        </div>
+        <button onClick={() => addTab()} className="p-1 text-[#88888E] hover:text-[#E0E0E5]" title="New tab (Ctrl+T)">
+          <Plus className="w-3.5 h-3.5" />
         </button>
         <button
-          onClick={openChooser}
-          className="p-1.5 rounded hover:bg-[#1F1F23] text-zinc-500 hover:text-green-400"
-          title="New shell in a different directory"
+          onClick={() => {
+            setChooserPath(activeCwd || '~');
+            setChooserOpen(true);
+          }}
+          className="p-1 text-[#88888E] hover:text-[#E0E0E5]"
+          title="New tab in a specific directory"
         >
-          <Folder className="w-4 h-4" />
+          <Folder className="w-3.5 h-3.5" />
         </button>
 
-        <div className="ml-auto flex items-center gap-3 text-[11px] text-zinc-500 pr-1">
-          <span className="flex items-center gap-1">
-            <GitBranch className="w-3 h-3" /> {statusText}
+        <div className="flex-1" />
+
+        {/* pane layout controls */}
+        <div className="flex items-center gap-1">
+          {activeLayout.panes.length > 1 && (
+            <span className="text-[10px] text-[#55555E] mr-1">{activeLayout.panes.length} panes</span>
+          )}
+          <button
+            onClick={() => splitPane(activeTab.id, 'vertical')}
+            className={`p-1 rounded border ${activeLayout.orientation === 'vertical' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
+            title="Split right (Ctrl+Shift+E)"
+          >
+            <Columns2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => splitPane(activeTab.id, 'horizontal')}
+            className={`p-1 rounded border ${activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
+            title="Split down (Ctrl+Shift+O)"
+          >
+            <Rows2 className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-[10px] text-[#55555E] ml-2 flex items-center gap-1">
+            {repo?.isRepo ? (
+              <>
+                <GitBranch className="w-3 h-3" /> {repo.branch}
+                {repo.changed > 0 && <span className="text-[#EAB308]"> · {repo.changed} changed</span>}
+              </>
+            ) : (
+              'not a git repository'
+            )}
           </span>
-          <span className="flex items-center gap-1">
-            <Container className="w-3 h-3" />
-            {docker ? (docker.available ? `${docker.running} running` : 'docker unavailable') : '…'}
+          <span className="text-[10px] text-[#55555E] flex items-center gap-1">
+            <Container className="w-3 h-3" /> {docker?.running ?? 0} running
           </span>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setFontSize((s) => Math.max(8, s - 1))} title="Smaller (Ctrl+-)">
-              <Minus className="w-3 h-3 hover:text-zinc-200" />
+          <div className="flex items-center gap-1 text-[10px] text-[#55555E] ml-2">
+            <button onClick={() => useSettingsFont(-1)} className="px-1 hover:text-[#E0E0E5]" title="Smaller (Ctrl+-)">
+              −
             </button>
-            <button onClick={() => setFontSize(13)} className="hover:text-zinc-200 font-mono" title="Reset (Ctrl+0)">
-              {fontSize}
-            </button>
-            <button onClick={() => setFontSize((s) => Math.min(28, s + 1))} title="Larger (Ctrl+=)">
-              <Plus className="w-3 h-3 hover:text-zinc-200" />
+            <span className="font-mono">{settings.fontSize}</span>
+            <button onClick={() => useSettingsFont(1)} className="px-1 hover:text-[#E0E0E5]" title="Larger (Ctrl+=)">
+              +
             </button>
           </div>
         </div>
       </div>
 
-      {/* ------------------------------------------------ terminals */}
+      {/* ------------------------------------------------------------- panes */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className="absolute inset-0"
-            style={{ visibility: tab.id === activeTabId ? 'visible' : 'hidden' }}
-          >
-            <TerminalPane
-              sessionId={tab.id}
-              cwd={cwdByTab[tab.id] || tab.cwd}
-              theme={TERMINAL_THEMES[tab.colorTheme] || theme}
-              fontSize={fontSize}
-              active={tab.id === activeTabId}
-              onReady={(info) => {
-                shellInfo.current[tab.id] = { shell: info.shell, pid: info.pid };
-                setPtyBackend({ available: true, error: null });
-                setCwdByTab((prev) => ({ ...prev, [tab.id]: info.cwd }));
-              }}
-              onCwdChange={(cwd) => setCwdByTab((prev) => ({ ...prev, [tab.id]: cwd }))}
-            />
-          </div>
-        ))}
-
-        {ptyBackend && !ptyBackend.available && (
-          <div className="absolute inset-x-0 top-0 z-10 bg-[#2A1616] border-b border-red-900/60 px-4 py-2 text-xs text-red-200">
-            The interactive terminal backend could not start ({ptyBackend.error}). Run a shell from the
-            API or reinstall OmniTerm.
-          </div>
-        )}
-      </div>
-
-      {/* ------------------------------------------------ directory chooser */}
-      {chooserOpen && (
-        <div className="absolute inset-0 z-30 bg-black/50 flex items-center justify-center p-6">
-          <div className="w-[34rem] bg-[#131316] border border-[#2A2A2E] rounded-lg shadow-2xl">
-            <div className="px-4 py-3 border-b border-[#2A2A2E] text-sm text-zinc-200 flex items-center gap-2">
-              <Folder className="w-4 h-4 text-green-400" /> New shell — pick a directory
-            </div>
-            <div className="p-4 space-y-2">
-              <input
-                autoFocus
-                value={chooserPath}
-                onChange={(e) => setChooserPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab' && matches[0]) {
-                    e.preventDefault();
-                    setChooserPath(matches[0].path.replace('~', '') || matches[0].path);
-                  }
-                  if (e.key === 'Enter') {
-                    addTab(chooserPath);
-                    setChooserOpen(false);
-                  }
-                  if (e.key === 'Escape') setChooserOpen(false);
-                }}
-                placeholder="/var/log  ·  ~/projects  ·  Tab completes"
-                className="w-full bg-[#0E0E10] border border-[#33333A] rounded px-3 py-2 text-sm font-mono text-zinc-100 outline-none focus:border-green-600"
-              />
-              <div className="max-h-56 overflow-auto border border-[#232328] rounded divide-y divide-[#1D1D21]">
-                {matches.length === 0 && (
-                  <div className="px-3 py-2 text-xs text-zinc-600">
-                    No matches. Type a path and press Enter — folders complete as you type.
-                  </div>
-                )}
-                {matches.map((m) => (
-                  <button
-                    key={m.path}
-                    onClick={() => {
-                      if (m.type === 'directory') setChooserPath(m.path);
-                      else {
-                        addTab(m.path.split('/').slice(0, -1).join('/'));
-                        setChooserOpen(false);
-                      }
-                    }}
-                    className="w-full text-left px-3 py-1.5 text-xs font-mono text-zinc-400 hover:bg-[#1C1C20] hover:text-zinc-100 flex items-center gap-2"
-                  >
-                    {m.type === 'directory' ? (
-                      <Folder className="w-3.5 h-3.5 text-green-500" />
-                    ) : (
-                      <RotateCcw className="w-3.5 h-3.5 text-zinc-600" />
-                    )}
-                    {m.path}
-                  </button>
-                ))}
+        {tabs.map((tab) => {
+          const layout = layouts[tab.id] || layoutFor(tab.id);
+          const isCurrent = tab.id === activeTabId;
+          return (
+            <div
+              key={tab.id}
+              className="absolute inset-0"
+              style={{ visibility: isCurrent ? 'visible' : 'hidden', pointerEvents: isCurrent ? 'auto' : 'none' }}
+            >
+              <div className={layout.orientation === 'vertical' ? 'flex flex-row w-full h-full' : 'flex flex-col w-full h-full'}>
+                {layout.panes.map((pane, index) => {
+                  const isActive = layout.activeId === pane.sessionId;
+                  return (
+                    <div
+                      key={pane.sessionId}
+                      className="relative flex-1 min-w-0 min-h-0"
+                      style={{
+                        borderLeft: layout.orientation === 'vertical' && index > 0 ? '1px solid #1E1E22' : undefined,
+                        borderTop: layout.orientation === 'horizontal' && index > 0 ? '1px solid #1E1E22' : undefined,
+                        boxShadow: isActive && layout.panes.length > 1 ? 'inset 0 0 0 1px var(--ui-accent)' : undefined,
+                      }}
+                      onMouseDown={() => focusPane(tab.id, pane.sessionId)}
+                    >
+                      <TerminalPane
+                        sessionId={pane.sessionId}
+                        cwd={tab.cwd}
+                        active={isCurrent && isActive}
+                        settings={settings}
+                        registerApi={registerApi}
+                        onFocusPane={() => focusPane(tab.id, pane.sessionId)}
+                        onAction={(actionId, sessionId) => splitPane(tab.id, actionId === 'splitRight' ? 'vertical' : 'horizontal', sessionId)}
+                        onReady={(info) => {
+                          shellInfo.current[pane.sessionId] = info;
+                        }}
+                        onCwdChange={(cwd) => {
+                          if (cwd) {
+                            setCwdByTab((prev) => (prev[tab.id] === cwd ? prev : { ...prev, [tab.id]: cwd }));
+                            localStorage.setItem(LAST_DIR_KEY, cwd);
+                          }
+                        }}
+                      />
+                      {layout.panes.length > 1 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closePane(tab.id, pane.sessionId);
+                          }}
+                          className="absolute top-1 right-1 z-10 p-0.5 rounded bg-black/50 text-[#88888E] hover:text-[#FF5555]"
+                          title="Close pane (Ctrl+Shift+W)"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#2A2A2E]">
-              <button
-                onClick={() => setChooserOpen(false)}
-                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
+          );
+        })}
+      </div>
+
+      {/* ---------------------------------------------------------- status bar */}
+      <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 border-t border-[#1E1E22] bg-[#0F0F10] text-[10px] text-[#66666E]">
+        <span className="flex items-center gap-1 text-[#00C853]">
+          <ShieldCheck className="w-3 h-3" />
+          real PTY · {shellInfo.current[activeLayout.activeId]?.shell?.split('/').pop() || 'shell'}
+          {shellInfo.current[activeLayout.activeId]?.integration && shellInfo.current[activeLayout.activeId]?.integration !== 'none'
+            ? ` · audit: ${shellInfo.current[activeLayout.activeId]?.integration}`
+            : ''}
+        </span>
+        <span>{activeCwd || '~'}</span>
+        <span className="text-[#4A4A52]">Ctrl+Shift+E split · Ctrl+Shift+O split down · Ctrl+Shift+W close pane · Ctrl+, settings</span>
+        {ptyBackend && !ptyBackend.available && <span className="text-[#FF5555]">terminal backend unavailable: {ptyBackend.error}</span>}
+      </div>
+
+      {/* ------------------------------------------------------ directory chooser */}
+      {chooserOpen && (
+        <div className="absolute inset-0 z-40 bg-black/60 flex items-start justify-center pt-20" onClick={() => setChooserOpen(false)}>
+          <div className="w-[560px] max-w-[92vw] bg-[#161618] border border-[#2A2A2E] rounded shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-3 py-2 border-b border-[#2A2A2E] text-[11px] text-[#E0E0E5] flex items-center gap-2">
+              <Folder className="w-3.5 h-3.5 text-[var(--ui-accent)]" /> New tab — choose a directory (Tab completes)
+            </div>
+            <input
+              autoFocus
+              value={chooserPath}
+              onChange={(e) => setChooserPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Tab' && matches[0]) {
+                  e.preventDefault();
+                  setChooserPath(matches[0].path);
+                }
+                if (e.key === 'Enter') {
                   addTab(chooserPath);
                   setChooserOpen(false);
-                }}
-                className="px-3 py-1.5 text-xs bg-green-700 hover:bg-green-600 text-white rounded"
-              >
-                Open shell
-              </button>
+                }
+                if (e.key === 'Escape') setChooserOpen(false);
+              }}
+              className="w-full bg-transparent px-3 py-2 text-xs font-mono text-[#E0E0E5] outline-none"
+            />
+            <div className="max-h-64 overflow-y-auto border-t border-[#2A2A2E]">
+              {matches.map((m) => (
+                <button
+                  key={m.path}
+                  onClick={() => {
+                    if (m.type === 'directory') setChooserPath(m.path);
+                    else {
+                      addTab(m.path.split('/').slice(0, -1).join('/'));
+                      setChooserOpen(false);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-[11px] font-mono text-[#C9C9CF] hover:bg-[#202024] flex items-center gap-2"
+                >
+                  {m.type === 'directory' ? <Folder className="w-3 h-3 text-[#3B82F6]" /> : <ChevronDown className="w-3 h-3 text-[#55555E]" />}
+                  {m.name}
+                </button>
+              ))}
+              {matches.length === 0 && <div className="px-3 py-3 text-[11px] text-[#55555E]">No matches.</div>}
             </div>
           </div>
         </div>
       )}
-
-      {/* ------------------------------------------------ key hints */}
-      <div className="px-3 py-1 bg-[#0A0A0B] border-t border-[#1D1D21] text-[10px] text-zinc-600 flex items-center gap-4 select-none">
-        <span className="flex items-center gap-1">
-          <ShieldCheck className="w-3 h-3 text-green-700" /> real PTY · your shell ({shellInfo.current[activeTab?.id]?.shell?.split('/').pop() || 'shell'})
-          {shellInfo.current[activeTab?.id]?.pid ? ` · pid ${shellInfo.current[activeTab?.id]?.pid}` : ''}
-        </span>
-        <span>Ctrl+T new · Ctrl+W close · Ctrl+Tab switch · Ctrl± size · Ctrl+Shift+C/V copy/paste · Ctrl+Shift+F search</span>
-      </div>
     </div>
   );
 }

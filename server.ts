@@ -577,16 +577,21 @@ function topProcesses() {
       .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
       .slice(0, 5)
       .map((row) => {
+        // `comm` can contain spaces ("npm run build"), which shifts a
+        // positional parse and puts a number in the user column. Parse the
+        // fixed columns from the left and the numeric ones from the right.
         const cols = row.trim().split(/\s+/);
+        if (cols.length < 5) return { pid: 0, name: 'unknown', cpu: 0, memory: 0, user: 'unknown' };
         const pid = Number(cols[0]) || 0;
-        const cpu = Number(cols[2]) || 0;
-        const mem = Number(cols[3]) || 0;
+        const user = cols[cols.length - 1] || 'unknown';
+        const mem = Number(cols[cols.length - 2]) || 0;
+        const cpu = Number(cols[cols.length - 3]) || 0;
         return {
           pid,
-          name: cols[1] || 'unknown',
+          name: cols.slice(1, cols.length - 3).join(' ') || 'unknown',
           cpu,
           memory: Number(((mem / 100) * (os.totalmem() / 1048576)).toFixed(1)),
-          user: cols[4] || 'unknown',
+          user,
         };
       })
       .filter((proc) => proc.pid > 0);
@@ -595,11 +600,306 @@ function topProcesses() {
   }
 }
 
+// ------------------- DEEP RESOURCE BREAKDOWN HELPERS ------------------- //
+// Everything below reads the raw kernel counters directly (/proc, ps, statfs).
+// When a source cannot be read we return null / an empty list — never a
+// plausible-looking number, because a made-up figure is worse than a blank.
+
+/** Raw /proc/meminfo as a name -> kB map (keys keep the trailing "(...)" form). */
+function readMeminfo(): Record<string, number> | null {
+  try {
+    const raw = fs.readFileSync('/proc/meminfo', 'utf8');
+    const out: Record<string, number> = {};
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^([A-Za-z()_]+):\s+(\d+)\s*kB/);
+      if (m) out[m[1]] = Number(m[2]);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Full memory picture in MB. Note the distinction the UI must keep straight:
+ * `available` (MemAvailable) is what free/top mean by free — it already counts
+ * reclaimable page cache — while `usedPercent` is computed from it so the
+ * headline number is not skewed by cache on a long-running box.
+ */
+function memoryBreakdown() {
+  const info = readMeminfo();
+  if (!info) return null;
+  const mb = (key: string) => Number(((info[key] ?? 0) / 1024).toFixed(1));
+  const total = mb('MemTotal');
+  const available = typeof info.MemAvailable === 'number' ? mb('MemAvailable') : mb('MemFree');
+  const swapTotal = mb('SwapTotal');
+  const swapFree = mb('SwapFree');
+  return {
+    total,
+    free: mb('MemFree'),
+    available,
+    buffers: mb('Buffers'),
+    cached: mb('Cached'),
+    shared: mb('Shmem'),
+    slab: mb('Slab'),
+    dirty: mb('Dirty'),
+    swapTotal,
+    swapFree,
+    usedPercent: total > 0 ? Number((((total - available) / total) * 100).toFixed(1)) : 0,
+    swapPercent: swapTotal > 0 ? Number((((swapTotal - swapFree) / swapTotal) * 100).toFixed(1)) : 0,
+  };
+}
+
+type PsMemRow = { pid: number; name: string; rssKb: number; percent: number; cpu: number; user: string };
+
+/**
+ * Every process, sorted by resident set size. Parsed from both ends of the row
+ * (pid first, owner last) so a `comm` value containing spaces cannot shift the
+ * numeric columns. The sampler itself is dropped, exactly like topProcesses:
+ * ps briefly shows high CPU/RSS for its own snapshot and that is not a fact
+ * about the machine.
+ */
+function psMemoryRows(): PsMemRow[] {
+  try {
+    const out =
+      spawnSync('ps', ['-eo', 'pid,comm,rss,%mem,%cpu,user', '--sort=-rss'], {
+        encoding: 'utf8',
+        timeout: 4000,
+      }).stdout || '';
+    return out
+      .trim()
+      .split('\n')
+      .slice(1)
+      .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
+      .map((row) => {
+        const cols = row.trim().split(/\s+/);
+        if (cols.length < 6) return null;
+        const pid = Number(cols[0]) || 0;
+        const user = cols[cols.length - 1];
+        const cpu = Number(cols[cols.length - 2]) || 0;
+        const percent = Number(cols[cols.length - 3]) || 0;
+        const rssKb = Number(cols[cols.length - 4]) || 0;
+        const name = cols.slice(1, cols.length - 4).join(' ') || 'unknown';
+        return { pid, name, rssKb, percent, cpu, user };
+      })
+      .filter((p): p is PsMemRow => !!p && p.pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+function topMemoryProcesses(rows: PsMemRow[]) {
+  return rows.slice(0, 8).map((r) => {
+    const rssMb = Number((r.rssKb / 1024).toFixed(1));
+    return { pid: r.pid, name: r.name, cpu: r.cpu, memory: rssMb, user: r.user, rssMb, percent: r.percent };
+  });
+}
+
+/** Why 79% is used when no single process looks big: 20 chrome processes. */
+function memoryByGroup(rows: PsMemRow[], totalRamMb: number) {
+  const groups = new Map<string, { processes: number; rssKb: number }>();
+  for (const r of rows) {
+    const g = groups.get(r.name) || { processes: 0, rssKb: 0 };
+    g.processes += 1;
+    g.rssKb += r.rssKb;
+    groups.set(r.name, g);
+  }
+  return [...groups.entries()]
+    .map(([name, g]) => {
+      const rssMb = Number((g.rssKb / 1024).toFixed(1));
+      return {
+        name,
+        processes: g.processes,
+        rssMb,
+        percentOfRam: totalRamMb > 0 ? Number(((rssMb / totalRamMb) * 100).toFixed(1)) : 0,
+      };
+    })
+    .sort((a, b) => b.rssMb - a.rssMb)
+    .slice(0, 10);
+}
+
+function swapUsage() {
+  const info = readMeminfo();
+  if (!info) return null;
+  const totalMb = Number(((info.SwapTotal ?? 0) / 1024).toFixed(1));
+  const freeMb = Number(((info.SwapFree ?? 0) / 1024).toFixed(1));
+  const usedMb = Number((totalMb - freeMb).toFixed(1));
+  return { totalMb, freeMb, usedMb, percent: totalMb > 0 ? Number(((usedMb / totalMb) * 100).toFixed(1)) : 0 };
+}
+
+// Physical, device-backed filesystems only. Pseudo-filesystems, container
+// overlays and snap squashfs loops say nothing about disk headroom, and
+// listing them would just bury the rows that matter.
+const MOUNT_FS_ALLOW = /^(ext[234]|xfs|btrfs|zfs|vfat|exfat|f2fs|nfs\d?|nfs4)$/;
+
+function mountedFilesystems() {
+  try {
+    const lines = fs.readFileSync('/proc/mounts', 'utf8').split('\n').filter(Boolean);
+    const seen = new Set<string>();
+    const mounts: Array<{ path: string; device: string; fs: string; usedGb: number; totalGb: number; percent: number }> = [];
+    for (const line of lines) {
+      const parts = line.split(' ');
+      const device = parts[0] || '';
+      const mp = (parts[1] || '').replace(/\\040/g, ' ');
+      const fsType = parts[2] || '';
+      if (!device || !mp || !fsType || !MOUNT_FS_ALLOW.test(fsType)) continue;
+      if (seen.has(device)) continue;
+      try {
+        const st: any = (fs as any).statfsSync(mp);
+        if (!st || !st.bsize || !st.blocks) continue;
+        const totalGb = (st.blocks * st.bsize) / 1073741824;
+        const freeGb = (st.bavail * st.bsize) / 1073741824;
+        const usedGb = totalGb - freeGb;
+        seen.add(device);
+        mounts.push({
+          path: mp,
+          device,
+          fs: fsType,
+          usedGb: Number(usedGb.toFixed(2)),
+          totalGb: Number(totalGb.toFixed(2)),
+          percent: totalGb > 0 ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0,
+        });
+      } catch {
+        /* mount point vanished or is not statfs-able — skip it, do not guess */
+      }
+    }
+    return mounts.sort((a, b) => b.totalGb - a.totalGb);
+  } catch {
+    return [];
+  }
+}
+
+// Whole block devices only (vda, sda, nvme0n1, mmcblk0) — never their
+// partitions, whose counters are already summed into the parent.
+const DISK_WHOLE_RE = /^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|nvme\d+n\d+|mmcblk\d+)$/;
+
+function diskstatsPerDevice(): Record<string, { read: number; write: number }> {
+  try {
+    const lines = fs.readFileSync('/proc/diskstats', 'utf8').split('\n').filter(Boolean);
+    const per: Record<string, { read: number; write: number }> = {};
+    for (const line of lines) {
+      const c = line.trim().split(/\s+/);
+      const name = c[2];
+      if (!name || !DISK_WHOLE_RE.test(name)) continue;
+      // Fields: 5 = sectors read, 9 = sectors written (0-based after the name).
+      per[name] = { read: (Number(c[5]) || 0) * 512, write: (Number(c[9]) || 0) * 512 };
+    }
+    return per;
+  } catch {
+    return {};
+  }
+}
+
+let prevDisk: { per: Record<string, { read: number; write: number }>; at: number } | null = null;
+function diskIORates() {
+  const per = diskstatsPerDevice();
+  const now = Date.now();
+  const prev = prevDisk;
+  const prevPer = prev?.per || {};
+  let readBytes = 0;
+  let writeBytes = 0;
+  let busiest = '';
+  let busiestDelta = -1;
+  let busiestCumulative = '';
+  let busiestCumulativeBytes = -1;
+  for (const [name, s] of Object.entries(per)) {
+    const p = prevPer[name] || { read: s.read, write: s.write };
+    const dr = Math.max(0, s.read - p.read);
+    const dw = Math.max(0, s.write - p.write);
+    readBytes += dr;
+    writeBytes += dw;
+    if (dr + dw > busiestDelta) {
+      busiestDelta = dr + dw;
+      busiest = name;
+    }
+    if (s.read + s.write > busiestCumulativeBytes) {
+      busiestCumulativeBytes = s.read + s.write;
+      busiestCumulative = name;
+    }
+  }
+  prevDisk = { per, at: now };
+  // Before the second sample there are no deltas, so fall back to the busiest
+  // disk overall rather than claiming an arbitrary device.
+  const device = busiestDelta > 0 ? busiest : busiestCumulative;
+  if (!prev || !prev.at) return { readKbps: 0, writeKbps: 0, device };
+  const seconds = (now - prev.at) / 1000;
+  if (!seconds) return { readKbps: 0, writeKbps: 0, device };
+  return {
+    readKbps: Math.max(0, Math.round(readBytes / 1024 / seconds)),
+    writeKbps: Math.max(0, Math.round(writeBytes / 1024 / seconds)),
+    device,
+  };
+}
+
+/** Two /proc/stat readouts; the handler reuses its existing 150 ms window. */
+function procStatCpu() {
+  const aggregate = { idle: 0, total: 0 };
+  const cores: Array<{ core: number; idle: number; total: number }> = [];
+  try {
+    for (const line of fs.readFileSync('/proc/stat', 'utf8').split('\n')) {
+      const m = line.match(/^cpu(\d*)\s+(.*)$/);
+      if (!m) break;
+      const f = m[2].trim().split(/\s+/).map(Number);
+      const idle = (f[3] || 0) + (f[4] || 0); // idle + iowait
+      const total = f.slice(0, 8).reduce((a, b) => a + (b || 0), 0);
+      if (m[1] === '') {
+        aggregate.idle = idle;
+        aggregate.total = total;
+      } else {
+        cores.push({ core: Number(m[1]), idle, total });
+      }
+    }
+  } catch {
+    /* leave the arrays empty; the caller reports no data */
+  }
+  return { aggregate, cores };
+}
+
+function perCoreUsage(before: ReturnType<typeof procStatCpu>, after: ReturnType<typeof procStatCpu>) {
+  return after.cores
+    .map((c) => {
+      const b = before.cores.find((x) => x.core === c.core);
+      if (!b) return null;
+      const idleDelta = c.idle - b.idle;
+      const totalDelta = c.total - b.total || 1;
+      return { core: c.core, usage: Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))) };
+    })
+    .filter((c): c is { core: number; usage: number } => !!c)
+    .sort((a, b) => a.core - b.core);
+}
+
+/**
+ * First readable thermal zone, in Celsius. Reports null when the machine has no
+ * thermal subsystem or the value is outside a plausible range — the UI then
+ * hides the reading instead of printing a nonsense temperature.
+ */
+function cpuTemperature(): number | null {
+  try {
+    const zones = fs.readdirSync('/sys/class/thermal').filter((d) => d.startsWith('thermal_zone'));
+    for (const zone of zones) {
+      try {
+        const raw = fs.readFileSync(`/sys/class/thermal/${zone}/temp`, 'utf8').trim();
+        const milli = Number(raw);
+        if (!Number.isFinite(milli)) continue;
+        const celsius = milli / 1000;
+        if (celsius > 0 && celsius < 150) return Number(celsius.toFixed(1));
+      } catch {
+        /* unreadable zone — try the next one */
+      }
+    }
+  } catch {
+    /* no /sys/class/thermal on this machine */
+  }
+  return null;
+}
+
 // 1. Server Health Metrics Endpoint (real host metrics)
 app.get('/api/health', async (req, res) => {
   const before = cpuSnapshot();
+  const statBefore = procStatCpu();
   await new Promise((r) => setTimeout(r, 150));
   const after = cpuSnapshot();
+  const statAfter = procStatCpu();
 
   const idleDelta = after.idle - before.idle;
   const totalDelta = after.total - before.total || 1;
@@ -613,6 +913,9 @@ app.get('/api/health', async (req, res) => {
   const availableMb = memAvailableMb() ?? freeMb;
   const usedMb = totalMb - availableMb;
   const load = os.loadavg();
+
+  // One ps pass feeds both the per-process table and the by-program rollup.
+  const memRows = psMemoryRows();
 
   res.json({
     status: cpuUsage > 92 ? 'degraded' : 'healthy',
@@ -632,6 +935,15 @@ app.get('/api/health', async (req, res) => {
     processCount: processCount(),
     activeConnections: activeConnectionCount(),
     topProcesses: topProcesses(),
+    // ---- Deep resource breakdown (all read from /proc, ps and statfs) ----
+    memoryBreakdown: memoryBreakdown(),
+    topMemoryProcesses: topMemoryProcesses(memRows),
+    memoryByGroup: memoryByGroup(memRows, totalMb),
+    swapUsage: swapUsage(),
+    mounts: mountedFilesystems(),
+    diskIO: diskIORates(),
+    perCoreCpu: perCoreUsage(statBefore, statAfter),
+    cpuTemperature: cpuTemperature(),
     cpuModel: (os.cpus()[0]?.model || '').trim(),
     systemInfo: {
       os: `${os.type()} ${os.release()}`,

@@ -3,10 +3,9 @@ import { HeaderNavbar } from './components/HeaderNavbar';
 import TerminalView from './components/TerminalView';
 import { FileManagerView } from './components/FileManagerView';
 import { ServerHealthView } from './components/ServerHealthView';
-import { AiSettingsView } from './components/AiSettingsView';
-import { PermissionsAndLogsView } from './components/PermissionsAndLogsView';
-import { BackupsAndCloudView } from './components/BackupsAndCloudView';
-import { SecurityEncryptionView } from './components/SecurityEncryptionView';
+import { SettingsView } from './components/SettingsView';
+import { useSettings } from './settings';
+import { applyUiTheme } from './themes';
 
 import { TerminalTab, OSPreset, UserRole, SystemAlert } from './types';
 
@@ -17,7 +16,16 @@ export default function App() {
   );
   const [osPreset, setOsPreset] = useState<OSPreset>('macos');
   const [userRole, setUserRole] = useState<UserRole>('developer');
-  const [currentTheme, setCurrentTheme] = useState<string>('matrix');
+  const [settings] = useSettings();
+  const [currentTheme, setCurrentTheme] = useState<string>(settings.theme);
+  // Publish the theme to CSS variables so chrome and terminal agree.
+  useEffect(() => {
+    applyUiTheme(settings);
+  }, [settings]);
+  // The header selector writes through to the same store the Settings tab uses.
+  useEffect(() => {
+    if (settings.theme !== currentTheme) setCurrentTheme(settings.theme);
+  }, [settings.theme, currentTheme]);
   // Real footer figures: host memory from /api/health and the measured
   // round-trip time of that very request.
   const [mem, setMem] = useState<{ usedMb: number; totalMb: number; percent: number } | null>(null);
@@ -81,25 +89,8 @@ export default function App() {
     },
   ]);
 
-  // Real-Time System Alerts State
-  const [alerts, setAlerts] = useState<SystemAlert[]>([
-    {
-      id: 'alt-1',
-      timestamp: new Date(Date.now() - 600000).toISOString(),
-      title: 'Security Alert: Unauthorized Sudo',
-      message: 'Viewer role attempted elevated command execution (sudo rm)',
-      type: 'security_denied',
-      read: false,
-    },
-    {
-      id: 'alt-2',
-      timestamp: new Date(Date.now() - 1200000).toISOString(),
-      title: 'Backup Scheduled Completed',
-      message: 'Automated snapshot backup #2026-0812 succeeded (1.2 GB)',
-      type: 'backup_failed',
-      read: true,
-    },
-  ]);
+  // Alerts come from the host; there are none until something real happens.
+  const [alerts, setAlerts] = useState<SystemAlert[]>([]);
 
 
   // Adopt the real host environment on startup: real home directory, real
@@ -163,37 +154,6 @@ export default function App() {
         markAlertsAsRead={markAlertsAsRead}
       />
 
-      {/* Secondary Sub-Header for System & Security Section */}
-      {['rbac-logs', 'backups', 'security'].includes(activeTab) && (
-        <div className="bg-[#161618] border-b border-[#2A2A2E] px-4 py-1.5 flex items-center gap-2 overflow-x-auto text-xs font-mono">
-          <span className="text-[#55555E] font-bold text-[10px] uppercase tracking-wider mr-1">System Module:</span>
-          <button
-            onClick={() => setActiveTab('rbac-logs')}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              activeTab === 'rbac-logs' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Command Log & Guard
-          </button>
-          <button
-            onClick={() => setActiveTab('backups')}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              activeTab === 'backups' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Snapshots
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              activeTab === 'security' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Security Posture
-          </button>
-        </div>
-      )}
-
       {/* Main View Area */}
       <main className="flex-1 overflow-hidden bg-[#0F0F10]">
         {activeTab === 'terminal' && (
@@ -205,6 +165,7 @@ export default function App() {
             osPreset={osPreset}
             userRole={userRole}
             currentTheme={currentTheme}
+            onOpenSettings={() => setActiveTab('settings')}
           />
         )}
 
@@ -212,13 +173,10 @@ export default function App() {
 
         {activeTab === 'health' && <ServerHealthView />}
 
-        {activeTab === 'ai-settings' && <AiSettingsView />}
 
-        {activeTab === 'rbac-logs' && <PermissionsAndLogsView currentRole={userRole} />}
 
-        {activeTab === 'backups' && <BackupsAndCloudView />}
 
-        {activeTab === 'security' && <SecurityEncryptionView />}
+        {activeTab === 'settings' && <SettingsView />}
 
       </main>
 

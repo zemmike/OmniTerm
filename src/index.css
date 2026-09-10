@@ -23,3 +23,21 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3F3F46;
 }
+
+/* Theme variables, published by applyUiTheme() from src/themes.ts */
+:root {
+  --ui-accent: #00ff41;
+  --ui-bg: #0f0f10;
+  --ui-panel: #161618;
+  --ui-border: #2a2a2e;
+  --ui-text: #e0e0e5;
+  --ui-dim: #88888e;
+  --ui-terminal-bg: #0a0a0b;
+}
+
+html,
+body,
+#root {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
