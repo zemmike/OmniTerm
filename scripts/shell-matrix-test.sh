@@ -27,8 +27,11 @@ run_shell() {
   local port=$((PORT + idx))
   idx=$((idx + 1))
 
-  HOME="$H" OMNITERM_DATA_DIR="$D" SHELL="$shell" NODE_ENV=production \
-    PORT="$port" OMNITERM_TOKEN="$TOKEN" node dist/server.cjs > "/tmp/ot-$name.log" 2>&1 &
+  # XDG_CONFIG_HOME is pinned so fish reads the config this script writes,
+  # instead of whatever the runner's environment points at.
+  HOME="$H" XDG_CONFIG_HOME="$H/.config" OMNITERM_DATA_DIR="$D" SHELL="$shell" \
+    NODE_ENV=production PORT="$port" OMNITERM_TOKEN="$TOKEN" \
+    node dist/server.cjs > "/tmp/ot-$name.log" 2>&1 &
   local pid=$!
 
   # Wait for the API to actually answer instead of guessing with a fixed sleep:
@@ -52,7 +55,7 @@ run_shell() {
     return
   fi
 
-  HOME="$H" PORT="$port" TOKEN="$TOKEN" SHELL_NAME="$name" \
+  HOME="$H" XDG_CONFIG_HOME="$H/.config" PORT="$port" TOKEN="$TOKEN" SHELL_NAME="$name" \
     ALIAS_CMD="$alias_cmd" ALIAS_EXPECT="$alias_expect" EXPECT_INTEGRATION="$expect" \
     node scripts/pty-socket-test.cjs || fails=$((fails + 1))
   kill "$pid" 2>/dev/null

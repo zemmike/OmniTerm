@@ -119,11 +119,30 @@ function zshIntegrationDir(): string {
     `if [ -f "$__ot_dir/${name}" ]; then ZDOTDIR="$__ot_dir" . "$__ot_dir/${name}"; fi\n` +
     `unset __ot_dir\n`;
   const banner = '# OmniTerm shell integration — generated file, safe to delete.\n';
+  // Debian/Ubuntu ship a global /etc/zsh/zshrc that runs `compinit`. When it
+  // decides an fpath directory is insecure (apt-installed dirs, a temp HOME, a
+  // container) it asks a question on the terminal — and the shell sits there
+  // waiting for an answer nobody can give. ZSH_DISABLE_COMPFIX makes compinit
+  // skip that check silently; completions still work.
+  const compfix =
+    'export ZSH_DISABLE_COMPFIX=true\n' +
+    // Debian/Ubuntu /etc/zsh/zshrc runs `compinit` for interactive shells. When
+    // it finds an insecure directory (a temp HOME, apt-installed dirs, a
+    // container) it asks a question on the terminal and the shell stops there —
+    // in a terminal emulator nobody can answer it. Its own comment documents
+    // this variable; we initialise completions ourselves, silently, in .zshrc.
+    'skip_global_compinit=1\n';
+  // Only initialise completions if the user's own config did not, and always
+  // with -i so an insecure directory is ignored rather than queried.
+  const compinitFallback =
+    'if ! (( $+functions[compdef] )); then\n' +
+    '  autoload -Uz compinit && compinit -i\n' +
+    'fi\n';
   const files: Record<string, string> = {
-    '.zshenv': banner + sourceUser('.zshenv'),
+    '.zshenv': banner + compfix + sourceUser('.zshenv'),
     '.zprofile': banner + sourceUser('.zprofile'),
     '.zlogin': banner + sourceUser('.zlogin'),
-    '.zshrc': banner + sourceUser('.zshrc') + ZSH_HOOKS,
+    '.zshrc': banner + sourceUser('.zshrc') + compinitFallback + ZSH_HOOKS,
   };
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -184,7 +203,13 @@ export function buildShellLaunch(shell: string): ShellLaunch {
       return {
         kind,
         args: ['-l', '-i'],
-        env: { ZDOTDIR: dir, OMNITERM_USER_ZDOTDIR: process.env.ZDOTDIR || os.homedir() },
+        env: {
+          ZDOTDIR: dir,
+          OMNITERM_USER_ZDOTDIR: process.env.ZDOTDIR || os.homedir(),
+          // Belt and braces with the .zshenv line above: the global zshrc runs
+          // compinit, and this keeps it from prompting inside the terminal.
+          ZSH_DISABLE_COMPFIX: 'true',
+        },
         integration: 'zsh osc133',
       };
     }
