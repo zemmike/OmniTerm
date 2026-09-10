@@ -45,7 +45,9 @@
     "dist:tar": "npm run build && electron-builder --linux tar.gz",
     "preview": "vite preview",
     "clean": "rm -rf dist release server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:pty": "node scripts/pty-smoke.cjs",
+    "test:pty-socket": "node scripts/pty-socket-test.cjs"
   },
   "build": {
     "appId": "app.zemike.omniterm",
