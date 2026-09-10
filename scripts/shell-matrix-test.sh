@@ -15,17 +15,44 @@ printf "alias zt='echo ZSH-ALIAS-OK'\n" > "$H/.zshrc"
 printf "alias ft 'echo FISH-ALIAS-OK'\n" > "$H/.config/fish/config.fish"
 
 fails=0
+idx=0
 run_shell() {
   local shell="$1" alias_cmd="$2" alias_expect="$3" name="$4" expect="$5"
   if [ ! -x "$shell" ]; then
     echo "--- $name: $shell not installed, skipped"
     return
   fi
+  # One port per shell: reusing a single port means the next server can race the
+  # previous one for the bind, which is exactly how this failed on CI.
+  local port=$((PORT + idx))
+  idx=$((idx + 1))
+
   HOME="$H" OMNITERM_DATA_DIR="$D" SHELL="$shell" NODE_ENV=production \
-    PORT="$PORT" OMNITERM_TOKEN="$TOKEN" node dist/server.cjs > "/tmp/ot-$name.log" 2>&1 &
+    PORT="$port" OMNITERM_TOKEN="$TOKEN" node dist/server.cjs > "/tmp/ot-$name.log" 2>&1 &
   local pid=$!
-  sleep 3
-  HOME="$H" PORT="$PORT" TOKEN="$TOKEN" SHELL_NAME="$name" \
+
+  # Wait for the API to actually answer instead of guessing with a fixed sleep:
+  # a cold CI runner takes longer to load node-pty than a warm laptop.
+  local ready=0
+  for _ in $(seq 1 80); do
+    if ! kill -0 "$pid" 2>/dev/null; then break; fi
+    if node -e "fetch('http://127.0.0.1:$port/api/health',{headers:{'x-omniterm-token':'$TOKEN'}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [ "$ready" -ne 1 ]; then
+    echo "--- $name: server never became ready on port $port; last log lines:"
+    tail -15 "/tmp/ot-$name.log" | sed 's/^/      /'
+    fails=$((fails + 1))
+    kill "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    return
+  fi
+
+  HOME="$H" PORT="$port" TOKEN="$TOKEN" SHELL_NAME="$name" \
     ALIAS_CMD="$alias_cmd" ALIAS_EXPECT="$alias_expect" EXPECT_INTEGRATION="$expect" \
     node scripts/pty-socket-test.cjs || fails=$((fails + 1))
   kill "$pid" 2>/dev/null
