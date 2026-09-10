@@ -8,7 +8,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: build-${{ github.ref }}
+  # Keyed by ref *and* event: Dependabot's scheduled update runs also happen on
+  # refs/heads/main, and with the ref alone they cancelled real push builds.
+  group: build-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
