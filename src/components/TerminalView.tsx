@@ -18,7 +18,7 @@ import {
   History,
   Command,
 } from 'lucide-react';
-import { TerminalTab, TerminalCommand, OSPreset, UserRole, TerminalPlugin } from '../types';
+import { TerminalTab, TerminalCommand, OSPreset, UserRole } from '../types';
 import { TERMINAL_THEMES } from '../lib/themeUtils';
 
 interface TerminalViewProps {
@@ -29,7 +29,6 @@ interface TerminalViewProps {
   osPreset: OSPreset;
   userRole: UserRole;
   currentTheme: string;
-  plugins: TerminalPlugin[];
 }
 
 const STORAGE_KEY = 'omniterm_command_history';
@@ -62,7 +61,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   osPreset,
   userRole,
   currentTheme,
-  plugins,
 }) => {
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
   const [inputCommand, setInputCommand] = useState('');
@@ -87,6 +85,34 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const [showSuggestions, setShowSuggestions] = useState<boolean>(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+
+  // Real status bar data: actual git state of the session directory and the
+  // real container runtime state — no hardcoded strings.
+  const [repo, setRepo] = useState<{ isRepo: boolean; branch: string | null; changed: number; untracked: number; ahead: number; behind: number; toplevel: string | null } | null>(null);
+  const [docker, setDocker] = useState<{ available: boolean; running: number; total: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [repoRes, dockerRes] = await Promise.all([
+          fetch(`/api/repo/status?path=${encodeURIComponent(activeTab?.cwd || '')}`),
+          fetch('/api/docker/status'),
+        ]);
+        if (cancelled) return;
+        if (repoRes.ok) setRepo(await repoRes.json());
+        if (dockerRes.ok) setDocker(await dockerRes.json());
+      } catch {
+        /* status bar is best-effort */
+      }
+    };
+    load();
+    const timer = setInterval(load, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeTab?.cwd, activeTab?.history.length]);
   const [aiAnalysis, setAiAnalysis] = useState<{ commandId: string; text: string } | null>(null);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -176,7 +202,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         },
       ],
       colorTheme: currentTheme,
-      activePluginIds: plugins.filter((p) => p.enabled).map((p) => p.id),
+      activePluginIds: [],
     };
     setTabs([...tabs, newTab]);
     setActiveTabId(newId);
@@ -398,7 +424,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     { label: '🐍 Python Cron', cmd: 'python /var/scripts/backup_cron.py' },
   ];
 
-  const activePlugins = plugins.filter((p) => p.enabled);
 
   return (
     <div className={`flex flex-col h-[calc(100vh-125px)] ${theme.bg} text-[#E0E0E5] font-mono text-sm`}>
@@ -487,12 +512,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <span>{commandHistory.length} in History (↑/↓)</span>
           </div>
 
-          {activePlugins.length > 0 && (
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#202024] border border-[#2A2A2E] text-[10px] text-[#88888E]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00FF41]" />
-              <span>{activePlugins.length} Extensions</span>
-            </div>
-          )}
           <button
             onClick={() =>
               setTabs((prev) =>
@@ -508,33 +527,45 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         </div>
       </div>
 
-      {/* Plugin Visualizer Bar */}
-      {activePlugins.length > 0 && (
-        <div className="bg-[#0A0A0B] border-b border-[#2A2A2E] px-4 py-1 flex items-center justify-between gap-4 text-[11px] select-none">
-          <div className="flex items-center gap-4 text-[#88888E] overflow-x-auto">
-            {activePlugins.some((p) => p.id === 'plugin-git') && (
-              <div className="flex items-center gap-1.5 text-[#00FF41] font-bold">
-                <Code2 className="w-3.5 h-3.5" />
-                <span>git:(main)</span>
-                <span className="text-[#55555E]">|</span>
-                <span className="text-[#3B82F6]">2 modified</span>
-              </div>
-            )}
-            {activePlugins.some((p) => p.id === 'plugin-docker') && (
-              <div className="flex items-center gap-1.5 text-[#3B82F6] font-bold">
-                <Server className="w-3.5 h-3.5" />
-                <span>Docker: 2 Active (app:3000)</span>
-              </div>
-            )}
-            {activePlugins.some((p) => p.id === 'plugin-sec') && (
-              <div className="flex items-center gap-1.5 text-[#BB86FC] font-bold">
-                <Lock className="w-3.5 h-3.5" />
-                <span>RBAC Guard: ({userRole.toUpperCase()})</span>
-              </div>
-            )}
+      {/* Real environment status bar */}
+      <div className="bg-[#0A0A0B] border-b border-[#2A2A2E] px-4 py-1 flex items-center justify-between gap-4 text-[11px] select-none">
+        <div className="flex items-center gap-4 overflow-x-auto">
+          {repo?.isRepo ? (
+            <div className="flex items-center gap-1.5 text-[#00FF41] font-bold" title={repo.toplevel || ''}>
+              <Code2 className="w-3.5 h-3.5" />
+              <span>git:({repo.branch})</span>
+              <span className="text-[#55555E]">|</span>
+              <span className={repo.changed + repo.untracked > 0 ? 'text-[#FFBD2E]' : 'text-[#55555E]'}>
+                {repo.changed} modified · {repo.untracked} untracked
+              </span>
+              {(repo.ahead > 0 || repo.behind > 0) && (
+                <span className="text-[#88888E]">↑{repo.ahead} ↓{repo.behind}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-[#55555E]">
+              <Code2 className="w-3.5 h-3.5" />
+              <span>not a git repository</span>
+            </div>
+          )}
+
+          <div className={`flex items-center gap-1.5 font-bold ${docker?.available ? 'text-[#3B82F6]' : 'text-[#55555E]'}`}>
+            <Server className="w-3.5 h-3.5" />
+            <span>
+              {docker === null
+                ? 'docker: checking…'
+                : docker.available
+                  ? `docker: ${docker.running} running${docker.total !== docker.running ? ` / ${docker.total} total` : ''}`
+                  : 'docker: not available'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-[#BB86FC] font-bold">
+            <Lock className="w-3.5 h-3.5" />
+            <span>Command Guard: ({userRole})</span>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Main Terminal Output Viewport Screen */}
       <div

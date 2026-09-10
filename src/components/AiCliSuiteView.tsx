@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bot,
   Sparkles,
@@ -18,8 +18,15 @@ interface AiCliSuiteViewProps {
 }
 
 export const AiCliSuiteView: React.FC<AiCliSuiteViewProps> = ({ onSendToTerminal }) => {
-  const [aiMode, setAiMode] = useState<'claude-coder' | 'gemini-cli' | 'cursor-agent'>('claude-coder');
   const [action, setAction] = useState<'suggest_command' | 'generate_script' | 'explain_command' | 'debug_error'>('generate_script');
+  const [provider, setProvider] = useState<{ privacy: string; localAvailable: boolean; cloudConfigured: boolean; localModel: string; cloudModel: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/ai/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setProvider(data))
+      .catch(() => undefined);
+  }, []);
   const [prompt, setPrompt] = useState('Write a bash script to monitor high CPU processes and auto-restart Node services if usage exceeds 90%');
   const [isLoading, setIsLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
@@ -39,7 +46,7 @@ export const AiCliSuiteView: React.FC<AiCliSuiteViewProps> = ({ onSendToTerminal
         body: JSON.stringify({
           action,
           prompt,
-          mode: aiMode,
+          mode: 'assistant',
         }),
       });
 
@@ -99,38 +106,23 @@ export const AiCliSuiteView: React.FC<AiCliSuiteViewProps> = ({ onSendToTerminal
           </p>
         </div>
 
-        {/* AI Engine Switcher */}
-        <div className="flex items-center gap-1 bg-[#161618] border border-[#2A2A2E] p-1 rounded text-xs">
-          <button
-            onClick={() => setAiMode('claude-coder')}
-            className={`px-3 py-1 rounded font-bold uppercase transition-colors ${
-              aiMode === 'claude-coder'
-                ? 'bg-[#BB86FC] text-black'
-                : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Claude Coder
-          </button>
-          <button
-            onClick={() => setAiMode('gemini-cli')}
-            className={`px-3 py-1 rounded font-bold uppercase transition-colors ${
-              aiMode === 'gemini-cli'
-                ? 'bg-[#00FF41] text-black'
-                : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Gemini CLI
-          </button>
-          <button
-            onClick={() => setAiMode('cursor-agent')}
-            className={`px-3 py-1 rounded font-bold uppercase transition-colors ${
-              aiMode === 'cursor-agent'
-                ? 'bg-[#3B82F6] text-black'
-                : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Cursor Agent
-          </button>
+        {/* Real AI provider status: local model first, cloud only if configured */}
+        <div className="bg-[#161618] border border-[#2A2A2E] rounded p-2 text-[11px] space-y-1 min-w-[16rem]">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                provider?.localAvailable ? 'bg-[#00FF41]' : provider?.cloudConfigured ? 'bg-[#FFBD2E]' : 'bg-[#FF5555]'
+              }`}
+            />
+            <span className="font-bold uppercase tracking-wide">
+              {provider?.localAvailable
+                ? `local · ${provider.localModel}`
+                : provider?.cloudConfigured
+                  ? `cloud · ${provider.cloudModel}`
+                  : 'no provider'}
+            </span>
+          </div>
+          <div className="text-[#88888E]">{provider?.privacy || 'checking provider…'}</div>
         </div>
       </div>
 
@@ -215,7 +207,7 @@ export const AiCliSuiteView: React.FC<AiCliSuiteViewProps> = ({ onSendToTerminal
             <div className="flex items-center gap-2 font-bold text-xs text-[#BB86FC]">
               <Sparkles className="w-4 h-4 text-[#BB86FC]" />
               <span>
-                GENERATED OUTPUT ({aiMode.toUpperCase()} via {aiSource})
+                GENERATED OUTPUT ({aiSource || 'provider'})
               </span>
             </div>
 

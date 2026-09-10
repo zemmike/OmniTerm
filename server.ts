@@ -29,8 +29,13 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// In-Memory Data Stores for Server Operations
-const activityLogs: Array<{
+// ------------------- PERSISTENT COMMAND AUDIT TRAIL ------------------- //
+// Every command OmniTerm runs is appended to a JSONL file, so the log tab and
+// the /audit export describe what really happened on this machine.
+const AUDIT_DIR = process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const AUDIT_FILE = path.join(AUDIT_DIR, 'activity.jsonl');
+
+type AuditEntry = {
   id: string;
   timestamp: string;
   username: string;
@@ -39,38 +44,42 @@ const activityLogs: Array<{
   details: string;
   ip: string;
   severity: 'info' | 'warning' | 'error' | 'security_alert';
-}> = [
-  {
-    id: 'log-1',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    username: 'admin_sys',
-    role: 'admin',
-    action: 'SYSTEM_BOOT',
-    details: 'Terminal Backend Server initialized with TLS 1.3 encryption',
-    ip: '127.0.0.1',
-    severity: 'info',
-  },
-  {
-    id: 'log-2',
-    timestamp: new Date(Date.now() - 1800000).toISOString(),
-    username: 'dev_alex',
-    role: 'developer',
-    action: 'SCRIPT_EXECUTE',
-    details: 'Executed deploy_pipeline.sh on local environment',
-    ip: '192.168.1.45',
-    severity: 'info',
-  },
-  {
-    id: 'log-3',
-    timestamp: new Date(Date.now() - 600000).toISOString(),
-    username: 'guest_user',
-    role: 'viewer',
-    action: 'PERMISSION_DENIED',
-    details: 'Attempted sudo rm -rf /var/log without administrative rights',
-    ip: '10.0.4.12',
-    severity: 'security_alert',
-  },
-];
+  cwd?: string;
+  exitCode?: number | null;
+  durationMs?: number;
+  command?: string;
+};
+
+function loadAuditLog(limit = 300): AuditEntry[] {
+  try {
+    const lines = fs.readFileSync(AUDIT_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    return lines
+      .slice(-limit)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as AuditEntry;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as AuditEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function appendAuditLog(entry: AuditEntry) {
+  activityLogs.unshift(entry);
+  if (activityLogs.length > 500) activityLogs.length = 500;
+  try {
+    fs.mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + '\n', { mode: 0o600 });
+  } catch {
+    /* auditing must never break command execution */
+  }
+}
+
+const activityLogs: AuditEntry[] = loadAuditLog(200);
 
 const systemAlerts: Array<{
   id: string;
@@ -79,209 +88,304 @@ const systemAlerts: Array<{
   message: string;
   type: 'cpu_high' | 'disk_warning' | 'security_denied' | 'backup_failed' | 'network_spike';
   read: boolean;
-}> = [
-  {
-    id: 'alt-1',
-    timestamp: new Date(Date.now() - 600000).toISOString(),
-    title: 'Security Alert: Unauthorized Sudo',
-    message: 'Viewer role attempted elevated command execution (sudo rm)',
-    type: 'security_denied',
-    read: false,
-  },
-  {
-    id: 'alt-2',
-    timestamp: new Date(Date.now() - 1200000).toISOString(),
-    title: 'Backup Scheduled Completed',
-    message: 'Automated snapshot backup #2026-0812 succeeded (1.2 GB)',
-    type: 'backup_failed', // info type
-    read: true,
-  },
-];
+}> = [];
 
-// Virtual Filesystem Store for System File Manager
-const virtualFilesystem = [
-  {
-    id: 'file-1',
-    path: '/etc/nginx/nginx.conf',
-    name: 'nginx.conf',
-    type: 'file',
-    size: 2450,
-    modified: '2026-08-11 14:32',
-    owner: 'root',
-    permissions: '-rw-r--r--',
-    language: 'nginx',
-    content: `user www-data;
-worker_processes auto;
-pid /run/nginx.pid;
-
-events {
-    worker_connections 1024;
+function pushAlert(title: string, message: string, type: 'cpu_high' | 'disk_warning' | 'security_denied' | 'backup_failed' | 'network_spike') {
+  systemAlerts.unshift({ id: `alt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, timestamp: new Date().toISOString(), title, message, type, read: false });
+  if (systemAlerts.length > 50) systemAlerts.length = 50;
 }
 
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
+// ------------------- REAL FILESYSTEM HELPERS ------------------- //
 
-    server {
-        listen 80;
-        server_name localhost;
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.svg']);
+const ARCHIVE_EXT = new Set(['.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.deb', '.rpm']);
+const MAX_READ_BYTES = 2_000_000;
 
-        location / {
-            proxy_pass http://127.0.0.1:3000;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection "upgrade";
-        }
-    }
-}`,
-  },
-  {
-    id: 'file-2',
-    path: '/var/scripts/deploy.sh',
-    name: 'deploy.sh',
-    type: 'file',
-    size: 1120,
-    modified: '2026-08-12 02:15',
-    owner: 'dev_alex',
-    permissions: '-rwxr-xr-x',
-    language: 'bash',
-    content: `#!/usr/bin/env bash
-set -e
-
-echo "[DEPLOY] Starting DevTerminal Pro Deployment Pipeline..."
-echo "[1/4] Running security integrity audit..."
-sleep 1
-echo "[2/4] Syncing cloud backup assets to S3..."
-sleep 1
-echo "[3/4] Rebuilding Docker production cluster..."
-sleep 1
-echo "[4/4] Deployment successful! Service running on port 3000."
-`,
-  },
-  {
-    id: 'file-3',
-    path: '/var/scripts/backup_cron.py',
-    name: 'backup_cron.py',
-    type: 'file',
-    size: 1840,
-    modified: '2026-08-10 11:00',
-    owner: 'admin_sys',
-    permissions: '-rwxr-xr-x',
-    language: 'python',
-    content: `import os
-import sys
-import time
-import json
-
-def run_backup():
-    print("[BACKUP] Initializing automated backup task...")
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    backup_file = f"/backups/sys_snapshot_{timestamp}.tar.gz"
-    print(f"[BACKUP] Generating compressed archive at {backup_file}")
-    time.sleep(0.5)
-    print("[BACKUP] Encrypting with AES-256-GCM cipher...")
-    print("[BACKUP] Backup completed successfully!")
-
-if __name__ == "__main__":
-    run_backup()
-`,
-  },
-  {
-    id: 'file-4',
-    path: '/home/user/config.json',
-    name: 'config.json',
-    type: 'file',
-    size: 650,
-    modified: '2026-08-12 06:20',
-    owner: 'dev_alex',
-    permissions: '-rw-r--r--',
-    language: 'json',
-    content: `{
-  "terminalTheme": "matrix",
-  "defaultShell": "zsh",
-  "autoSaveHistory": true,
-  "pluginCount": 4,
-  "security": {
-    "enforceSudoPassword": false,
-    "rbacEnabled": true
+function permissionsString(mode: number): string {
+  const bits = ['-', '-', '-', '-', '-', '-', '-', '-', '-'];
+  const letters = ['r', 'w', 'x'];
+  for (let i = 0; i < 9; i += 1) {
+    if (mode & (1 << (8 - i))) bits[i + 1] = letters[i % 3];
   }
-}`,
-  },
-  {
-    id: 'file-5',
-    path: '/var/log/syslog',
-    name: 'syslog',
-    type: 'file',
-    size: 8900,
-    modified: '2026-08-12 07:40',
-    owner: 'syslog',
-    permissions: '-rw-r-----',
-    language: 'text',
-    content: `2026-08-12 07:00:01 kernel: [0.000000] Linux version 6.6.0-devterminal (gcc 13.2) #1 SMP PREEMPT
-2026-08-12 07:05:12 systemd[1]: Started DevTerminal Backend Service daemon.
-2026-08-12 07:12:44 node[3000]: Express API routes listening on 0.0.0.0:3000
-2026-08-12 07:22:19 auditd[882]: USER_AUTH pid=1402 uid=1000 auid=1000 res=success
-2026-08-12 07:35:01 CRON[2204]: (root) CMD (python3 /var/scripts/backup_cron.py)
-`,
-  },
-];
+  return bits.join('');
+}
 
-// Backup Schedule Store
-let backupTasks = [
-  {
-    id: 'bak-1',
-    name: 'Full System Snapshot',
-    schedule: 'daily',
-    lastRun: '2026-08-12 02:00:00',
-    nextRun: '2026-08-13 02:00:00',
-    targetCloud: 's3',
-    status: 'completed',
-    sizeMb: 1240,
-  },
-  {
-    id: 'bak-2',
-    name: 'Database Dump & Activity Logs',
-    schedule: 'hourly',
-    lastRun: '2026-08-12 07:00:00',
-    nextRun: '2026-08-12 08:00:00',
-    targetCloud: 'gcs',
-    status: 'idle',
-    sizeMb: 180,
-  },
-  {
-    id: 'bak-3',
-    name: 'User Configs & SSH Key Vault',
-    schedule: 'weekly',
-    lastRun: '2026-08-07 00:00:00',
-    nextRun: '2026-08-14 00:00:00',
-    targetCloud: 'dropbox',
-    status: 'idle',
-    sizeMb: 45,
-  },
-];
+function languageOf(name: string): string {
+  const ext = path.extname(name).toLowerCase();
+  const map: Record<string, string> = {
+    '.ts': 'typescript', '.tsx': 'typescript', '.js': 'javascript', '.jsx': 'javascript',
+    '.json': 'json', '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash', '.py': 'python',
+    '.md': 'markdown', '.yml': 'yaml', '.yaml': 'yaml', '.toml': 'toml', '.css': 'css',
+    '.html': 'html', '.sql': 'sql', '.rs': 'rust', '.go': 'go', '.c': 'c', '.cpp': 'cpp',
+    '.conf': 'nginx', '.service': 'ini', '.env': 'ini', '.log': 'text',
+  };
+  if (map[ext]) return map[ext];
+  if (IMAGE_EXT.has(ext)) return 'image';
+  return ARCHIVE_EXT.has(ext) ? 'archive' : 'text';
+}
 
-const AI_MODEL = process.env.OMNITERM_AI_MODEL || 'gemini-2.5-flash';
+function describeEntry(dir: string, name: string) {
+  const full = path.join(dir, name);
+  const st = fs.lstatSync(full);
+  const isDir = st.isDirectory();
+  let isLink = st.isSymbolicLink();
+  let target: string | null = null;
+  if (isLink) {
+    try {
+      target = fs.readlinkSync(full);
+    } catch {
+      target = null;
+    }
+  }
+  return {
+    id: full,
+    path: full,
+    name,
+    type: (isDir ? 'directory' : 'file') as 'directory' | 'file',
+    size: isDir ? st.size : st.size,
+    modified: new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 16),
+    owner: String(st.uid),
+    permissions: `${isLink ? 'l' : isDir ? 'd' : '-'}${permissionsString(st.mode).slice(1)}`,
+    language: isDir ? 'folder' : languageOf(name),
+    isLink,
+    target,
+  };
+}
 
-// Helper: ask the AI copilot directly from a terminal command
-async function askCopilot(mode: string, prompt: string, cwd: string): Promise<string> {
+function listDirectory(target: string) {
+  const dir = path.resolve(target.replace(/^~(?=$|\/)/, os.homedir()));
+  if (!fs.existsSync(dir)) throw new Error(`No such directory: ${dir}`);
+  if (!fs.statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
+
+  const entries = fs
+    .readdirSync(dir)
+    .map((name) => {
+      try {
+        return describeEntry(dir, name);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  return {
+    path: dir,
+    parent: path.dirname(dir) === dir ? null : path.dirname(dir),
+    entries,
+  };
+}
+
+// ------------------- REAL GIT / DOCKER / TOOLCHAIN HELPERS ------------------- //
+
+function runQuick(cmd: string, args: string[], cwd?: string) {
+  try {
+    const res = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 6000 });
+    return { ok: res.status === 0, out: (res.stdout || '').trim(), err: (res.stderr || '').trim(), status: res.status };
+  } catch (err: any) {
+    return { ok: false, out: '', err: err.message, status: -1 };
+  }
+}
+
+function repoStatus(dir?: string) {
+  const cwd = resolveCwd(dir);
+  const inside = runQuick('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'], cwd);
+  if (!inside.ok || inside.out !== 'true') {
+    return { isRepo: false, cwd, branch: null, changed: 0, untracked: 0, ahead: 0, behind: 0, toplevel: null, lastCommit: null };
+  }
+
+  const toplevel = runQuick('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], cwd).out || cwd;
+  const status = runQuick('git', ['-C', toplevel, 'status', '--porcelain=v1', '--branch'], toplevel);
+  const lines = status.out.split('\n').filter(Boolean);
+  const header = lines.find((l) => l.startsWith('##')) || '';
+  const files = lines.filter((l) => !l.startsWith('##'));
+
+  let branch = header.replace('##', '').trim().split('...')[0].split(' ')[0] || 'HEAD';
+  const ahead = Number((header.match(/ahead (\d+)/) || [])[1] || 0);
+  const behind = Number((header.match(/behind (\d+)/) || [])[1] || 0);
+  if (branch === 'HEAD (no branch)') branch = 'detached';
+
+  const last = runQuick('git', ['-C', toplevel, 'log', '-1', '--pretty=%h %s'], toplevel).out;
+
+  return {
+    isRepo: true,
+    cwd,
+    toplevel,
+    branch,
+    changed: files.filter((l) => !l.startsWith('??')).length,
+    untracked: files.filter((l) => l.startsWith('??')).length,
+    ahead,
+    behind,
+    lastCommit: last || null,
+  };
+}
+
+function dockerStatus() {
+  const ping = runQuick('docker', ['info', '--format', '{{.ServerVersion}}']);
+  if (!ping.ok) {
+    return { available: false, serverVersion: null, running: 0, total: 0, containers: [] as any[] };
+  }
+  const ps = runQuick('docker', ['ps', '-a', '--format', '{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}']);
+  const containers = ps.out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [name, status, image, ports] = line.split('|');
+      return { name, status, image, ports, running: /^Up/.test(status || '') };
+    });
+  return {
+    available: true,
+    serverVersion: ping.out,
+    running: containers.filter((c) => c.running).length,
+    total: containers.length,
+    containers,
+  };
+}
+
+function toolchainStatus() {
+  const tools = ['git', 'node', 'npm', 'python3', 'docker', 'ollama', 'kubectl', 'cargo', 'go', 'rg', 'fd', 'jq', 'tmux'];
+  return tools.map((tool) => {
+    const found = runQuick('bash', ['-lc', `command -v ${tool}`]);
+    if (!found.ok) return { name: tool, installed: false, version: null, path: null };
+    const flag = tool === 'go' ? 'version' : '--version';
+    const version = runQuick('bash', ['-lc', `${tool} ${flag} 2>&1 | head -1`]).out;
+    return { name: tool, installed: true, version: version || 'installed', path: found.out };
+  });
+}
+
+// ------------------- REAL SYSTEM SECURITY POSTURE ------------------- //
+
+function securityPosture() {
+  // Loopback, link-local and local daemons are not reachable from the network.
+  const isLoopback = (addr, proc) =>
+    addr.startsWith('127.') ||
+    addr.startsWith('[::1]') ||
+    addr === '::1' ||
+    addr.startsWith('169.254.') ||
+    proc.includes('systemd-network') ||
+    proc.includes('systemd-resolve') ||
+    proc.includes('chronyd');
+
+  const listening = runQuick('bash', ['-lc', "ss -tulpnH 2>/dev/null | awk '{print $1, $5, $7}' | head -40"]).out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const addr = parts[1] || '';
+      const idx = addr.lastIndexOf(':');
+      const process = (parts.slice(2).join(' ') || '-').replace(/users:\(\(|\)\)/g, '').split(',')[0] || '-';
+      return {
+        proto: (parts[0] || '').toLowerCase(),
+        address: idx > 0 ? addr.slice(0, idx) : addr,
+        port: idx > 0 ? addr.slice(idx + 1) : '',
+        process,
+        exposed: !isLoopback(addr, process),
+      };
+    });
+
+  const ufw = runQuick('bash', ['-lc', 'command -v ufw >/dev/null && ufw status 2>/dev/null | head -1 || echo "ufw not installed"']);
+  const apparmor = runQuick('bash', ['-lc', 'command -v aa-status >/dev/null && aa-status --enabled 2>/dev/null && echo enabled || echo unknown']);
+  const sudoers = runQuick('bash', ['-lc', "getent group sudo wheel 2>/dev/null | cut -d: -f1,4"]).out;
+  const sshKeys = runQuick('bash', ['-lc', 'find ~/.ssh -maxdepth 1 -name "id_*" ! -name "*.pub" 2>/dev/null | wc -l']);
+  const authorized = runQuick('bash', ['-lc', 'test -f ~/.ssh/authorized_keys && wc -l < ~/.ssh/authorized_keys || echo 0']);
+  const sshd = runQuick('bash', ['-lc', "systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo inactive"]);
+  const worldWritable = runQuick('bash', ['-lc', "find /etc -maxdepth 2 -type f -perm -o+w 2>/dev/null | wc -l"]);
+
+  return {
+    firewall: ufw.out.split('\n')[0] || 'unknown',
+    apparmor: apparmor.out.trim() || 'unknown',
+    sudoGroups: sudoers.trim() || '-',
+    sshKeys: Number(sshKeys.out) || 0,
+    authorizedKeys: Number(authorized.out) || 0,
+    sshService: sshd.out.trim() || 'inactive',
+    worldWritableEtcFiles: Number(worldWritable.out) || 0,
+    listening: listening,
+    exposedPorts: listening.filter((l) => l.exposed).length,
+    auditFile: AUDIT_FILE,
+    auditEntries: activityLogs.length,
+  };
+}
+
+
+const AI_PROVIDER = (process.env.OMNITERM_AI_PROVIDER || 'auto').toLowerCase();
+const GEMINI_MODEL = process.env.OMNITERM_AI_MODEL || 'gemini-2.5-flash';
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+const OLLAMA_MODEL = process.env.OMNITERM_OLLAMA_MODEL || 'llama3.1';
+
+async function ollamaAvailable(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1200);
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ollamaGenerate(prompt: string, system: string): Promise<string> {
+  const res = await fetch(`${OLLAMA_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      stream: false,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
+  const data: any = await res.json();
+  return data?.message?.content || '';
+}
+
+/**
+ * Local-first AI: prefers a model running on this machine (Ollama) so shell
+ * context never leaves the box, and only falls back to the cloud API when the
+ * user explicitly allows it.
+ */
+async function generateAiReply(system: string, prompt: string): Promise<{ text: string; source: string }> {
+  const preferLocal = AI_PROVIDER === 'auto' || AI_PROVIDER === 'ollama';
+  if (preferLocal && (await ollamaAvailable())) {
+    try {
+      const text = await ollamaGenerate(prompt, system);
+      if (text.trim()) return { text, source: `ollama:${OLLAMA_MODEL}` };
+    } catch {
+      /* fall through to the cloud provider */
+    }
+  }
+
+  if (AI_PROVIDER === 'ollama') {
+    return { text: `[OmniTerm AI] No local model answered at ${OLLAMA_URL}. Start Ollama (\`ollama serve\`) or pull a model (\`ollama pull ${OLLAMA_MODEL}\`).`, source: 'ollama-unavailable' };
+  }
+
   const ai = getGeminiClient();
   if (!ai) {
-    return `[OmniTerm AI] No GEMINI_API_KEY configured. Set it in File > Environment (.env) to enable the copilot.`;
+    return {
+      text:
+        '[OmniTerm AI] No AI provider available.\n' +
+        `  • Local, private:        install Ollama and run \`ollama pull ${OLLAMA_MODEL}\`\n` +
+        '  • Cloud:                 set GEMINI_API_KEY (your prompts and shell output leave this machine)',
+      source: 'none',
+    };
   }
-  try {
-    const response = await ai.models.generateContent({
-      model: AI_MODEL,
-      contents: `Working directory: ${cwd}\nRequest: ${prompt}`,
-      config: {
-        systemInstruction:
-          'You are OmniTerm Copilot, an expert Linux shell assistant. Answer with concrete, runnable commands and keep it short.',
-        temperature: 0.2,
-      },
-    });
-    return response.text || '[OmniTerm AI] Empty response.';
-  } catch (err: any) {
-    return `[OmniTerm AI Error] ${err.message}`;
-  }
+
+  const response = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt, config: { systemInstruction: system, temperature: 0.2 } });
+  return { text: response.text || '[OmniTerm AI] Empty response.', source: `gemini:${GEMINI_MODEL}` };
+}
+
+// Copilot used by the `ai` / `claude` / `gemini` terminal commands.
+async function askCopilot(mode: string, prompt: string, cwd: string): Promise<string> {
+  const system =
+    'You are OmniTerm Copilot, an expert Linux shell assistant. Answer with concrete, runnable commands and keep it short.';
+  const reply = await generateAiReply(system, `Working directory: ${cwd}\nRequest: ${prompt}`);
+  return reply.text;
 }
 
 // Helper: Gemini AI Client
@@ -603,47 +707,33 @@ app.post('/api/terminal/execute', async (req, res) => {
   const trimmed = command.trim();
   const lower = trimmed.toLowerCase();
 
-  // RBAC Permission Guard Check
-  if (userRole === 'viewer' && (lower.startsWith('sudo') || lower.startsWith('rm') || lower.startsWith('chmod') || lower.startsWith('touch') || lower.includes('>'))) {
-    activityLogs.unshift({
-      id: `log-${Date.now()}`,
+  // Command guard: the read-only role may not change anything on this machine.
+  if (userRole === 'viewer' && (lower.startsWith('sudo') || lower.startsWith('rm') || lower.startsWith('chmod') || lower.startsWith('chown') || lower.startsWith('touch') || lower.includes('>'))) {
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
-      username: 'current_user',
+      username: os.userInfo().username,
       role: userRole,
-      action: 'PERMISSION_DENIED',
-      details: `Denied command '${trimmed}' for role '${userRole}'`,
+      action: 'COMMAND_BLOCKED',
+      details: `Blocked '${trimmed}' (role: ${userRole})`,
       ip: '127.0.0.1',
       severity: 'security_alert',
+      cwd,
+      command: trimmed,
+      exitCode: null,
     });
 
-    systemAlerts.unshift({
-      id: `alt-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      title: 'Security Exception: Permission Guard',
-      message: `Role '${userRole}' attempted elevated command '${trimmed}'`,
-      type: 'security_denied',
-      read: false,
-    });
+    pushAlert('Command Guard blocked a command', `Role '${userRole}' tried to run '${trimmed}'`, 'security_denied');
 
     return res.json({
-      output: `[PERMISSION ERROR]: Role '${userRole}' lacks required permissions for command: '${trimmed}'. Request 'admin' elevation.`,
+      output: `[COMMAND GUARD] The '${userRole}' role is read-only, so '${trimmed}' was not executed.\nSwitch the role selector to 'developer' or 'admin' in the top bar to allow changes.`,
       status: 'denied',
       executionTimeMs: Date.now() - startTime,
       cwd,
+      exitCode: null,
+      real: true,
     });
   }
-
-  // Log action
-  activityLogs.unshift({
-    id: `log-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    username: 'current_user',
-    role: userRole,
-    action: 'COMMAND_EXEC',
-    details: `Executed: ${trimmed} in ${cwd}`,
-    ip: '127.0.0.1',
-    severity: 'info',
-  });
 
   // ---- OmniTerm built-ins (handled by the app, not the shell) ----
   const parts = trimmed.split(/\s+/);
@@ -757,6 +847,23 @@ app.post('/api/terminal/execute', async (req, res) => {
     syntaxType = detectSyntax(trimmed, output);
   }
 
+  // Audit trail: recorded after execution so the real exit code and duration
+  // are captured. This file is the basis for the /audit export.
+  appendAuditLog({
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    username: os.userInfo().username,
+    role: userRole,
+    action: handledByApp ? 'BUILTIN_EXEC' : 'COMMAND_EXEC',
+    details: `${trimmed}  →  exit ${exitCode}  (${Date.now() - startTime}ms, cwd ${nextCwd})`,
+    ip: '127.0.0.1',
+    severity: status === 'success' ? 'info' : 'error',
+    cwd: nextCwd,
+    exitCode,
+    durationMs: Date.now() - startTime,
+    command: trimmed,
+  });
+
   res.json({
     output,
     status,
@@ -768,111 +875,162 @@ app.post('/api/terminal/execute', async (req, res) => {
   });
 });
 
-// 3. AI CLI Copilot / Claude Coder API Endpoint
+// 3. AI Copilot Endpoint (local-first: Ollama, then Gemini if configured)
 app.post('/api/ai/copilot', async (req, res) => {
-  const { action, prompt, mode = 'claude-coder', contextLogs = '' } = req.body;
+  const { action, prompt, mode = 'assistant', contextLogs = '' } = req.body || {};
 
-  const ai = getGeminiClient();
+  const systemInstruction =
+    'You are OmniTerm Copilot, an expert Linux terminal assistant. ' +
+    'Reply with concrete, runnable commands, keep answers short, and use fenced code blocks.';
 
-  if (!ai) {
-    // Graceful fallback response if Gemini key is not configured
-    let fallbackText = '';
-    if (action === 'suggest_command') {
-      fallbackText = `Suggested Command for "${prompt}":\n\`\`\`bash\nfind . -name "*.ts" -type f -exec grep -H "process.env" {} + | awk '{print $1}'\n\`\`\`\n\nExplanation: This command recursively scans TypeScript files for environment variable usage and lists matching file names.`;
-    } else if (action === 'generate_script') {
-      fallbackText = `#!/usr/bin/env bash\n# Custom Shell Script generated for: ${prompt}\n\necho "[AI Copilot] Starting automation task..."\nif [ ! -d "./logs" ]; then\n  mkdir -p ./logs\nfi\ntar -czf ./logs/archive_$(date +%Y%m%d).tar.gz ./src\necho "[AI Copilot] Backup completed successfully!"\n`;
-    } else if (action === 'explain_command') {
-      fallbackText = `Command Explanation for: \`${prompt}\`\n- Parse flags and arguments\n- Execute with high efficiency\n- Return standard stream outputs`;
-    } else {
-      fallbackText = `[AI Assistant (${mode.toUpperCase()})]\nI analyzed your terminal query: "${prompt}".\nTo optimize your workflow on this environment, use pipe combinations and filter standard outputs with \`grep\` or \`jq\`.`;
-    }
-
-    return res.json({
-      result: fallbackText,
-      mode,
-      source: 'fallback',
-    });
-  }
+  const userPrompt =
+    `Action: ${action}\nMode: ${mode}\nUser Query: ${prompt}\n` +
+    (contextLogs ? `Recent terminal context:\n${contextLogs}` : '');
 
   try {
-    let systemInstruction = `You are ${mode === 'claude-coder' ? 'Claude Coder' : mode === 'gemini-cli' ? 'Gemini CLI Terminal Assistant' : 'Cursor Agent'}, an expert AI Terminal CLI Copilot. Provide ultra-concise, accurate terminal commands, shell scripts, and command explanations for developers working on Linux, macOS, and Windows. Format output cleanly with syntax highlighted code blocks.`;
-
-    const userPrompt = `Action: ${action}\nUser Query: ${prompt}\nRecent Terminal Context Logs:\n${contextLogs}`;
-
-    const response = await ai.models.generateContent({
-      model: AI_MODEL,
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        temperature: 0.2,
-      },
-    });
-
-    res.json({
-      result: response.text || 'No response generated.',
-      mode,
-      source: AI_MODEL,
-    });
+    const reply = await generateAiReply(systemInstruction, userPrompt);
+    res.json({ result: reply.text, mode, source: reply.source });
   } catch (err: any) {
-    console.error('Gemini API Error in /api/ai/copilot:', err);
     res.json({
-      result: `[AI Copilot Error]: ${err.message || 'Failed to generate AI terminal suggestion'}.\nFalling back to local pattern: Use \`ls -la\` or \`git status\`.`,
+      result: `[AI Copilot Error]: ${err.message || 'provider call failed'}`,
       mode,
-      source: 'fallback_error',
+      source: 'error',
     });
   }
 });
 
-// 4. File Manager Endpoints
+// 4. File Manager Endpoints (real filesystem)
 app.get('/api/files', (req, res) => {
-  res.json(virtualFilesystem);
+  try {
+    const dir = String(req.query.path || req.query.dir || DEFAULT_CWD);
+    res.json(listDirectory(dir));
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/files/read', (req, res) => {
+  try {
+    const target = path.resolve(String(req.query.path || ''));
+    const st = fs.statSync(target);
+    if (st.isDirectory()) return res.status(400).json({ error: 'Path is a directory.' });
+    if (st.size > MAX_READ_BYTES) {
+      return res.json({
+        path: target,
+        content: `[OmniTerm] File is ${(st.size / 1048576).toFixed(1)} MB — too large to edit here.\nUse the terminal: less "${target}"`,
+        size: st.size,
+        language: languageOf(target),
+        truncated: true,
+        readOnly: true,
+      });
+    }
+    const buf = fs.readFileSync(target);
+    const binary = buf.subarray(0, 8000).includes(0);
+    return res.json({
+      path: target,
+      content: binary
+        ? `[OmniTerm] Binary file (${(st.size / 1024).toFixed(1)} KB). Open it with the right tool from the terminal.`
+        : buf.toString('utf8'),
+      size: st.size,
+      language: languageOf(target),
+      owner: String(st.uid),
+      permissions: permissionsString(st.mode),
+      modified: new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 16),
+      truncated: false,
+      readOnly: binary,
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.post('/api/files/save', (req, res) => {
-  const { path: filePath, content, userRole } = req.body;
+  const { path: rawPath, content, userRole } = req.body || {};
 
   if (userRole === 'viewer') {
-    return res.status(403).json({ error: 'Permission Denied: Viewer role cannot modify system files.' });
+    return res.status(403).json({ error: 'Permission Denied: viewer role is read-only. Switch the role selector to developer or admin.' });
   }
+  if (!rawPath) return res.status(400).json({ error: 'Missing path.' });
 
-  const existingIndex = virtualFilesystem.findIndex((f) => f.path === filePath);
-  if (existingIndex >= 0) {
-    virtualFilesystem[existingIndex].content = content;
-    virtualFilesystem[existingIndex].size = Buffer.byteLength(content, 'utf-8');
-    virtualFilesystem[existingIndex].modified = new Date().toISOString().replace('T', ' ').substring(0, 16);
-  } else {
-    const filename = filePath.split('/').pop() || 'new_file.txt';
-    virtualFilesystem.push({
-      id: `file-${Date.now()}`,
-      path: filePath,
-      name: filename,
-      type: 'file',
-      size: Buffer.byteLength(content, 'utf-8'),
-      modified: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      owner: userRole === 'admin' ? 'root' : 'dev_alex',
-      permissions: '-rw-r--r--',
-      language: filename.endsWith('.json') ? 'json' : filename.endsWith('.sh') ? 'bash' : filename.endsWith('.py') ? 'python' : 'text',
-      content,
+  const target = path.resolve(String(rawPath));
+  try {
+    const existed = fs.existsSync(target);
+    if (!existed) {
+      const parent = path.dirname(target);
+      if (!fs.existsSync(parent)) return res.status(400).json({ error: `Directory does not exist: ${parent}` });
+    }
+    // Write via a temp file so a crash cannot leave a half-written config behind.
+    const tmp = `${target}.omniterm-${process.pid}.tmp`;
+    fs.writeFileSync(tmp, String(content ?? ''), { mode: existed ? fs.statSync(target).mode : 0o644 });
+    fs.renameSync(tmp, target);
+
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      username: os.userInfo().username,
+      role: userRole || 'developer',
+      action: existed ? 'FILE_SAVE' : 'FILE_CREATE',
+      details: `${existed ? 'Saved' : 'Created'} ${target}`,
+      ip: '127.0.0.1',
+      severity: 'info',
     });
+
+    res.json({ success: true, path: target, created: !existed, size: fs.statSync(target).size });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-
-  activityLogs.unshift({
-    id: `log-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    username: 'current_user',
-    role: userRole,
-    action: 'FILE_SAVE',
-    details: `Saved changes to ${filePath}`,
-    ip: '127.0.0.1',
-    severity: 'info',
-  });
-
-  res.json({ success: true, path: filePath });
 });
 
-// 5. Activity Logs & Alerts Endpoints
+// 4b. Repo / container / toolchain status (drives the real status bar)
+app.get('/api/repo/status', (req, res) => {
+  res.json(repoStatus(req.query.path ? String(req.query.path) : undefined));
+});
+
+app.get('/api/docker/status', (req, res) => {
+  res.json(dockerStatus());
+});
+
+app.get('/api/toolchain', (req, res) => {
+  res.json(toolchainStatus());
+});
+
+app.get('/api/security', (req, res) => {
+  res.json(securityPosture());
+});
+
+app.get('/api/ai/status', async (req, res) => {
+  const local = await ollamaAvailable();
+  res.json({
+    provider: AI_PROVIDER,
+    localAvailable: local,
+    localModel: OLLAMA_MODEL,
+    localUrl: OLLAMA_URL,
+    cloudConfigured: Boolean(process.env.GEMINI_API_KEY),
+    cloudModel: GEMINI_MODEL,
+    privacy: local
+      ? 'local — nothing leaves this machine'
+      : process.env.GEMINI_API_KEY
+        ? 'cloud — prompts are sent to the Gemini API'
+        : 'offline — no provider configured',
+  });
+});
+
+
+// 6. Activity Logs & Alerts Endpoints
 app.get('/api/activity-logs', (req, res) => {
-  res.json(activityLogs);
+  res.json({ entries: activityLogs, auditFile: AUDIT_FILE, total: activityLogs.length });
+});
+
+// Evidence export: the raw JSONL trail, timestamps and exit codes included.
+app.get('/api/audit/export', (req, res) => {
+  try {
+    const rows = loadAuditLog(5000);
+    res.setHeader('Content-Type', 'application/x-ndjson');
+    res.setHeader('Content-Disposition', 'attachment; filename="omniterm-audit.jsonl"');
+    res.send(rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/alerts', (req, res) => {
@@ -885,34 +1043,69 @@ app.post('/api/alerts/mark-read', (req, res) => {
 });
 
 // 6. Backups API Endpoint
+// 6. Backups (real tar.gz snapshots in ~/OmniTerm/backups)
+const BACKUP_DIR = process.env.OMNITERM_BACKUP_DIR || path.join(os.homedir(), 'OmniTerm', 'backups');
+
+function listBackups() {
+  try {
+    return fs
+      .readdirSync(BACKUP_DIR)
+      .filter((f) => f.endsWith('.tar.gz'))
+      .map((name) => {
+        const full = path.join(BACKUP_DIR, name);
+        const st = fs.statSync(full);
+        return {
+          id: full,
+          name,
+          path: full,
+          source: 'local tar.gz',
+          schedule: 'manual',
+          lastRun: new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 16),
+          nextRun: null,
+          targetCloud: 'local',
+          status: 'completed' as const,
+          sizeMb: Number((st.size / 1048576).toFixed(2)),
+        };
+      })
+      .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
+  } catch {
+    return [];
+  }
+}
+
 app.get('/api/backups', (req, res) => {
-  res.json(backupTasks);
+  res.json({ dir: BACKUP_DIR, backups: listBackups() });
 });
 
 app.post('/api/backups/run', (req, res) => {
-  const { id } = req.body;
-  const task = backupTasks.find((b) => b.id === id);
-  if (task) {
-    task.lastRun = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    task.status = 'completed';
-    task.sizeMb += Math.floor(Math.random() * 20);
+  const dir = resolveCwd(req.body?.cwd);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const archive = path.join(BACKUP_DIR, `snapshot-${stamp}.tar.gz`);
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
+    const result = spawnSync('tar', ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', dir, '.'], { timeout: 300_000 });
+    if (result.status !== 0) {
+      pushAlert('Backup failed', `tar exited ${result.status} for ${dir}`, 'backup_failed');
+      return res.status(500).json({ error: (result.stderr || '').toString().trim() || `tar exited ${result.status}` });
+    }
+    const sizeMb = Number((fs.statSync(archive).size / 1048576).toFixed(2));
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      username: os.userInfo().username,
+      role: 'developer',
+      action: 'BACKUP_RUN',
+      details: `Snapshot ${archive} (${sizeMb} MB) of ${dir}`,
+      ip: '127.0.0.1',
+      severity: 'info',
+    });
+    res.json({ success: true, path: archive, sizeMb, source: dir, restore: `tar -xzf "${archive}" -C <target-dir>` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-
-  activityLogs.unshift({
-    id: `log-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    username: 'admin_sys',
-    role: 'admin',
-    action: 'BACKUP_EXECUTE',
-    details: `Ran automated backup task: ${task?.name || id}`,
-    ip: '127.0.0.1',
-    severity: 'info',
-  });
-
-  res.json({ success: true, tasks: backupTasks });
 });
 
-// 7. Unit Tests Runner Endpoint
+
 app.post('/api/unit-tests/run', (req, res) => {
   const tests = [
     { id: 'test-1', suite: 'Terminal Command Engine', name: 'Execute pwd command returns valid cwd', status: 'passed', durationMs: 12 },

@@ -5,15 +5,15 @@ import { FileManagerView } from './components/FileManagerView';
 import { ServerHealthView } from './components/ServerHealthView';
 import { AiCliSuiteView } from './components/AiCliSuiteView';
 import { PermissionsAndLogsView } from './components/PermissionsAndLogsView';
-import { PluginsView } from './components/PluginsView';
 import { BackupsAndCloudView } from './components/BackupsAndCloudView';
 import { SecurityEncryptionView } from './components/SecurityEncryptionView';
-import { ApiDocsAndTestsView } from './components/ApiDocsAndTestsView';
 
-import { TerminalTab, OSPreset, UserRole, SystemAlert, TerminalPlugin } from './types';
+import { TerminalTab, OSPreset, UserRole, SystemAlert } from './types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('terminal');
+  // Note: UI-only modules (fake plugins, fake API test runner) were removed on
+  // purpose — every tab now shows real data from this machine.
   const [osPreset, setOsPreset] = useState<OSPreset>('macos');
   const [userRole, setUserRole] = useState<UserRole>('developer');
   const [currentTheme, setCurrentTheme] = useState<string>('matrix');
@@ -65,69 +65,6 @@ export default function App() {
     },
   ]);
 
-  // Plugins State
-  const [plugins, setPlugins] = useState<TerminalPlugin[]>([
-    {
-      id: 'plugin-git',
-      name: 'Git Branch & Status Visualizer',
-      description: 'Renders real-time git branch, uncommitted files, and commit head in terminal prompt.',
-      version: '1.4.0',
-      author: 'DevTerminal Team',
-      enabled: true,
-      type: 'visualizer',
-      icon: 'Code2',
-    },
-    {
-      id: 'plugin-docker',
-      name: 'Docker Container Watcher',
-      description: 'Displays active container metrics, CPU usage, and exposed ports right inside active terminal sessions.',
-      version: '2.1.0',
-      author: 'DevOps Extension Group',
-      enabled: true,
-      type: 'visualizer',
-      icon: 'Server',
-    },
-    {
-      id: 'plugin-sec',
-      name: 'RBAC Permission Guard',
-      description: 'Intercepts sudo and system file write operations to enforce user role capabilities.',
-      version: '3.0.0',
-      author: 'Security Systems',
-      enabled: true,
-      type: 'security_guard',
-      icon: 'Lock',
-    },
-    {
-      id: 'plugin-json',
-      name: 'JSON Pretty Formatter',
-      description: 'Automatically formats and syntax highlights JSON command outputs.',
-      version: '1.2.0',
-      author: 'Terminal Utilities',
-      enabled: false,
-      type: 'formatter',
-      icon: 'Zap',
-    },
-    {
-      id: 'plugin-disk',
-      name: 'Disk Usage Analyzer (ncdu style)',
-      description: 'Visualizes directory size tree and disk space usage in high-resolution terminal bars.',
-      version: '1.0.5',
-      author: 'Storage Tools',
-      enabled: false,
-      type: 'visualizer',
-      icon: 'HardDrive',
-    },
-    {
-      id: 'plugin-ai',
-      name: 'AI Command Auto-Corrector',
-      description: 'Analyzes typos in commands and proposes corrected pipe chains before execution.',
-      version: '2.0.0',
-      author: 'Gemini AI Integration',
-      enabled: true,
-      type: 'ai_extension',
-      icon: 'Cpu',
-    },
-  ]);
 
   // Adopt the real host environment on startup: real home directory, real
   // platform preset and a shell banner that reflects this machine.
@@ -219,7 +156,7 @@ export default function App() {
       />
 
       {/* Secondary Sub-Header for System & Security Section */}
-      {['rbac-logs', 'plugins', 'backups', 'security', 'api-tests'].includes(activeTab) && (
+      {['rbac-logs', 'backups', 'security'].includes(activeTab) && (
         <div className="bg-[#161618] border-b border-[#2A2A2E] px-4 py-1.5 flex items-center gap-2 overflow-x-auto text-xs font-mono">
           <span className="text-[#55555E] font-bold text-[10px] uppercase tracking-wider mr-1">System Module:</span>
           <button
@@ -228,15 +165,7 @@ export default function App() {
               activeTab === 'rbac-logs' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            RBAC & Audit
-          </button>
-          <button
-            onClick={() => setActiveTab('plugins')}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              activeTab === 'plugins' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            Plugins
+            Command Log & Guard
           </button>
           <button
             onClick={() => setActiveTab('backups')}
@@ -244,7 +173,7 @@ export default function App() {
               activeTab === 'backups' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            Backups & Cloud
+            Snapshots
           </button>
           <button
             onClick={() => setActiveTab('security')}
@@ -252,15 +181,7 @@ export default function App() {
               activeTab === 'security' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            Security & TLS
-          </button>
-          <button
-            onClick={() => setActiveTab('api-tests')}
-            className={`px-2.5 py-1 rounded text-xs transition-colors ${
-              activeTab === 'api-tests' ? 'bg-[#202024] text-[#00FF41] font-bold border border-[#2A2A2E]' : 'text-[#88888E] hover:text-[#E0E0E5]'
-            }`}
-          >
-            API & Unit Tests
+            Security Posture
           </button>
         </div>
       )}
@@ -276,7 +197,6 @@ export default function App() {
             osPreset={osPreset}
             userRole={userRole}
             currentTheme={currentTheme}
-            plugins={plugins}
           />
         )}
 
@@ -288,13 +208,10 @@ export default function App() {
 
         {activeTab === 'rbac-logs' && <PermissionsAndLogsView currentRole={userRole} />}
 
-        {activeTab === 'plugins' && <PluginsView plugins={plugins} setPlugins={setPlugins} />}
-
         {activeTab === 'backups' && <BackupsAndCloudView />}
 
         {activeTab === 'security' && <SecurityEncryptionView />}
 
-        {activeTab === 'api-tests' && <ApiDocsAndTestsView />}
       </main>
 
       {/* Persistent OmniTerm OS Status Footer */}
