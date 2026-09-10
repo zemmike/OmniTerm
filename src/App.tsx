@@ -7,15 +7,13 @@ import { SettingsView } from './components/SettingsView';
 import { useSettings } from './settings';
 import { applyUiTheme } from './themes';
 
-import { TerminalTab, OSPreset, UserRole, SystemAlert } from './types';
+import { TerminalTab, SystemAlert } from './types';
 
 export default function App() {
   // Deep link: the desktop shell can open a specific tab (?tab=backups).
   const [activeTab, setActiveTab] = useState<string>(
     () => new URLSearchParams(window.location.search).get('tab') || 'terminal'
   );
-  const [osPreset, setOsPreset] = useState<OSPreset>('macos');
-  const [userRole, setUserRole] = useState<UserRole>('developer');
   const [settings] = useSettings();
   const [currentTheme, setCurrentTheme] = useState<string>(settings.theme);
   // Publish the theme to CSS variables so chrome and terminal agree.
@@ -67,25 +65,15 @@ export default function App() {
   const [tabs, setTabs] = useState<TerminalTab[]>([
     {
       id: 'tab-1',
-      title: 'Main Session (macOS)',
-      osPreset: 'macos',
+      title: 'Terminal',
+      osPreset: 'linux',
       environment: 'local',
-      cwd: '/home/user',
-      history: [
-        {
-          id: 'cmd-init-1',
-          timestamp: new Date().toLocaleTimeString(),
-          command: 'welcome',
-          output: `DevTerminal Pro v2.4.0 (macOS Run Engine)\nConnected as 'developer' with TLS 1.3 encryption.\nType 'help' for available CLI commands.`,
-          status: 'success',
-          executionTimeMs: 4,
-          cwd: '/home/user',
-          userRole: 'developer',
-          os: 'macos',
-        },
-      ],
+      cwd: '',
+      // Nothing is pre-seeded: the shell, its working directory and everything it
+      // prints come from the real PTY session.
+      history: [],
       colorTheme: 'matrix',
-      activePluginIds: ['plugin-git', 'plugin-docker', 'plugin-sec'],
+      activePluginIds: [],
     },
   ]);
 
@@ -101,29 +89,11 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((env) => {
         if (!env || cancelled) return;
-        const preset = (env.osPreset || 'linux') as OSPreset;
-        setOsPreset(preset);
+        // The host reports its real working directory. Nothing is written into
+        // the scrollback here: the PTY session produces that for real.
+        const realCwd = typeof env.cwd === 'string' ? env.cwd : '';
         setTabs((prev) =>
-          prev.map((t, idx) =>
-            idx === 0
-              ? {
-                  ...t,
-                  osPreset: preset,
-                  title: `Main Session (${String(preset).toUpperCase()})`,
-                  cwd: env.cwd,
-                  history: t.history.map((h) => ({
-                    ...h,
-                    cwd: env.cwd,
-                    os: preset,
-                    output:
-                      `OmniTerm v${env.version} — real shell engine on ${env.hostname}\n` +
-                      `User: ${env.user}  |  Shell: ${env.shell}\n` +
-                      `Working directory: ${env.cwd}\n` +
-                      `Type 'help' for OmniTerm built-ins — everything else runs for real.`,
-                  })),
-                }
-              : t,
-          ),
+          prev.map((t, idx) => (idx === 0 ? { ...t, osPreset: 'linux', title: 'Terminal', cwd: realCwd } : t))
         );
       })
       .catch(() => undefined);
@@ -144,10 +114,6 @@ export default function App() {
       <HeaderNavbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        osPreset={osPreset}
-        setOsPreset={setOsPreset}
-        userRole={userRole}
-        setUserRole={setUserRole}
         currentTheme={currentTheme}
         setCurrentTheme={setCurrentTheme}
         alerts={alerts}
@@ -162,14 +128,12 @@ export default function App() {
             setTabs={setTabs}
             activeTabId={activeTabId}
             setActiveTabId={setActiveTabId}
-            osPreset={osPreset}
-            userRole={userRole}
-            currentTheme={currentTheme}
+                currentTheme={currentTheme}
             onOpenSettings={() => setActiveTab('settings')}
           />
         )}
 
-        {activeTab === 'files' && <FileManagerView userRole={userRole} />}
+        {activeTab === 'files' && <FileManagerView />}
 
         {activeTab === 'health' && <ServerHealthView />}
 

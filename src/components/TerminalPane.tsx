@@ -75,6 +75,8 @@ export default function TerminalPane({
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuReturnRef = useRef<HTMLElement | null>(null);
 
   // Live settings via refs so handlers always see the current values without
   // re-creating the terminal.
@@ -522,15 +524,30 @@ export default function TerminalPane({
     return () => window.removeEventListener('keydown', onKey);
   }, [searchOpen]);
 
-  // Close the context menu on any outside click.
+  // The context menu behaves like a real menu: focus moves to the first item
+  // when it opens, Escape closes it, and focus goes back to the terminal after.
   useEffect(() => {
     if (!menu) return;
+    menuReturnRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    const first = menuRef.current?.querySelector<HTMLButtonElement>('button:not([disabled])');
+    first?.focus();
+
     const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setMenu(null);
+      }
+    };
     window.addEventListener('click', close);
     window.addEventListener('blur', close);
+    window.addEventListener('keydown', onKey, true);
     return () => {
       window.removeEventListener('click', close);
       window.removeEventListener('blur', close);
+      window.removeEventListener('keydown', onKey, true);
+      const returnTo = menuReturnRef.current;
+      if (returnTo && returnTo.isConnected) returnTo.focus();
     };
   }, [menu]);
 
@@ -541,10 +558,22 @@ export default function TerminalPane({
 
   return (
     <div className="relative w-full h-full" style={{ background: terminalTheme(settings).background }}>
-      <div ref={hostRef} className="absolute inset-0 px-2 py-1" onMouseDown={() => onFocusPane?.()} style={{ cursor: 'text' }} />
+      <div
+        ref={hostRef}
+        role="log"
+        aria-live="polite"
+        aria-label="Terminal output"
+        className="absolute inset-0 px-2 py-1"
+        onMouseDown={() => onFocusPane?.()}
+        style={{ cursor: 'text' }}
+      />
 
       {status !== 'live' && (
-        <div className="absolute left-2 bottom-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-[#EAB308] pointer-events-none">
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute left-2 bottom-1 text-[10px] px-1.5 py-0.5 rounded bg-black/60 text-[#EAB308] pointer-events-none"
+        >
           {status === 'connecting' && 'starting shell…'}
           {status === 'reconnecting' && 'reconnecting…'}
           {status === 'error' && `error: ${error}`}
@@ -553,10 +582,15 @@ export default function TerminalPane({
       )}
 
       {searchOpen && (
-        <div className="absolute top-1 right-2 z-20 flex items-center gap-1 bg-[#161618] border border-[#2A2A2E] rounded px-2 py-1 shadow-lg">
-          <Search className="w-3.5 h-3.5 text-[#88888E]" />
+        <div
+          role="search"
+          aria-label="Search terminal scrollback"
+          className="absolute top-1 right-2 z-20 flex items-center gap-1 bg-[#161618] border border-[#2A2A2E] rounded px-2 py-1 shadow-lg"
+        >
+          <Search aria-hidden="true" className="w-3.5 h-3.5 text-[#88888E]" />
           <input
             autoFocus
+            aria-label="Search scrollback"
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -568,22 +602,40 @@ export default function TerminalPane({
               }
             }}
             placeholder="search scrollback"
-            className="bg-transparent outline-none text-[11px] text-[#E0E0E5] w-40 font-mono"
+            className="bg-transparent outline-none text-[11px] text-[#E0E0E5] w-40 font-mono focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
           />
-          <button title="Previous" onClick={() => searchRef.current?.findPrevious(searchQuery)} className="text-[#88888E] hover:text-[#E0E0E5]">
-            <ChevronUp className="w-3.5 h-3.5" />
+          <button
+            title="Previous"
+            aria-label="Previous match"
+            onClick={() => searchRef.current?.findPrevious(searchQuery)}
+            className="text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+          >
+            <ChevronUp aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
-          <button title="Next" onClick={() => searchRef.current?.findNext(searchQuery)} className="text-[#88888E] hover:text-[#E0E0E5]">
-            <ChevronDown className="w-3.5 h-3.5" />
+          <button
+            title="Next"
+            aria-label="Next match"
+            onClick={() => searchRef.current?.findNext(searchQuery)}
+            className="text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+          >
+            <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
-          <button title="Close" onClick={() => setSearchOpen(false)} className="text-[#88888E] hover:text-[#E0E0E5]">
-            <X className="w-3.5 h-3.5" />
+          <button
+            title="Close"
+            aria-label="Close search"
+            onClick={() => setSearchOpen(false)}
+            className="text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+          >
+            <X aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {menu && (
         <div
+          ref={menuRef}
+          role="menu"
+          aria-label="Terminal actions"
           className="absolute z-30 min-w-[170px] bg-[#161618] border border-[#2A2A2E] rounded shadow-2xl py-1 text-[11px] text-[#E0E0E5]"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
@@ -597,37 +649,40 @@ export default function TerminalPane({
           ].map((item) => (
             <button
               key={item.label}
+              role="menuitem"
               disabled={item.disabled}
               onClick={() => {
                 item.run();
                 setMenu(null);
               }}
-              className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] disabled:opacity-40"
+              className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
             >
               <span>{item.label}</span>
-              <span className="text-[10px] text-[#55555E]">{item.hint}</span>
+              <span className="text-[10px] text-[#55555E]" aria-hidden="true">{item.hint}</span>
             </button>
           ))}
-          <div className="h-px bg-[#2A2A2E] my-1" />
+          <div className="h-px bg-[#2A2A2E] my-1" role="separator" />
           <button
+            role="menuitem"
             onClick={() => {
               onAction?.('splitRight', sessionId);
               setMenu(null);
             }}
-            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024]"
+            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
           >
             <span>Split right</span>
-            <span className="text-[10px] text-[#55555E]">Ctrl+Shift+E</span>
+            <span className="text-[10px] text-[#55555E]" aria-hidden="true">Ctrl+Shift+E</span>
           </button>
           <button
+            role="menuitem"
             onClick={() => {
               onAction?.('splitDown', sessionId);
               setMenu(null);
             }}
-            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024]"
+            className="w-full flex items-center justify-between gap-6 px-3 py-1.5 hover:bg-[#202024] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41]"
           >
             <span>Split down</span>
-            <span className="text-[10px] text-[#55555E]">Ctrl+Shift+O</span>
+            <span className="text-[10px] text-[#55555E]" aria-hidden="true">Ctrl+Shift+O</span>
           </button>
         </div>
       )}

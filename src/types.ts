@@ -10,7 +10,6 @@ export interface TerminalCommand {
   status: 'success' | 'error' | 'running' | 'denied';
   executionTimeMs: number;
   cwd: string;
-  userRole: UserRole;
   os: OSPreset;
   syntaxType?: 'bash' | 'powershell' | 'json' | 'node' | 'python' | 'text' | 'sql';
 }
@@ -61,16 +60,6 @@ export interface UserAccount {
   avatarColor: string;
 }
 
-export interface ActivityLog {
-  id: string;
-  timestamp: string;
-  username: string;
-  role: UserRole;
-  action: string;
-  details: string;
-  ip: string;
-  severity: 'info' | 'warning' | 'error' | 'security_alert';
-}
 
 export interface SystemAlert {
   id: string;
@@ -205,16 +194,6 @@ export interface ServerHealth {
   };
 }
 
-export interface TerminalPlugin {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  author: string;
-  enabled: boolean;
-  type: 'visualizer' | 'command_hook' | 'formatter' | 'ai_extension' | 'security_guard';
-  icon: string;
-}
 
 export interface BackupTask {
   id: string;
@@ -227,16 +206,6 @@ export interface BackupTask {
   sizeMb: number;
 }
 
-export interface CloudStorageProvider {
-  id: string;
-  name: string;
-  type: 's3' | 'gcs' | 'dropbox' | 'local';
-  bucketName: string;
-  region: string;
-  status: 'connected' | 'syncing' | 'disconnected';
-  storageUsedGb: number;
-  lastSync: string;
-}
 
 export interface AiToolConfig {
   mode: 'claude-coder' | 'gemini-cli' | 'cursor-agent';
@@ -245,20 +214,4 @@ export interface AiToolConfig {
   temperature: number;
 }
 
-export interface TestCase {
-  id: string;
-  suite: string;
-  name: string;
-  status: 'passed' | 'failed' | 'pending' | 'running';
-  durationMs: number;
-  error?: string;
-}
 
-export interface EncryptionKeys {
-  tlsVersion: string;
-  cipherSuite: string;
-  sshKeyType: 'RSA-4096' | 'Ed25519';
-  publicKey: string;
-  fingerprint: string;
-  dataEncrypted: boolean;
-}

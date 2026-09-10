@@ -50,9 +50,9 @@ export const ServerHealthView: React.FC = () => {
 
   if (!health) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-125px)] bg-[#0F0F10] text-[#00FF41] font-mono">
+      <div role="status" aria-live="polite" className="flex items-center justify-center h-[calc(100vh-125px)] bg-[#0F0F10] text-[#00FF41] font-mono">
         <div className="flex items-center gap-3">
-          <RefreshCw className="w-6 h-6 animate-spin text-[#00FF41]" />
+          <RefreshCw aria-hidden="true" className="w-6 h-6 animate-spin text-[#00FF41]" />
           <span>Connecting to Telemetry Stream...</span>
         </div>
       </div>
@@ -92,7 +92,7 @@ export const ServerHealthView: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#2A2A2E] pb-4">
         <div>
           <h1 className="text-lg font-bold text-[#E0E0E5] flex items-center gap-2">
-            <Activity className="w-5 h-5 text-[#00FF41]" />
+            <Activity aria-hidden="true" className="w-5 h-5 text-[#00FF41]" />
             <span>THIS MACHINE — LIVE HEALTH & PROCESS METRICS</span>
           </h1>
           <p className="text-xs text-[#88888E]">
@@ -103,9 +103,10 @@ export const ServerHealthView: React.FC = () => {
 
         <button
           onClick={fetchHealth}
-          className="px-3 py-1.5 rounded bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-xs font-bold flex items-center gap-2 transition-all text-[#E0E0E5]"
+          aria-busy={isRefreshing}
+          className="px-3 py-1.5 rounded bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] text-xs font-bold flex items-center gap-2 transition-all text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-[#00FF41] ${isRefreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 text-[#00FF41] ${isRefreshing ? 'animate-spin' : ''}`} />
           <span>REFRESH METRICS</span>
         </button>
       </div>
@@ -116,13 +117,21 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3 relative overflow-hidden`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
-              <Cpu className="w-4 h-4 text-[#00FF41]" />
+              <Cpu aria-hidden="true" className="w-4 h-4 text-[#00FF41]" />
               <span>CPU Usage ({health.cpuCores} Cores)</span>
             </span>
             <span className="font-mono font-bold text-[#00FF41]">{health.cpuUsage}%</span>
           </div>
 
-          <div className={`${BAR_BG} h-2.5`}>
+          <div
+            role="progressbar"
+            aria-label="CPU usage"
+            aria-valuenow={health.cpuUsage}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${health.cpuUsage}%`}
+            className={`${BAR_BG} h-2.5`}
+          >
             <div
               className={`h-full transition-all duration-500 rounded ${
                 health.cpuUsage > 80
@@ -142,7 +151,7 @@ export const ServerHealthView: React.FC = () => {
             {/* Only rendered when /sys/class/thermal gave a real reading. */}
             {temp !== null && (
               <span className="text-[#FFBD2E] whitespace-nowrap flex items-center gap-1" title="CPU temperature (thermal_zone)">
-                <Thermometer className="w-3 h-3" />
+                <Thermometer aria-hidden="true" className="w-3 h-3" />
                 {temp.toFixed(1)}°C
               </span>
             )}
@@ -156,7 +165,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
-              <Zap className="w-4 h-4 text-[#3B82F6]" />
+              <Zap aria-hidden="true" className="w-4 h-4 text-[#3B82F6]" />
               <span>RAM Memory</span>
             </span>
             <span className="font-mono font-bold text-[#3B82F6]">
@@ -164,7 +173,15 @@ export const ServerHealthView: React.FC = () => {
             </span>
           </div>
 
-          <div className={`${BAR_BG} h-2.5`}>
+          <div
+            role="progressbar"
+            aria-label="RAM usage"
+            aria-valuenow={health.memoryUsage.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${health.memoryUsage.percent}%`}
+            className={`${BAR_BG} h-2.5`}
+          >
             <div
               className="h-full bg-[#3B82F6] transition-all duration-500 rounded"
               style={{ width: `${health.memoryUsage.percent}%` }}
@@ -181,7 +198,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
-              <HardDrive className="w-4 h-4 text-[#BB86FC]" />
+              <HardDrive aria-hidden="true" className="w-4 h-4 text-[#BB86FC]" />
               <span>Disk usage ({health.diskUsage.path || '/'})</span>
             </span>
             <span className="font-mono font-bold text-[#BB86FC]">
@@ -189,7 +206,15 @@ export const ServerHealthView: React.FC = () => {
             </span>
           </div>
 
-          <div className={`${BAR_BG} h-2.5`}>
+          <div
+            role="progressbar"
+            aria-label={`Disk usage on ${health.diskUsage.path || '/'}`}
+            aria-valuenow={health.diskUsage.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuetext={`${health.diskUsage.percent}%`}
+            className={`${BAR_BG} h-2.5`}
+          >
             <div
               className="h-full bg-[#BB86FC] transition-all duration-500 rounded"
               style={{ width: `${health.diskUsage.percent}%` }}
@@ -206,7 +231,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
-              <Network className="w-4 h-4 text-[#FFBD2E]" />
+              <Network aria-hidden="true" className="w-4 h-4 text-[#FFBD2E]" />
               <span>Network Traffic</span>
             </span>
             <span className="font-mono text-[#E0E0E5] font-bold">
@@ -231,7 +256,7 @@ export const ServerHealthView: React.FC = () => {
       <div className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-            <MemoryStick className="w-4 h-4 text-[#3B82F6]" />
+            <MemoryStick aria-hidden="true" className="w-4 h-4 text-[#3B82F6]" />
             <span>MEMORY BREAKDOWN (/proc/meminfo)</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">
@@ -244,7 +269,7 @@ export const ServerHealthView: React.FC = () => {
         ) : (
           <>
             {/* Single stacked bar: used | cache+buffers | free-available */}
-            <div className={`${BAR_BG} h-4 flex`}>
+            <div role="img" aria-label={`Memory breakdown: ${fmtMb(usedSegMb)} used, ${fmtMb(cacheSegMb)} cache and buffers, ${fmtMb(freeSegMb)} free`} className={`${BAR_BG} h-4 flex`}>
               <div
                 className="h-full bg-[#3B82F6]"
                 style={{ width: segPct(usedSegMb) }}
@@ -307,7 +332,15 @@ export const ServerHealthView: React.FC = () => {
                   </span>
                   <span style={{ color: usageColor(swap.percent) }}>{swap.percent}%</span>
                 </div>
-                <div className={`${BAR_BG} h-2`}>
+                <div
+                  role="progressbar"
+                  aria-label="Swap usage"
+                  aria-valuenow={swap.percent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuetext={`${swap.percent}%`}
+                  className={`${BAR_BG} h-2`}
+                >
                   <div className="h-full rounded" style={{ width: `${swap.percent}%`, backgroundColor: usageColor(swap.percent) }} />
                 </div>
               </div>
@@ -326,7 +359,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3 lg:col-span-2`}>
           <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
             <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-              <MemoryStick className="w-4 h-4 text-[#3B82F6]" />
+              <MemoryStick aria-hidden="true" className="w-4 h-4 text-[#3B82F6]" />
               <span>WHAT IS USING YOUR RAM — TOP PROCESSES BY RSS</span>
             </span>
             <span className="text-[11px] text-[#55555E] font-mono">ps --sort=-rss</span>
@@ -336,14 +369,14 @@ export const ServerHealthView: React.FC = () => {
             <div className="text-xs text-[#88888E]">Process memory data is unavailable.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left font-mono text-xs text-[#E0E0E5]">
+              <table aria-label="Top processes by memory (RSS)" className="w-full text-left font-mono text-xs text-[#E0E0E5]">
                 <thead>
                   <tr className="border-b border-[#2A2A2E] text-[11px] text-[#55555E] uppercase">
-                    <th className="py-2 px-2">PID</th>
-                    <th className="py-2 px-2">Command</th>
-                    <th className="py-2 px-2 text-right">RSS MB</th>
-                    <th className="py-2 px-2 text-right">%MEM</th>
-                    <th className="py-2 px-2">Owner</th>
+                    <th scope="col" className="py-2 px-2">PID</th>
+                    <th scope="col" className="py-2 px-2">Command</th>
+                    <th scope="col" className="py-2 px-2 text-right">RSS MB</th>
+                    <th scope="col" className="py-2 px-2 text-right">%MEM</th>
+                    <th scope="col" className="py-2 px-2">Owner</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2A2A2E]/60">
@@ -366,7 +399,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
             <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-              <Database className="w-4 h-4 text-[#BB86FC]" />
+              <Database aria-hidden="true" className="w-4 h-4 text-[#BB86FC]" />
               <span>BY PROGRAM (RSS summed)</span>
             </span>
             <span className="text-[11px] text-[#55555E] font-mono">top 10</span>
@@ -404,7 +437,7 @@ export const ServerHealthView: React.FC = () => {
       <div className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-[#BB86FC]" />
+            <HardDrive aria-hidden="true" className="w-4 h-4 text-[#BB86FC]" />
             <span>MOUNTED FILESYSTEMS (statfs on /proc/mounts)</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">device-backed only</span>
@@ -414,14 +447,14 @@ export const ServerHealthView: React.FC = () => {
           <div className="text-xs text-[#88888E]">No device-backed filesystems detected.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left font-mono text-xs text-[#E0E0E5]">
+            <table aria-label="Mounted filesystems" className="w-full text-left font-mono text-xs text-[#E0E0E5]">
               <thead>
                 <tr className="border-b border-[#2A2A2E] text-[11px] text-[#55555E] uppercase">
-                  <th className="py-2 px-2">Mount</th>
-                  <th className="py-2 px-2">Device</th>
-                  <th className="py-2 px-2">FS</th>
-                  <th className="py-2 px-2 text-right">Used / Total</th>
-                  <th className="py-2 px-2 w-[26%]">Usage</th>
+                  <th scope="col" className="py-2 px-2">Mount</th>
+                  <th scope="col" className="py-2 px-2">Device</th>
+                  <th scope="col" className="py-2 px-2">FS</th>
+                  <th scope="col" className="py-2 px-2 text-right">Used / Total</th>
+                  <th scope="col" className="py-2 px-2 w-[26%]">Usage</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2A2A2E]/60">
@@ -460,7 +493,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between text-xs text-[#88888E]">
             <span className="font-bold flex items-center gap-1.5">
-              <HardDriveDownload className="w-4 h-4 text-[#BB86FC]" />
+              <HardDriveDownload aria-hidden="true" className="w-4 h-4 text-[#BB86FC]" />
               <span>Disk I/O (live)</span>
             </span>
             <span className="font-mono text-[#E0E0E5] font-bold">
@@ -488,7 +521,7 @@ export const ServerHealthView: React.FC = () => {
         <div className={`${CARD} p-4 space-y-3`}>
           <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
             <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-[#00FF41]" />
+              <Cpu aria-hidden="true" className="w-4 h-4 text-[#00FF41]" />
               <span>PER-CORE CPU ({health.cpuCores} cores)</span>
             </span>
             <span className="text-[11px] text-[#55555E] font-mono">/proc/stat · 150ms</span>
@@ -521,7 +554,7 @@ export const ServerHealthView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#00FF41] border border-[#2A2A2E]">
-            <Server className="w-5 h-5" />
+            <Server aria-hidden="true" className="w-5 h-5" />
           </div>
           <div>
             <div className="text-[11px] text-[#88888E] font-bold">OPERATING SYSTEM</div>
@@ -531,7 +564,7 @@ export const ServerHealthView: React.FC = () => {
 
         <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#3B82F6] border border-[#2A2A2E]">
-            <Clock className="w-5 h-5" />
+            <Clock aria-hidden="true" className="w-5 h-5" />
           </div>
           <div>
             <div className="text-[11px] text-[#88888E] font-bold">MACHINE UPTIME</div>
@@ -541,7 +574,7 @@ export const ServerHealthView: React.FC = () => {
 
         <div className={`${CARD} p-4 flex items-center gap-3`}>
           <div className="p-2.5 bg-[#202024] rounded text-[#BB86FC] border border-[#2A2A2E]">
-            <Layers className="w-5 h-5" />
+            <Layers aria-hidden="true" className="w-5 h-5" />
           </div>
           <div>
             <div className="text-[11px] text-[#88888E] font-bold">ACTIVE PROCESSES</div>
@@ -556,21 +589,21 @@ export const ServerHealthView: React.FC = () => {
       <div className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-[#00FF41]" />
+            <Cpu aria-hidden="true" className="w-4 h-4 text-[#00FF41]" />
             <span>TOP PROCESSES ON THIS MACHINE (ps)</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">Sorted by CPU %</span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left font-mono text-xs text-[#E0E0E5]">
+          <table aria-label="Top processes by CPU usage" className="w-full text-left font-mono text-xs text-[#E0E0E5]">
             <thead>
               <tr className="border-b border-[#2A2A2E] text-[11px] text-[#55555E] uppercase">
-                <th className="py-2 px-3">PID</th>
-                <th className="py-2 px-3">Process Command</th>
-                <th className="py-2 px-3">CPU %</th>
-                <th className="py-2 px-3">Memory (MB)</th>
-                <th className="py-2 px-3">Owner</th>
+                <th scope="col" className="py-2 px-3">PID</th>
+                <th scope="col" className="py-2 px-3">Process Command</th>
+                <th scope="col" className="py-2 px-3">CPU %</th>
+                <th scope="col" className="py-2 px-3">Memory (MB)</th>
+                <th scope="col" className="py-2 px-3">Owner</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2A2A2E]/60">

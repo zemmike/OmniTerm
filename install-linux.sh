@@ -9,7 +9,7 @@
 #
 # Prefer to keep the package around?  Download the .deb from
 # https://github.com/zemmike/OmniTerm/releases and run:
-#   sudo apt install ./OmniTerm-x.y.z-x64.deb
+#   sudo apt install ./OmniTerm-x.y.z-amd64.deb
 # ==============================================================================
 set -euo pipefail
 
@@ -58,10 +58,38 @@ if [ -z "$DEB_URL" ]; then
   exit 1
 fi
 
-TMP_DEB="$(mktemp -d)/$(basename "$DEB_URL")"
-info "Downloading $(basename "$DEB_URL")…"
+DEB_NAME="$(basename "$DEB_URL")"
+TMP_DEB="$(mktemp -d)/${DEB_NAME}"
+info "Downloading ${DEB_NAME}…"
 $FETCH "$DEB_URL" > "$TMP_DEB"
 ok "Downloaded $(du -h "$TMP_DEB" | cut -f1)"
+
+# --- SHA256 verification ------------------------------------------------------
+# Prefer a checksum file published alongside the release (SHA256SUMS or
+# *.sha256).  When one exists we verify the download before installing.  When
+# none was published we say so plainly instead of quietly skipping the check —
+# we never fall back to a hard-coded hash.
+CHECKSUM_URL="$(printf '%s' "$RELEASES_JSON" \
+  | grep -o "https://[^\"]*\(SHA256SUMS\|\.sha256\)" \
+  | head -1 || true)"
+
+if [ -n "$CHECKSUM_URL" ]; then
+  CHECKSUM_FILE="$(mktemp -d)/$(basename "$CHECKSUM_URL")"
+  info "Verifying SHA256 checksum…"
+  $FETCH "$CHECKSUM_URL" > "$CHECKSUM_FILE"
+  if ( cd "$(dirname "$TMP_DEB")" \
+       && grep -F -- "$DEB_NAME" "$CHECKSUM_FILE" | sha256sum -c - ); then
+    ok "SHA256 checksum verified for ${DEB_NAME}."
+  else
+    rm -f "$TMP_DEB" "$CHECKSUM_FILE"
+    die "SHA256 verification failed for ${DEB_NAME} (mismatch, or the asset is missing from the checksum file) — refusing to install."
+  fi
+  rm -f "$CHECKSUM_FILE"
+else
+  warn "No SHA256SUMS or .sha256 checksum file was published for this release."
+  warn "Checksum verification skipped — ${DEB_NAME} was fetched over TLS from the"
+  echo "    official GitHub Releases URL, but its integrity is unverified."
+fi
 
 info "Installing with apt (sudo required)…"
 sudo apt-get install -y "$TMP_DEB" || sudo apt-get install -f -y

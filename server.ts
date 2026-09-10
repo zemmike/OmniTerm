@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import crypto from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import {
   aiChat,
@@ -21,8 +22,16 @@ const PORT = Number(process.env.PORT) || 3000;
 import { attachTerminalSocket, onPtyCommand, ptyStatus, listSessions, killSession, killAllSessions } from './pty';
 
 const HOST = process.env.OMNITERM_HOST || '127.0.0.1';
-const APP_TOKEN = process.env.OMNITERM_TOKEN || '';
+// Fail closed. A server that executes shell commands must never expose an
+// unauthenticated API, not even when someone starts it by hand without a token:
+// a random one is generated and printed once, so standalone runs still work
+// while every request keeps needing the secret.
+const ENV_TOKEN = (process.env.OMNITERM_TOKEN || '').trim();
+const APP_TOKEN = ENV_TOKEN || crypto.randomBytes(24).toString('hex');
+const APP_TOKEN_GENERATED = !ENV_TOKEN;
 const EXEC_TIMEOUT_MS = Number(process.env.OMNITERM_EXEC_TIMEOUT_MS) || 60_000;
+// Refuse mutating commands on the one-shot API when set. Server-side, opt-in.
+const READ_ONLY = /^(1|true|yes|on)$/i.test((process.env.OMNITERM_READONLY || '').trim());
 const MAX_OUTPUT_BYTES = 400_000;
 
 app.use(express.json({ limit: '4mb' }));
@@ -33,12 +42,63 @@ app.use(express.json({ limit: '4mb' }));
 // must never be able to POST to it. Every /api call needs the per-launch token
 // that the desktop shell hands to the renderer (see preload.cjs).
 // ---------------------------------------------------------------------------
+// Hosts a browser may reach this API through. Anything else is a DNS-rebinding
+// attempt: a page on evil.com whose name resolves to 127.0.0.1 would otherwise
+// talk to a shell as if it were local.
+const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+function hostAllowed(value: string | undefined): boolean {
+  if (!value) return false;
+  const bare = value.includes('[') ? value.slice(0, value.indexOf(']') + 1) : value.split(':')[0];
+  return ALLOWED_HOSTS.has(bare.toLowerCase());
+}
+
 app.use('/api', (req, res, next) => {
-  if (!APP_TOKEN) return next();
-  const provided = req.get('x-omniterm-token') || String(req.query.token || '');
-  if (provided !== APP_TOKEN) {
+  if (!hostAllowed(req.get('host'))) {
+    return res.status(403).json({ error: 'Forbidden: unexpected Host header.' });
+  }
+  const origin = req.get('origin');
+  if (origin && origin !== 'null') {
+    let originHost = '';
+    try {
+      originHost = new URL(origin).hostname;
+    } catch {
+      return res.status(403).json({ error: 'Forbidden: malformed Origin header.' });
+    }
+    if (!hostAllowed(originHost)) {
+      return res.status(403).json({ error: `Forbidden: origin ${originHost} is not allowed.` });
+    }
+  }
+  // Constant time compare so the token cannot be narrowed down bit by bit.
+  const provided = Buffer.from(String(req.get('x-omniterm-token') || req.query.token || ''));
+  const expected = Buffer.from(APP_TOKEN);
+  if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
     return res.status(401).json({ error: 'Unauthorized: missing or invalid OmniTerm session token.' });
   }
+  next();
+});
+
+// Security headers. Everything the renderer needs is same-origin; inline styles
+// are required by xterm and by Tailwind's runtime classes.
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self' ws: wss: http://127.0.0.1:* http://localhost:*",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+    ].join('; ')
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   next();
 });
 
@@ -81,11 +141,23 @@ function loadAuditLog(limit = 300): AuditEntry[] {
   }
 }
 
+const AUDIT_MAX_BYTES = Number(process.env.OMNITERM_AUDIT_MAX_BYTES) || 8 * 1024 * 1024;
+
 function appendAuditLog(entry: AuditEntry) {
   activityLogs.unshift(entry);
   if (activityLogs.length > 500) activityLogs.length = 500;
   try {
     fs.mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o700 });
+    // Rotate before writing: one generation (activity.jsonl.1) is plenty for a
+    // local log, and it stops the file growing without bound on a long-running
+    // machine.
+    try {
+      if (fs.statSync(AUDIT_FILE).size > AUDIT_MAX_BYTES) {
+        fs.renameSync(AUDIT_FILE, `${AUDIT_FILE}.1`);
+      }
+    } catch {
+      /* no log yet, or it disappeared under us */
+    }
     fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + '\n', { mode: 0o600 });
   } catch {
     /* auditing must never break command execution */
@@ -960,7 +1032,6 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/env', async (req, res) => {
   res.json({
     platform: process.platform,
-    osPreset: process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
     home: os.homedir(),
     cwd: DEFAULT_CWD,
     user: (() => {
@@ -979,7 +1050,7 @@ app.get('/api/env', async (req, res) => {
 
 // 2. Terminal Command Execution API
 app.post('/api/terminal/execute', async (req, res) => {
-  const { command, cwd = '/home/user', userRole = 'developer', osPreset = 'macos' } = req.body;
+  const { command, cwd = DEFAULT_CWD } = req.body;
   const startTime = Date.now();
 
   if (!command || !command.trim()) {
@@ -994,33 +1065,36 @@ app.post('/api/terminal/execute', async (req, res) => {
   const trimmed = command.trim();
   const lower = trimmed.toLowerCase();
 
-  // Command guard: the read-only role may not change anything on this machine.
-  if (userRole === 'viewer' && (lower.startsWith('sudo') || lower.startsWith('rm') || lower.startsWith('chmod') || lower.startsWith('chown') || lower.startsWith('touch') || lower.includes('>'))) {
-    appendAuditLog({
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      username: os.userInfo().username,
-      role: userRole,
-      action: 'COMMAND_BLOCKED',
-      details: `Blocked '${trimmed}' (role: ${userRole})`,
-      ip: '127.0.0.1',
-      severity: 'security_alert',
-      cwd,
-      command: trimmed,
-      exitCode: null,
-    });
-
-    pushAlert('Command Guard blocked a command', `Role '${userRole}' tried to run '${trimmed}'`, 'security_denied');
-
-    return res.json({
-      output: `[COMMAND GUARD] The '${userRole}' role is read-only, so '${trimmed}' was not executed.\nSwitch the role selector to 'developer' or 'admin' in the top bar to allow changes.`,
-      status: 'denied',
-      executionTimeMs: Date.now() - startTime,
-      cwd,
-      exitCode: null,
-      real: true,
-    });
+  // Opt-in read-only mode for this one-shot API. The role this used to check
+  // came from the request body, so any caller could simply send "admin" - it was
+  // theatre. This is server-side state that a request cannot change.
+  // (The interactive Terminal tab is deliberately not restricted: it is a real
+  // terminal, and the OS user's own permissions are the control there.)
+  if (READ_ONLY) {
+    const mutating =
+      /^(sudo|su|doas|rm|rmdir|mv|cp|dd|mkfs\.?\w*|chmod|chown|chattr|truncate|tee|shred|kill|pkill|killall|shutdown|reboot|poweroff|systemctl|service|apt|apt-get|dpkg|dnf|yum|pacman|snap|pip|pip3|npm|yarn|pnpm|mount|umount|useradd|usermod|passwd)\b/.test(trimmed) ||
+      /(^|[^>])>{1,2}\s*\S/.test(trimmed);
+    if (mutating) {
+      appendAuditLog({
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        username: os.userInfo().username,
+        role: 'read-only',
+        action: 'COMMAND_BLOCKED',
+        details: `Blocked '${trimmed}' (OMNITERM_READONLY=1)`,
+        ip: '127.0.0.1',
+        severity: 'warning',
+        cwd,
+      });
+      return res.status(403).json({
+        error: 'Refused: this API is in read-only mode (OMNITERM_READONLY=1).',
+        output: '',
+        status: 'blocked',
+        cwd,
+      });
+    }
   }
+
 
   // ---- OmniTerm built-ins (handled by the app, not the shell) ----
   const parts = trimmed.split(/\s+/);
@@ -1072,12 +1146,12 @@ app.post('/api/terminal/execute', async (req, res) => {
       `  pwd                 - Print the session working directory\n` +
       `  clear               - Clear the terminal viewport (Ctrl+L)\n` +
       `  history             - Show commands run in this session\n` +
-      `  backup [run]        - Snapshot the current directory to ~/OmniTerm/backups\n` +
-      `  ai <prompt>         - Ask your configured AI provider (AI Settings tab)\n` +
+      `  backup [run]        - Snapshot the current directory to ${BACKUP_DIR}\n` +
+      `  ai <prompt>         - Ask your configured AI provider (OMNITERM_AI_* env vars, see README)\n` +
       `  help                - This list\n\n` +
-      `Everything else (ls, git, docker, npm, python3, ...) runs in your real shell (${SHELL}) ` +
-      `with your real environment. Full-screen TTY apps (vim, top, ssh) are not supported yet — ` +
-      `use the 'Files' and 'Health' tabs for browsing and monitoring.`;
+      `Everything else (ls, git, docker, npm, python3, ...) runs in your real shell (${SHELL}) with ` +
+      `your real environment. In the Terminal tab every program works, including full-screen ones ` +
+      `(vim, top, ssh); this one-shot API runs commands without a TTY.`;
     syntaxType = 'bash';
   } else if (bin === 'ai') {
     const prompt = parts.slice(1).join(' ').trim();
@@ -1139,7 +1213,7 @@ app.post('/api/terminal/execute', async (req, res) => {
     id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: new Date().toISOString(),
     username: os.userInfo().username,
-    role: userRole,
+    role: 'local',
     action: handledByApp ? 'BUILTIN_EXEC' : 'COMMAND_EXEC',
     details: `${trimmed}  →  exit ${exitCode}  (${Date.now() - startTime}ms, cwd ${nextCwd})`,
     ip: '127.0.0.1',
@@ -1282,11 +1356,8 @@ app.get('/api/files/read', (req, res) => {
 });
 
 app.post('/api/files/save', (req, res) => {
-  const { path: rawPath, content, userRole } = req.body || {};
+  const { path: rawPath, content } = req.body || {};
 
-  if (userRole === 'viewer') {
-    return res.status(403).json({ error: 'Permission Denied: viewer role is read-only. Switch the role selector to developer or admin.' });
-  }
   if (!rawPath) return res.status(400).json({ error: 'Missing path.' });
 
   const target = path.resolve(String(rawPath));
@@ -1305,7 +1376,7 @@ app.post('/api/files/save', (req, res) => {
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       username: os.userInfo().username,
-      role: userRole || 'developer',
+      role: 'local',
       action: existed ? 'FILE_SAVE' : 'FILE_CREATE',
       details: `${existed ? 'Saved' : 'Created'} ${target}`,
       ip: '127.0.0.1',
@@ -1490,42 +1561,22 @@ app.post('/api/backups/run', (req, res) => {
 });
 
 
-app.post('/api/unit-tests/run', (req, res) => {
-  const tests = [
-    { id: 'test-1', suite: 'Terminal Command Engine', name: 'Execute pwd command returns valid cwd', status: 'passed', durationMs: 12 },
-    { id: 'test-2', suite: 'Terminal Command Engine', name: 'Parse multi-token flags and quotes', status: 'passed', durationMs: 18 },
-    { id: 'test-3', suite: 'RBAC Permission Guard', name: 'Block sudo command for Viewer role', status: 'passed', durationMs: 8 },
-    { id: 'test-4', suite: 'RBAC Permission Guard', name: 'Allow elevated commands for Admin role', status: 'passed', durationMs: 10 },
-    { id: 'test-5', suite: 'Encryption & TLS Guard', name: 'Verify AES-256-GCM cipher payload encryption', status: 'passed', durationMs: 25 },
-    { id: 'test-6', suite: 'Encryption & TLS Guard', name: 'Generate Ed25519 SSH keypair fingerprint', status: 'passed', durationMs: 34 },
-    { id: 'test-7', suite: 'Backup Scheduler Engine', name: 'Validate Cron interval calculation for daily backup', status: 'passed', durationMs: 15 },
-    { id: 'test-8', suite: 'Cloud Storage Provider', name: 'Verify AWS S3 multipart upload simulation', status: 'passed', durationMs: 22 },
-  ];
-
-  res.json({
-    passedCount: tests.length,
-    failedCount: 0,
-    totalCount: tests.length,
-    totalDurationMs: tests.reduce((acc, t) => acc + t.durationMs, 0),
-    tests,
-  });
-});
 
 // 8. API Documentation Endpoint
 app.get('/api/api-docs', (req, res) => {
   res.json({
     openapi: '3.0.0',
     info: {
-      title: 'DevTerminal Pro Core REST API',
+      title: 'OmniTerm local API',
       version: '2.4.0',
-      description: 'Comprehensive API documentation for DevTerminal Pro CLI integration, server metrics, backup automation, and permission guards.',
+      description: 'The API the OmniTerm desktop app calls on this machine: shell execution, file access, host metrics, snapshots and the AI provider.',
     },
     paths: {
       '/api/health': {
         get: { summary: 'Get real-time server health metrics (CPU, Memory, Disk, Network)', responses: { 200: { description: 'Server metrics object' } } },
       },
       '/api/terminal/execute': {
-        post: { summary: 'Execute terminal command with RBAC permission check', responses: { 200: { description: 'Execution result' } } },
+        post: { summary: 'Run one command in your real shell', responses: { 200: { description: 'Execution result' } } },
       },
       '/api/ai/copilot': {
         post: { summary: 'Ask the configured AI provider (any OpenAI-compatible API, Anthropic, Gemini or a local Ollama)', responses: { 200: { description: 'AI generated response' } } },
@@ -1541,13 +1592,20 @@ app.get('/api/api-docs', (req, res) => {
         get: { summary: 'List the models the configured provider offers', responses: { 200: { description: 'Model ids' } } },
       },
       '/api/files': {
-        get: { summary: 'Fetch virtual system files tree and contents', responses: { 200: { description: 'List of virtual files' } } },
+        get: { summary: 'List a real directory on this machine', responses: { 200: { description: 'Entries with real size, mode and mtime' } } },
       },
       '/api/backups': {
-        get: { summary: 'Fetch backup schedule and status list', responses: { 200: { description: 'Backup tasks array' } } },
+        get: { summary: 'List the snapshots really on disk', responses: { 200: { description: 'Snapshot archives with size and path' } } },
       },
     },
   });
+});
+
+// Unknown API route: answer as an API. Without this the SPA fallback below (or
+// vite in dev) returns index.html with a 200, so a typo in a client request
+// looks like a successful call.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `Unknown API route: ${req.method} ${req.originalUrl}` });
 });
 
 // ------------------- VITE SETUP & SERVER BINDING ------------------- //
@@ -1569,7 +1627,7 @@ async function startServer() {
       ? __dirname
       : path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.use((req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
@@ -1597,6 +1655,10 @@ async function startServer() {
 
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[OmniTerm] Local API ready on http://${HOST}:${PORT} (shell: ${SHELL})`);
+    if (APP_TOKEN_GENERATED) {
+      console.log(`[OmniTerm] No OMNITERM_TOKEN was set, so one was generated for this run: ${APP_TOKEN}`);
+      console.log('[OmniTerm] Send it as the x-omniterm-token header; the API rejects requests without it.');
+    }
     console.log(`[OmniTerm] Working directory: ${DEFAULT_CWD}`);
   });
 

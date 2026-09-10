@@ -125,6 +125,15 @@ Fake features were removed rather than decorated: the previous "plugins" module,
 backend. There is no fake cloud backup, no fantasy RBAC and no simulated
 metrics — every number in the UI now comes from this machine.
 
+## Screenshots
+
+![Terminal with split panes and per-command exit codes](docs/screenshots/terminal.png)
+![Colour-coded file browser](docs/screenshots/files.png)
+
+![What is using your RAM, per-mount usage and per-core CPU](docs/screenshots/system-health.png)
+![Themes, custom colours and remappable shortcuts](docs/screenshots/settings.png)
+
+
 ## Install on Ubuntu / Debian / Mint / Pop!_OS
 
 ### Option 1 — one command (recommended)
@@ -165,7 +174,7 @@ git clone https://github.com/zemmike/OmniTerm.git
 cd OmniTerm
 npm install
 npm run build                 # frontend + backend bundle into dist/
-npx electron-builder --linux deb    # → release/OmniTerm-1.5.0-x64.deb
+npx electron-builder --linux deb    # → release/OmniTerm-1.5.0-amd64.deb
 ```
 
 Requirements: Node.js 18+, and on Debian/Ubuntu the usual Electron runtime libs
@@ -304,6 +313,9 @@ entries with their exit codes) against a throwaway `$HOME`.
 - Hash-chained audit entries (tamper-evident retention) and a signed apt repo.
 - Per-tab tab titles.
 
-## License
+## Licence
+
+OmniTerm is released under the MIT Licence. See [LICENSE](LICENSE) for the
+full text.
 
 MIT © Michael (zemmike)

@@ -10,8 +10,6 @@ interface Props {
   setTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>;
   activeTabId: string;
   setActiveTabId: (id: string) => void;
-  osPreset: OSPreset;
-  userRole: string;
   currentTheme?: string;
   onOpenSettings?: () => void;
 }
@@ -31,11 +29,11 @@ interface TabLayout {
 const LAST_DIR_KEY = 'omniterm_last_dir';
 const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-function makeTab(cwd: string, osPreset: OSPreset, colorTheme: string, index: number): TerminalTab {
+function makeTab(cwd: string, colorTheme: string, index: number): TerminalTab {
   return {
     id: newId('tab'),
     title: `shell ${index}`,
-    osPreset,
+    osPreset: 'linux',
     environment: 'local',
     cwd,
     history: [],
@@ -44,7 +42,7 @@ function makeTab(cwd: string, osPreset: OSPreset, colorTheme: string, index: num
   };
 }
 
-export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabId, osPreset, onOpenSettings }: Props) {
+export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabId, onOpenSettings }: Props) {
   const [settings] = useSettings();
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -57,6 +55,8 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
   const [matches, setMatches] = useState<{ name: string; path: string; type: string }[]>([]);
   const shellInfo = useRef<Record<string, { shell: string; pid: number | null; integration?: string }>>({});
   const apiRef = useRef<Record<string, PaneApi>>({});
+  // Element to hand focus back to when the directory chooser closes.
+  const chooserReturnRef = useRef<HTMLElement | null>(null);
 
   // ---- pane layout, one entry per tab: a list of panes plus an orientation
   const [layouts, setLayouts] = useState<Record<string, TabLayout>>({});
@@ -187,12 +187,12 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
   const addTab = useCallback(
     (cwd?: string) => {
       const dir = cwd || activeCwd || localStorage.getItem(LAST_DIR_KEY) || '';
-      const tab = makeTab(dir, osPreset, settings.theme, tabs.length + 1);
+      const tab = makeTab(dir, settings.theme, tabs.length + 1);
       setTabs((prev) => [...prev, tab]);
       setActiveTabId(tab.id);
       if (dir) localStorage.setItem(LAST_DIR_KEY, dir);
     },
-    [activeCwd, osPreset, setTabs, setActiveTabId, settings.theme, tabs.length]
+    [activeCwd, setTabs, setActiveTabId, settings.theme, tabs.length]
   );
 
   const closeTab = useCallback(
@@ -216,6 +216,37 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
     },
     [activeTabId, setActiveTabId, tabs]
   );
+
+  // Left/Right move between session tabs, Home/End jump to the ends.
+  const onTabListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Ignore keys coming from the tab's own close button.
+    if ((e.target as HTMLElement).closest('button')) return;
+    const ids = tabs.map((t) => t.id);
+    if (ids.length === 0) return;
+    const current = Math.max(0, ids.indexOf(activeTabId));
+    let next: number;
+    switch (e.key) {
+      case 'ArrowRight':
+        next = (current + 1) % ids.length;
+        break;
+      case 'ArrowLeft':
+        next = (current - 1 + ids.length) % ids.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = ids.length - 1;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    const nextId = ids[next];
+    setActiveTabId(nextId);
+    window.requestAnimationFrame(() => document.getElementById(`term-tab-${nextId}`)?.focus());
+  };
 
   // ------------------------------------------------------- app-level shortcuts
   useEffect(() => {
@@ -298,6 +329,21 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
     };
   }, [chooserPath, chooserOpen]);
 
+  // The chooser is a modal dialog: Escape closes it from anywhere inside, and
+  // focus returns to whatever opened it (the folder button in the tab bar).
+  useEffect(() => {
+    if (!chooserOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setChooserOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      const returnTo = chooserReturnRef.current;
+      if (returnTo && returnTo.isConnected) returnTo.focus();
+    };
+  }, [chooserOpen]);
+
   const tabCwdShort = useMemo(() => {
     const label = activeCwd || '~';
     return label.split('/').filter(Boolean).pop() || '/';
@@ -311,44 +357,74 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
     <div ref={rootRef} className="flex flex-col bg-[#0A0A0B]" style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}>
       {/* ------------------------------------------------------------- tab bar */}
       <div className="flex items-center gap-1 border-b border-[#1E1E22] px-2 py-1 bg-[#0F0F10] shrink-0">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              className={`group flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] cursor-pointer border ${
-                tab.id === activeTabId ? 'border-[#2A2A2E] bg-[#161618] text-[#E0E0E5]' : 'border-transparent text-[#88888E] hover:text-[#E0E0E5]'
-              }`}
-            >
-              <TerminalIcon className="w-3 h-3" style={{ color: tab.id === activeTabId ? 'var(--ui-accent)' : undefined }} />
-              <span className="max-w-[120px] truncate">{tab.id === activeTabId ? tabCwdShort : tab.title}</span>
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 text-[#55555E] hover:text-[#FF5555]"
-                  title="Close tab (Ctrl+W)"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          ))}
+        <div
+          role="tablist"
+          aria-label="Terminal sessions"
+          onKeyDown={onTabListKeyDown}
+          className="flex items-center gap-1 overflow-x-auto"
+        >
+          {tabs.map((tab) => {
+            const isTabActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                id={`term-tab-${tab.id}`}
+                role="tab"
+                aria-selected={isTabActive}
+                aria-controls={`term-panel-${tab.id}`}
+                tabIndex={isTabActive ? 0 : -1}
+                onClick={() => setActiveTabId(tab.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActiveTabId(tab.id);
+                  }
+                }}
+                className={`group flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${
+                  isTabActive ? 'border-[#2A2A2E] bg-[#161618] text-[#E0E0E5]' : 'border-transparent text-[#88888E] hover:text-[#E0E0E5]'
+                }`}
+              >
+                <TerminalIcon aria-hidden="true" className="w-3 h-3" style={{ color: isTabActive ? 'var(--ui-accent)' : undefined }} />
+                <span className="max-w-[120px] truncate">{isTabActive ? tabCwdShort : tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-[#55555E] hover:text-[#FF5555] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+                    title="Close tab (Ctrl+W)"
+                    aria-label={`Close ${isTabActive ? tabCwdShort : tab.title}`}
+                  >
+                    <X aria-hidden="true" className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <button onClick={() => addTab()} className="p-1 text-[#88888E] hover:text-[#E0E0E5]" title="New tab (Ctrl+T)">
-          <Plus className="w-3.5 h-3.5" />
+        <button
+          onClick={() => addTab()}
+          className="p-1 text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+          title="New tab (Ctrl+T)"
+          aria-label="New tab"
+        >
+          <Plus aria-hidden="true" className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={() => {
+            chooserReturnRef.current = document.activeElement as HTMLElement | null;
             setChooserPath(activeCwd || '~');
             setChooserOpen(true);
           }}
-          className="p-1 text-[#88888E] hover:text-[#E0E0E5]"
+          className="p-1 text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
           title="New tab in a specific directory"
+          aria-label="New tab in a specific directory"
+          aria-haspopup="dialog"
+          aria-expanded={chooserOpen}
         >
-          <Folder className="w-3.5 h-3.5" />
+          <Folder aria-hidden="true" className="w-3.5 h-3.5" />
         </button>
 
         <div className="flex-1" />
@@ -360,22 +436,26 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
           )}
           <button
             onClick={() => splitPane(activeTab.id, 'vertical')}
-            className={`p-1 rounded border ${activeLayout.orientation === 'vertical' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
+            className={`p-1 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${activeLayout.orientation === 'vertical' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
             title="Split right (Ctrl+Shift+E)"
+            aria-label="Split right"
+            aria-pressed={activeLayout.orientation === 'vertical' && activeLayout.panes.length > 1}
           >
-            <Columns2 className="w-3.5 h-3.5" />
+            <Columns2 aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => splitPane(activeTab.id, 'horizontal')}
-            className={`p-1 rounded border ${activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
+            className={`p-1 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1 ? 'border-[var(--ui-accent)] text-[var(--ui-accent)]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
             title="Split down (Ctrl+Shift+O)"
+            aria-label="Split down"
+            aria-pressed={activeLayout.orientation === 'horizontal' && activeLayout.panes.length > 1}
           >
-            <Rows2 className="w-3.5 h-3.5" />
+            <Rows2 aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
           <span className="text-[10px] text-[#55555E] ml-2 flex items-center gap-1">
             {repo?.isRepo ? (
               <>
-                <GitBranch className="w-3 h-3" /> {repo.branch}
+                <GitBranch aria-hidden="true" className="w-3 h-3" /> {repo.branch}
                 {repo.changed > 0 && <span className="text-[#EAB308]"> · {repo.changed} changed</span>}
               </>
             ) : (
@@ -383,15 +463,25 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
             )}
           </span>
           <span className="text-[10px] text-[#55555E] flex items-center gap-1">
-            <Container className="w-3 h-3" /> {docker?.running ?? 0} running
+            <Container aria-hidden="true" className="w-3 h-3" /> {docker?.running ?? 0} running
           </span>
           <div className="flex items-center gap-1 text-[10px] text-[#55555E] ml-2">
-            <button onClick={() => useSettingsFont(-1)} className="px-1 hover:text-[#E0E0E5]" title="Smaller (Ctrl+-)">
-              −
+            <button
+              onClick={() => useSettingsFont(-1)}
+              className="px-1 hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+              title="Smaller (Ctrl+-)"
+              aria-label="Decrease font size"
+            >
+              <span aria-hidden="true">−</span>
             </button>
-            <span className="font-mono">{settings.fontSize}</span>
-            <button onClick={() => useSettingsFont(1)} className="px-1 hover:text-[#E0E0E5]" title="Larger (Ctrl+=)">
-              +
+            <span className="font-mono" aria-hidden="true">{settings.fontSize}</span>
+            <button
+              onClick={() => useSettingsFont(1)}
+              className="px-1 hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+              title="Larger (Ctrl+=)"
+              aria-label="Increase font size"
+            >
+              <span aria-hidden="true">+</span>
             </button>
           </div>
         </div>
@@ -405,6 +495,10 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
           return (
             <div
               key={tab.id}
+              role="tabpanel"
+              id={`term-panel-${tab.id}`}
+              aria-labelledby={`term-tab-${tab.id}`}
+              tabIndex={-1}
               className="absolute inset-0"
               style={{ visibility: isCurrent ? 'visible' : 'hidden', pointerEvents: isCurrent ? 'auto' : 'none' }}
             >
@@ -446,10 +540,11 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                             e.stopPropagation();
                             closePane(tab.id, pane.sessionId);
                           }}
-                          className="absolute top-1 right-1 z-10 p-0.5 rounded bg-black/50 text-[#88888E] hover:text-[#FF5555]"
+                          className="absolute top-1 right-1 z-10 p-0.5 rounded bg-black/50 text-[#88888E] hover:text-[#FF5555] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
                           title="Close pane (Ctrl+Shift+W)"
+                          aria-label="Close pane"
                         >
-                          <X className="w-3 h-3" />
+                          <X aria-hidden="true" className="w-3 h-3" />
                         </button>
                       )}
                     </div>
@@ -463,8 +558,8 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
 
       {/* ---------------------------------------------------------- status bar */}
       <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 border-t border-[#1E1E22] bg-[#0F0F10] text-[10px] text-[#66666E]">
-        <span className="flex items-center gap-1 text-[#00C853]">
-          <ShieldCheck className="w-3 h-3" />
+        <span className="flex items-center gap-1 text-[#00C853]" role="status">
+          <ShieldCheck aria-hidden="true" className="w-3 h-3" />
           real PTY · {shellInfo.current[activeLayout.activeId]?.shell?.split('/').pop() || 'shell'}
           {shellInfo.current[activeLayout.activeId]?.integration && shellInfo.current[activeLayout.activeId]?.integration !== 'none'
             ? ` · audit: ${shellInfo.current[activeLayout.activeId]?.integration}`
@@ -472,18 +567,30 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
         </span>
         <span>{activeCwd || '~'}</span>
         <span className="text-[#4A4A52]">Ctrl+Shift+E split · Ctrl+Shift+O split down · Ctrl+Shift+W close pane · Ctrl+, settings</span>
-        {ptyBackend && !ptyBackend.available && <span className="text-[#FF5555]">terminal backend unavailable: {ptyBackend.error}</span>}
+        {ptyBackend && !ptyBackend.available && (
+          <span className="text-[#FF5555]" role="status">
+            terminal backend unavailable: {ptyBackend.error}
+          </span>
+        )}
       </div>
 
       {/* ------------------------------------------------------ directory chooser */}
       {chooserOpen && (
         <div className="absolute inset-0 z-40 bg-black/60 flex items-start justify-center pt-20" onClick={() => setChooserOpen(false)}>
-          <div className="w-[560px] max-w-[92vw] bg-[#161618] border border-[#2A2A2E] rounded shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="omniterm-chooser-title"
+            className="w-[560px] max-w-[92vw] bg-[#161618] border border-[#2A2A2E] rounded shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-3 py-2 border-b border-[#2A2A2E] text-[11px] text-[#E0E0E5] flex items-center gap-2">
-              <Folder className="w-3.5 h-3.5 text-[var(--ui-accent)]" /> New tab — choose a directory (Tab completes)
+              <Folder aria-hidden="true" className="w-3.5 h-3.5 text-[var(--ui-accent)]" />
+              <span id="omniterm-chooser-title">New tab — choose a directory (Tab completes)</span>
             </div>
             <input
               autoFocus
+              aria-label="Directory path"
               value={chooserPath}
               onChange={(e) => setChooserPath(e.target.value)}
               onKeyDown={(e) => {
@@ -497,7 +604,7 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                 }
                 if (e.key === 'Escape') setChooserOpen(false);
               }}
-              className="w-full bg-transparent px-3 py-2 text-xs font-mono text-[#E0E0E5] outline-none"
+              className="w-full bg-transparent px-3 py-2 text-xs font-mono text-[#E0E0E5] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
             />
             <div className="max-h-64 overflow-y-auto border-t border-[#2A2A2E]">
               {matches.map((m) => (
@@ -510,9 +617,10 @@ export default function TerminalView({ tabs, setTabs, activeTabId, setActiveTabI
                       setChooserOpen(false);
                     }
                   }}
-                  className="w-full text-left px-3 py-1.5 text-[11px] font-mono text-[#C9C9CF] hover:bg-[#202024] flex items-center gap-2"
+                  aria-label={m.type === 'directory' ? `Open directory ${m.name}` : `Use directory ${m.name}`}
+                  className="w-full text-left px-3 py-1.5 text-[11px] font-mono text-[#C9C9CF] hover:bg-[#202024] flex items-center gap-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
                 >
-                  {m.type === 'directory' ? <Folder className="w-3 h-3 text-[#3B82F6]" /> : <ChevronDown className="w-3 h-3 text-[#55555E]" />}
+                  {m.type === 'directory' ? <Folder aria-hidden="true" className="w-3 h-3 text-[#3B82F6]" /> : <ChevronDown aria-hidden="true" className="w-3 h-3 text-[#55555E]" />}
                   {m.name}
                 </button>
               ))}

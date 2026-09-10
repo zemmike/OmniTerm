@@ -24,6 +24,46 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  test:
+    name: Tests (terminal + API)
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Extra shells for the integration matrix
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh fish
+
+      - name: Build backend + web bundle
+        run: npm run build
+
+      - name: node-pty smoke test (prompt, aliases, Ctrl+C)
+        run: npm run test:pty
+
+      - name: Shell integration matrix (bash, zsh, fish, dash)
+        run: bash scripts/shell-matrix-test.sh
+
+      - name: Prefix history and command durations over the socket
+        run: |
+          set -e
+          NODE_ENV=production PORT=4599 OMNITERM_TOKEN=ci-token \
+            OMNITERM_DATA_DIR="$RUNNER_TEMP/otci" node dist/server.cjs > /tmp/ci-server.log 2>&1 &
+          SRV=$!
+          sleep 5
+          PORT=4599 TOKEN=ci-token node scripts/pty-features-test.cjs
+          kill $SRV
+
+      - name: API integration tests
+        run: npm run test:api
+
   package:
     name: Package (${{ matrix.arch }})
     needs: typecheck

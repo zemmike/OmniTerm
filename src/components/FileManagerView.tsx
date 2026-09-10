@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   FolderTree,
   Folder,
@@ -27,7 +27,6 @@ import {
 import { UserRole } from '../types';
 
 interface FileManagerViewProps {
-  userRole: UserRole;
 }
 
 interface Entry {
@@ -269,19 +268,20 @@ function fileStyle(entry: Entry): FileStyle {
 
 function iconFor(style: FileStyle) {
   const cls = `w-4 h-4 shrink-0 ${style.iconColor}`;
+  // Purely decorative: the file name is right next to the icon in text.
   switch (style.kind) {
-    case 'directory': return <Folder className={cls} />;
-    case 'symlink': return <Link2 className={cls} />;
-    case 'executable': return <FileTerminal className={cls} />;
-    case 'code': return <FileCode className={cls} />;
-    case 'image': return <ImageIcon className={cls} />;
-    case 'video': return <FileVideoCamera className={cls} />;
-    case 'audio': return <FileAudio className={cls} />;
-    case 'archive': return <Archive className={cls} />;
-    case 'config': return <FileCog className={cls} />;
-    case 'notebook': return <FileSpreadsheet className={cls} />;
-    case 'document': return <FileText className={cls} />;
-    default: return <FileBox className={cls} />;
+    case 'directory': return <Folder aria-hidden="true" className={cls} />;
+    case 'symlink': return <Link2 aria-hidden="true" className={cls} />;
+    case 'executable': return <FileTerminal aria-hidden="true" className={cls} />;
+    case 'code': return <FileCode aria-hidden="true" className={cls} />;
+    case 'image': return <ImageIcon aria-hidden="true" className={cls} />;
+    case 'video': return <FileVideoCamera aria-hidden="true" className={cls} />;
+    case 'audio': return <FileAudio aria-hidden="true" className={cls} />;
+    case 'archive': return <Archive aria-hidden="true" className={cls} />;
+    case 'config': return <FileCog aria-hidden="true" className={cls} />;
+    case 'notebook': return <FileSpreadsheet aria-hidden="true" className={cls} />;
+    case 'document': return <FileText aria-hidden="true" className={cls} />;
+    default: return <FileBox aria-hidden="true" className={cls} />;
   }
 }
 
@@ -303,7 +303,7 @@ const FILE_FILTERS: { id: FilterId; label: string; match: (s: FileStyle) => bool
 ];
 
 
-export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) => {
+export const FileManagerView: React.FC<FileManagerViewProps> = () => {
   const [cwd, setCwd] = useState<string>('');
   const [parent, setParent] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -322,6 +322,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
   const [showNew, setShowNew] = useState(false);
   const [newPath, setNewPath] = useState('');
   const [newContent, setNewContent] = useState('#!/usr/bin/env bash\n\n');
+  // Element to hand focus back to when the create-file dialog closes.
+  const newFileReturnRef = useRef<HTMLElement | null>(null);
 
   const listDir = useCallback(async (path?: string) => {
     setError(null);
@@ -348,17 +350,32 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unable to read file');
       setContent(data.content ?? '');
-      setReadOnly(Boolean(data.readOnly) || userRole === 'viewer');
+      setReadOnly(Boolean(data.readOnly));
       setDirty(false);
     } catch (err: any) {
       setError(err.message);
       setContent('');
     }
-  }, [userRole]);
+  }, []);
 
   useEffect(() => {
     listDir();
   }, [listDir]);
+
+  // The create-file overlay is a modal dialog: Escape closes it, and focus
+  // returns to the button that opened it.
+  useEffect(() => {
+    if (!showNew) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNew(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      const returnTo = newFileReturnRef.current;
+      if (returnTo && returnTo.isConnected) returnTo.focus();
+    };
+  }, [showNew]);
 
   const saveFile = async () => {
     if (!selected) return;
@@ -368,7 +385,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
       const res = await fetch('/api/files/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: selected.path, content, userRole }),
+        body: JSON.stringify({ path: selected.path, content }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
@@ -390,7 +407,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
       const res = await fetch('/api/files/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: newPath, content: newContent, userRole }),
+        body: JSON.stringify({ path: newPath, content: newContent }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Could not create file');
@@ -442,20 +459,23 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => listDir(cwd)}
-                className="px-2 py-1 bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] rounded flex items-center gap-1"
+                className="px-2 py-1 bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
                 title="Refresh"
+                aria-label="Refresh directory listing"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw aria-hidden="true" className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => {
+                  newFileReturnRef.current = document.activeElement as HTMLElement | null;
                   setNewPath(`${cwd}/new-file.txt`);
                   setShowNew(true);
                 }}
-                disabled={userRole === 'viewer'}
-                className="px-2 py-1 bg-[#00FF41] hover:bg-[#00D035] disabled:opacity-40 text-black font-bold uppercase rounded flex items-center gap-1"
+                disabled={readOnly}
+                className="px-2 py-1 bg-[#00FF41] hover:bg-[#00D035] disabled:opacity-40 text-black font-bold uppercase rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                aria-haspopup="dialog"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
                 <span>New</span>
               </button>
             </div>
@@ -466,52 +486,57 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
             <button
               onClick={() => listDir(parent || cwd)}
               disabled={!parent}
-              className="p-1 rounded bg-[#202024] border border-[#2A2A2E] disabled:opacity-30"
+              className="p-1 rounded bg-[#202024] border border-[#2A2A2E] disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
               title="Parent directory"
+              aria-label="Go to parent directory"
             >
-              <ArrowUp className="w-3.5 h-3.5" />
+              <ArrowUp aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => listDir('~')}
-              className="p-1 rounded bg-[#202024] border border-[#2A2A2E]"
+              className="p-1 rounded bg-[#202024] border border-[#2A2A2E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
               title="Home directory"
+              aria-label="Go to home directory"
             >
-              <Home className="w-3.5 h-3.5" />
+              <Home aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
-            <div className="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap text-[#88888E]">
-              <button onClick={() => listDir('/')} className="hover:text-[#00FF41]">/</button>
+            <nav aria-label="Breadcrumb" className="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap text-[#88888E]">
+              <button onClick={() => listDir('/')} className="hover:text-[#00FF41]" aria-label="Go to root directory">/</button>
               {crumbs.map((part, idx) => (
                 <span key={idx} className="flex items-center">
                   <button
                     onClick={() => listDir('/' + crumbs.slice(0, idx + 1).join('/'))}
                     className="hover:text-[#00FF41]"
+                    aria-label={`Go to ${crumbs.slice(0, idx + 1).join('/')}`}
                   >
                     {part}
                   </button>
-                  {idx < crumbs.length - 1 && <span className="px-0.5">/</span>}
+                  {idx < crumbs.length - 1 && <span aria-hidden="true" className="px-0.5">/</span>}
                 </span>
               ))}
-            </div>
+            </nav>
           </div>
 
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#55555E]" />
+            <Search aria-hidden="true" className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#55555E]" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={`Filter ${entries.length} entries...`}
-              className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded px-2.5 py-1 pl-8 focus:outline-none focus:border-[#00FF41] font-mono"
+              aria-label="Filter entries by name"
+              className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded px-2.5 py-1 pl-8 focus:outline-none focus:border-[#00FF41] focus-visible:ring-1 focus-visible:ring-[#00FF41] font-mono"
             />
           </div>
 
           {/* Filter chips — classified with the same helper as the rows */}
-          <div className="flex flex-wrap items-center gap-1">
+          <div role="group" aria-label="Filter by file type" className="flex flex-wrap items-center gap-1">
             {FILE_FILTERS.map((f) => (
               <button
                 key={f.id}
                 onClick={() => setKindFilter(f.id)}
-                className={`px-2 py-0.5 rounded border text-[10px] uppercase tracking-wide transition-colors ${
+                aria-pressed={kindFilter === f.id}
+                className={`px-2 py-0.5 rounded border text-[10px] uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41] ${
                   kindFilter === f.id
                     ? 'bg-[#00FF41]/15 border-[#00FF41]/50 text-[#00FF41] font-bold'
                     : 'bg-[#202024] border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5] hover:border-[#3A3A3E]'
@@ -522,7 +547,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
             ))}
             <button
               onClick={() => setShowLegend((v) => !v)}
-              className={`ml-auto px-2 py-0.5 rounded border text-[10px] uppercase tracking-wide ${
+              aria-expanded={showLegend}
+              className={`ml-auto px-2 py-0.5 rounded border text-[10px] uppercase tracking-wide focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41] ${
                 showLegend
                   ? 'bg-[#202024] border-[#3A3A3E] text-[#E0E0E5]'
                   : 'bg-[#202024] border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
@@ -549,14 +575,24 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div role="group" aria-label="Directory contents" className="flex-1 overflow-y-auto p-2 space-y-1">
           {filtered.map(({ entry, style }) => {
             const isSelected = selected?.path === entry.path;
             return (
               <div
                 key={entry.id}
+                role="button"
+                tabIndex={0}
+                aria-label={entry.type === 'directory' ? `Open directory ${entry.name}` : `Open file ${entry.name}`}
                 onClick={() => (entry.type === 'directory' ? listDir(entry.path) : openFile(entry))}
-                className={`p-2 rounded border cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (entry.type === 'directory') listDir(entry.path);
+                    else openFile(entry);
+                  }
+                }}
+                className={`p-2 rounded border cursor-pointer transition-all flex items-center justify-between gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41] ${
                   isSelected
                     ? 'bg-[#202024] border-[#2A2A2E] border-l-2 border-l-[#00FF41]'
                     : 'bg-[#161618] border-[#2A2A2E]/60 hover:bg-[#202024]'
@@ -613,7 +649,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
           <>
             <div className="bg-[#161618] border-b border-[#2A2A2E] p-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-[#00FF41] shrink-0" />
+                <FileText aria-hidden="true" className="w-4 h-4 text-[#00FF41] shrink-0" />
                 <span className="font-bold truncate">{selected.path}</span>
                 <span className="px-2 py-0.5 rounded bg-[#202024] border border-[#2A2A2E] text-[10px] text-[#88888E] uppercase">
                   {selected.language}
@@ -631,24 +667,24 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
                 <button
                   onClick={saveFile}
                   disabled={busy || readOnly || !dirty}
-                  className="px-3 py-1.5 rounded bg-[#00FF41] hover:bg-[#00D035] disabled:opacity-40 text-black font-bold uppercase flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded bg-[#00FF41] hover:bg-[#00D035] disabled:opacity-40 text-black font-bold uppercase flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
                   title="Save to disk (Ctrl+S)"
                 >
-                  <Save className="w-3.5 h-3.5" />
+                  <Save aria-hidden="true" className="w-3.5 h-3.5" />
                   <span>{busy ? 'Saving…' : 'Save'}</span>
                 </button>
               </div>
             </div>
 
             {status && (
-              <div className="bg-[#00FF41]/10 border-b border-[#00FF41]/30 text-[#00FF41] px-4 py-2 flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" />
+              <div role="status" aria-live="polite" className="bg-[#00FF41]/10 border-b border-[#00FF41]/30 text-[#00FF41] px-4 py-2 flex items-center gap-2">
+                <CheckCircle aria-hidden="true" className="w-4 h-4" />
                 <span>{status}</span>
               </div>
             )}
             {error && (
-              <div className="bg-[#FF5555]/10 border-b border-[#FF5555]/30 text-[#FF5555] px-4 py-2 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
+              <div role="alert" className="bg-[#FF5555]/10 border-b border-[#FF5555]/30 text-[#FF5555] px-4 py-2 flex items-center gap-2">
+                <AlertCircle aria-hidden="true" className="w-4 h-4" />
                 <span>{error}</span>
               </div>
             )}
@@ -659,26 +695,27 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
             )}
 
             <div className="flex-1 flex overflow-hidden">
-              <div className="w-10 bg-[#161618] border-r border-[#2A2A2E] py-3 text-right pr-2 text-[#55555E] select-none overflow-hidden">
+              <div aria-hidden="true" className="w-10 bg-[#161618] border-r border-[#2A2A2E] py-3 text-right pr-2 text-[#55555E] select-none overflow-hidden">
                 {content.split('\n').map((_, idx) => (
                   <div key={idx} className="leading-relaxed">{idx + 1}</div>
                 ))}
               </div>
               <textarea
                 value={content}
+                aria-label={`Contents of ${selected.path}`}
                 onChange={(e) => {
                   setContent(e.target.value);
                   setDirty(true);
                 }}
                 readOnly={readOnly}
                 spellCheck={false}
-                className="flex-1 bg-[#0A0A0B] p-3 text-[#00FF41] focus:outline-none resize-none leading-relaxed font-mono"
+                className="flex-1 bg-[#0A0A0B] p-3 text-[#00FF41] focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#00FF41] resize-none leading-relaxed font-mono"
               />
             </div>
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-[#88888E] space-y-2 text-center">
-            <Code2 className="w-12 h-12 text-[#55555E]" />
+            <Code2 aria-hidden="true" className="w-12 h-12 text-[#55555E]" />
             <p className="font-bold">{cwd || 'Loading…'}</p>
             <p>Pick a file to view or edit it. Changes are written straight to disk.</p>
             {error && <p className="text-[#FF5555]">{error}</p>}
@@ -689,43 +726,57 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ userRole }) =>
       {/* New file modal */}
       {showNew && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono">
-          <div className="bg-[#161618] border border-[#2A2A2E] rounded max-w-md w-full p-4 space-y-4 shadow-2xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="omniterm-create-file-title"
+            className="bg-[#161618] border border-[#2A2A2E] rounded max-w-md w-full p-4 space-y-4 shadow-2xl"
+          >
             <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
               <span className="font-bold flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[#00FF41]" />
-                <span>CREATE FILE ON DISK</span>
+                <Plus aria-hidden="true" className="w-4 h-4 text-[#00FF41]" />
+                <span id="omniterm-create-file-title">CREATE FILE ON DISK</span>
               </span>
-              <button onClick={() => setShowNew(false)} className="text-[#55555E] hover:text-[#E0E0E5]">✕</button>
+              <button
+                onClick={() => setShowNew(false)}
+                className="text-[#55555E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                aria-label="Close dialog"
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-[#88888E] mb-1 font-bold">Absolute path</label>
+                <label htmlFor="omniterm-new-path" className="block text-[#88888E] mb-1 font-bold">Absolute path</label>
                 <input
+                  id="omniterm-new-path"
                   type="text"
+                  autoFocus
                   value={newPath}
                   onChange={(e) => setNewPath(e.target.value)}
-                  className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded px-3 py-1.5 focus:outline-none focus:border-[#00FF41]"
+                  className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded px-3 py-1.5 focus:outline-none focus:border-[#00FF41] focus-visible:ring-1 focus-visible:ring-[#00FF41]"
                 />
               </div>
               <div>
-                <label className="block text-[#88888E] mb-1 font-bold">Initial content</label>
+                <label htmlFor="omniterm-new-content" className="block text-[#88888E] mb-1 font-bold">Initial content</label>
                 <textarea
+                  id="omniterm-new-content"
                   value={newContent}
                   onChange={(e) => setNewContent(e.target.value)}
                   rows={6}
-                  className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded p-2 text-[#00FF41] focus:outline-none focus:border-[#00FF41]"
+                  className="w-full bg-[#0A0A0B] border border-[#2A2A2E] rounded p-2 text-[#00FF41] focus:outline-none focus:border-[#00FF41] focus-visible:ring-1 focus-visible:ring-[#00FF41]"
                 />
               </div>
               {error && <p className="text-[#FF5555]">{error}</p>}
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-[#2A2A2E]">
-              <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded bg-[#202024] text-[#88888E]">
+              <button onClick={() => setShowNew(false)} className="px-3 py-1.5 rounded bg-[#202024] text-[#88888E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]">
                 Cancel
               </button>
               <button
                 onClick={createFile}
                 disabled={busy}
-                className="px-3 py-1.5 rounded bg-[#00FF41] font-bold text-black uppercase disabled:opacity-40"
+                className="px-3 py-1.5 rounded bg-[#00FF41] font-bold text-black uppercase disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
               >
                 {busy ? 'Writing…' : 'Create file'}
               </button>
