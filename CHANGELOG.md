@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-09-11
+
+### Added
+- A second HTTP test suite (31 tests) covering the 16 endpoints the first one never
+  touched, including the security-relevant ones: `/api/security`, `/api/alerts` and
+  `mark-read`, `/api/audit/export`, `/api/ai/test`, `POST /api/ai/settings`
+  (asserting the API key is never echoed), `POST /api/files/save`, `/api/toolchain`,
+  `/api/terminal/status|sessions|kill` and `/api/api-docs`. Endpoint coverage went
+  from 12 of 28 routes to 28 of 28; the suite is 79 tests in three files.
+- An accessibility regression suite (26 tests): HeaderNavbar (tablist, theme menu,
+  alerts drawer), SettingsView (colour pickers, shortcut recording),
+  FileManagerView (listing, editor, create-file modal) and ServerHealthView are
+  rendered against stubbed API responses and checked with axe. Four deliberately
+  broken fixtures prove the guard actually fails. TerminalPane is excluded on
+  purpose: jsdom has no canvas, and pretending otherwise would be a fake pass.
+- Coverage, via `npm run test:coverage`, reported in two halves and published as a
+  CI artifact: in-process for the components the suites load, and the backend via
+  `NODE_V8_COVERAGE` on the child process mapped back through the source map.
+  `server.ts` went from 68.6% to 83.7% of statements, `ai-provider.ts` from 52.1%
+  to 73.6%.
+
+### Fixed
+- `POST /api/files/save` no longer leaks a temp file when the write fails, and a
+  directory target answers 400 instead of 500. Both were real: the write went
+  ahead, failed at the rename, and left `<target>.omniterm-<pid>.tmp` behind.
+  There is now a regression guard asserting no stray temp file.
+- The version the app reports about itself is read from `package.json`. `/api/env`
+  advertised `1.0.0` and `/api/api-docs` `2.4.0` on a 1.6.x build.
+- `allowScripts` covers `node-pty@1.1.0`, whose `node-gyp rebuild` produces the
+  native binding the terminal needs — on a fresh clone with scripts gated, PTY
+  startup failed. `electron-winstaller` is explicitly denied instead of left
+  unmentioned; it is a Windows-installer tool this project never runs.
+
+### Changed
+- Dependabot's vite group also carries `esbuild`: vite 8 needs esbuild >= 0.27 and
+  the project pins 0.25, so a lone vite bump could not install.
+- The build workflow's concurrency group is keyed by ref *and* event. Dependabot
+  runs its update job on `refs/heads/main`, so keyed on the ref alone it cancelled
+  the build of the push before it.
+
+
 ## [1.6.3] - 2026-09-10
 
 ### Added
@@ -188,7 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...HEAD
+[1.6.4]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/zemmike/OmniTerm/compare/v1.6.0...v1.6.1

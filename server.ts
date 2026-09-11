@@ -36,6 +36,21 @@ const HOST = process.env.OMNITERM_HOST || '127.0.0.1';
 const ENV_TOKEN = (process.env.OMNITERM_TOKEN || '').trim();
 const APP_TOKEN = ENV_TOKEN || crypto.randomBytes(24).toString('hex');
 const APP_TOKEN_GENERATED = !ENV_TOKEN;
+
+// The version the app reports about itself. Read from the real package.json
+// rather than hardcoded: /api/env advertised '1.0.0' and /api/api-docs '2.4.0'
+// on a 1.6.x install, which is exactly the kind of fake value this app is not
+// supposed to have. OMNITERM_VERSION still wins so a packager can override it.
+function appVersion(): string {
+  if (process.env.OMNITERM_VERSION) return process.env.OMNITERM_VERSION;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    if (pkg && typeof pkg.version === 'string') return pkg.version;
+  } catch {
+    // Bundled somewhere with no package.json beside it; fall through.
+  }
+  return '0.0.0';
+}
 const EXEC_TIMEOUT_MS = Number(process.env.OMNITERM_EXEC_TIMEOUT_MS) || 60_000;
 // Refuse mutating commands on the one-shot API when set. Server-side, opt-in.
 const READ_ONLY = /^(1|true|yes|on)$/i.test((process.env.OMNITERM_READONLY || '').trim());
@@ -1219,7 +1234,7 @@ app.get('/api/env', async (req, res) => {
     })(),
     hostname: os.hostname(),
     shell: SHELL,
-    version: process.env.OMNITERM_VERSION || '1.0.0',
+    version: appVersion(),
     aiEnabled: (await aiEffective()).config.provider !== 'none',
   });
 });
@@ -1545,6 +1560,14 @@ app.post('/api/files/save', (req, res) => {
   if (!rawPath) return res.status(400).json({ error: 'Missing path.' });
 
   const target = path.resolve(String(rawPath));
+
+  // A directory is a client mistake, not a server fault: without this check the
+  // write went ahead and only failed at the rename, so the caller got a 500 and
+  // the temp file was left behind next to the target.
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory())
+    return res.status(400).json({ error: `Not a file: ${target}` });
+
+  let tmp: string | null = null;
   try {
     const existed = fs.existsSync(target);
     if (!existed) {
@@ -1553,11 +1576,12 @@ app.post('/api/files/save', (req, res) => {
         return res.status(400).json({ error: `Directory does not exist: ${parent}` });
     }
     // Write via a temp file so a crash cannot leave a half-written config behind.
-    const tmp = `${target}.omniterm-${process.pid}.tmp`;
+    tmp = `${target}.omniterm-${process.pid}.tmp`;
     fs.writeFileSync(tmp, String(content ?? ''), {
       mode: existed ? fs.statSync(target).mode : 0o644,
     });
     fs.renameSync(tmp, target);
+    tmp = null; // renamed into place; nothing left to clean up
 
     appendAuditLog({
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1572,6 +1596,13 @@ app.post('/api/files/save', (req, res) => {
 
     res.json({ success: true, path: target, created: !existed, size: fs.statSync(target).size });
   } catch (err: any) {
+    if (tmp) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // Already gone, or never created; nothing more to do.
+      }
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -1770,7 +1801,7 @@ app.get('/api/api-docs', (req, res) => {
     openapi: '3.0.0',
     info: {
       title: 'OmniTerm local API',
-      version: '2.4.0',
+      version: appVersion(),
       description:
         'The API the OmniTerm desktop app calls on this machine: shell execution, file access, host metrics, snapshots and the AI provider.',
     },
