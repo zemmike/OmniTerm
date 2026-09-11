@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-09-11
+
+### Fixed
+- CI now runs on the Node version the toolchain actually requires. 1.6.3 pinned
+  Node 20 because that is Electron 38's build floor, but the test stack needs more:
+  vitest 5 requires `^22.12`, jsdom 30 requires `^22.22.2 || ^24.15`, and undici,
+  whatwg-url and `@electron/rebuild` all ask for 22+ as well. The runner's Node
+  20.20 could not even start the accessibility suite
+  (`webidl.util.markAsUncloneable is not a function`), and `npm ci` printed about a
+  dozen EBADENGINE warnings that were a warning we ignored for too long.
+  `.nvmrc` now pins 24 (which is what CI uses), `engines.node` is `>=22.12.0`, and
+  both workflows use Node 24 — so "works on my machine" and CI are the same Node.
+  The accessibility suite is the canary: it is the only part of the test stack that
+  needs a DOM, and it caught this the first time CI ran it.
+
+
 ## [1.6.4] - 2026-09-11
 
 ### Added
@@ -229,7 +245,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...HEAD
+[1.6.5]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/zemmike/OmniTerm/compare/v1.6.1...v1.6.2

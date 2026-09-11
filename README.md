@@ -191,7 +191,7 @@ npm run build                 # frontend + backend bundle into dist/
 npx electron-builder --linux deb    # → release/OmniTerm-<version>-amd64.deb
 ```
 
-Requirements: Node.js 20+ (pinned in `.nvmrc`), and on Debian/Ubuntu the usual Electron runtime libs
+Requirements: Node.js 22.12 or newer (`.nvmrc` pins 24, which is what CI uses; the accessibility suite pulls in jsdom, which wants 24.15+), and on Debian/Ubuntu the usual Electron runtime libs
 (`libgtk-3-0 libnss3 libxss1 libxtst6 libatspi2.0-0 libsecret-1-0 xdg-utils`) —
 the `.deb` declares them, apt pulls them in for you.
 
