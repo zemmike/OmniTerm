@@ -70,8 +70,19 @@ jobs:
           PORT=4599 TOKEN=ci-token node scripts/pty-features-test.cjs
           kill $SRV
 
-      - name: API integration tests
-        run: npm run test:api
+      - name: Tests with coverage
+        # The HTTP suites boot the backend as a child process, so vitest's own
+        # coverage cannot see server.ts: NODE_V8_COVERAGE makes the child report
+        # itself and `coverage:server` maps it back through the source map.
+        run: npm run test:coverage
+
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
 
   package:
     name: Package (${{ matrix.arch }})

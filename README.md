@@ -242,6 +242,27 @@ build/              Packaging resources (icon, .deb post-install hooks)
 .github/workflows/  CI: build + install-check on every push, tagged releases
 ```
 
+### Tests and coverage
+
+```bash
+npm run test              # unit/integration suites (vitest)
+npm run test:coverage     # the same, plus coverage for both halves
+npm run test:pty          # node-pty smoke test: prompt, aliases, Ctrl+C
+npm run test:pty-matrix   # the shell integration matrix (bash, zsh, fish, dash)
+```
+
+Coverage is reported in two halves, because the API suites boot the backend as a
+**child process** (`node dist/server.cjs`) and vitest's own coverage instrumentation
+only sees the test process:
+
+- `coverage/` — everything the tests load in-process (the React components and the
+  accessibility suite). HTML and lcov.
+- `coverage/backend/` — `server.ts`, `pty.ts` and `ai-provider.ts`, measured by
+  running the child under `NODE_V8_COVERAGE` and mapping the V8 data back through
+  the source map esbuild emits. Printed in the CI log and written as lcov.
+
+Both are published as a CI artifact on every run.
+
 ## Security model
 
 OmniTerm executes shell commands, so the backend:

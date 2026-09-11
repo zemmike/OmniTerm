@@ -14,3 +14,6 @@ build/*
 !build/icon.svg
 !build/deb-postinst.sh
 !build/deb-postrm.sh
+
+# test coverage output
+.coverage-child/

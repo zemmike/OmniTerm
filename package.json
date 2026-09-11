@@ -55,7 +55,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:coverage": "NODE_V8_COVERAGE=.coverage-child vitest run --coverage && npm run coverage:server",
+    "coverage:server": "c8 report --temp-directory=.coverage-child --reporter=text --reporter=lcov --report-dir=coverage/backend"
   },
   "build": {
     "appId": "app.zemike.omniterm",
@@ -150,7 +152,9 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^5.0.0",
     "autoprefixer": "^10.4.21",
+    "c8": "^12.0.0",
     "electron": "^38.0.0",
     "electron-builder": "^26.0.12",
     "esbuild": "^0.25.0",
@@ -169,6 +173,8 @@
   "allowScripts": {
     "electron@38.8.6": true,
     "esbuild@0.25.12": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "node-pty@1.1.0": true,
+    "electron-winstaller": false
   }
 }
