@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.6.5",
+  "version": "1.7.0",
   "description": "A real Linux terminal emulator: your own shell in tabs and split panes, live host health, file browser and snapshots.",
   "private": true,
   "type": "module",
@@ -98,7 +98,7 @@
           "GenericName": "Terminal Emulator",
           "Comment": "A real Linux terminal with split panes and host health",
           "Categories": "Development;System;TerminalEmulator;Utility;",
-          "Keywords": "terminal;shell;cli;bash;developer;console;ai;",
+          "Keywords": "terminal;shell;cli;bash;developer;console;",
           "StartupWMClass": "omniterm",
           "Terminal": "false",
           "Type": "Application"

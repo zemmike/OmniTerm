@@ -3,7 +3,7 @@
  *
  * Every rendered component talks to the local Express API over `fetch('/api/…')`.
  * This module installs a `globalThis.fetch` that answers those routes with the
- * exact JSON shapes the components read (taken from server.ts / ai-provider.ts,
+ * exact JSON shapes the components read (taken from server.ts,
  * not invented), so each component renders its real populated state instead of
  * an empty shell — an empty shell would make the axe run meaningless.
  *
@@ -302,7 +302,6 @@ const ROUTES: Route[] = [
       hostname: 'omniterm-dev',
       shell: '/bin/bash',
       version: '1.6.3',
-      aiEnabled: true,
     }),
   },
   {
@@ -360,45 +359,6 @@ const ROUTES: Route[] = [
           pid: 4242,
         },
       ],
-    }),
-  },
-  {
-    path: '/api/ai/settings',
-    body: () => ({
-      saved: {
-        enabled: true,
-        provider: 'ollama',
-        baseUrl: 'http://127.0.0.1:11434',
-        model: 'llama3.1',
-        temperature: 0.2,
-        maxTokens: 2048,
-        systemPrompt: 'You are OmniTerm’s shell copilot.',
-        hasKey: false,
-      },
-      effective: {
-        provider: 'ollama',
-        baseUrl: 'http://127.0.0.1:11434',
-        model: 'llama3.1',
-        temperature: 0.2,
-        maxTokens: 2048,
-        source: 'settings',
-        privacy: 'Private: nothing leaves this machine.',
-        preset: 'ollama',
-      },
-      envProvided: null,
-      configFile: `${TEST_HOME}/.config/omniterm/ai.json`,
-      presets: [
-        {
-          id: 'ollama',
-          label: 'Ollama (local)',
-          provider: 'ollama',
-          baseUrl: 'http://127.0.0.1:11434',
-          model: 'llama3.1',
-          needsKey: false,
-          note: 'Private: nothing leaves this machine.',
-        },
-      ],
-      warnings: [],
     }),
   },
   {

@@ -338,26 +338,6 @@ describe.skipIf(!serverBuilt)(
       });
     });
 
-    // ---------------------------------------------------------- ai settings --
-    describe('GET /api/ai/settings', () => {
-      it('never returns an apiKey, and reports hasKey + a presets array', async () => {
-        const res = await api(srv, '/api/ai/settings');
-        expect(res.status).toBe(200);
-        const raw = await res.text();
-        const body = JSON.parse(raw);
-
-        // The secret itself is never serialised anywhere in the payload.
-        expect(raw).not.toContain('apiKey');
-        expect(body.saved.apiKey).toBeUndefined();
-
-        expect(typeof body.saved.hasKey).toBe('boolean');
-        expect(Array.isArray(body.presets)).toBe(true);
-        expect(body.presets.length).toBeGreaterThan(0);
-        expect(body.presets[0]).toHaveProperty('id');
-        expect(body.presets[0]).toHaveProperty('provider');
-      });
-    });
-
     // -------------------------------------------------------- unknown route --
     describe('unknown /api routes', () => {
       it('an unknown POST /api route -> 404', async () => {

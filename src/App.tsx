@@ -109,8 +109,6 @@ export default function App() {
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
   };
 
-  // Helper to send generated AI script straight to the active terminal
-
   return (
     <div className="min-h-screen bg-[#0F0F10] text-[#E0E0E5] flex flex-col font-mono selection:bg-[#00FF41] selection:text-black">
       {/* Top Navbar */}

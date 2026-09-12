@@ -41,9 +41,7 @@ describe.skipIf(!serverBuilt)(
     let fixtureDir: string;
 
     // A secret we plant in a request and then hunt for in every response body.
-    const CANARY_KEY = 'sk-canary-do-not-echo-5f3a9c';
     // A port nothing listens on, so "reach the provider" always fails here.
-    const DEAD_BASE_URL = 'http://127.0.0.1:9/v1';
 
     beforeAll(async () => {
       srv = await startServer();
@@ -149,20 +147,19 @@ describe.skipIf(!serverBuilt)(
         expect(body.error).toMatch(/unauthorized/i);
       });
 
-      it('POST /api/ai/settings without a token -> 401 and writes nothing', async () => {
-        const configFile = path.join(srv.dataDir, 'ai-config.json');
-        const before = existsSync(configFile);
+      it('POST /api/files/save without a token -> 401 and writes nothing', async () => {
+        const target = path.join(srv.workDir, 'unauthenticated-write.txt');
         const res = await postJson(
           srv,
-          '/api/ai/settings',
-          { provider: 'openai', apiKey: CANARY_KEY },
+          '/api/files/save',
+          { path: target, content: 'should never land' },
           { token: null },
         );
         expect(res.status).toBe(401);
         const body = await res.json();
         expect(body.error).toMatch(/unauthorized/i);
         // Fail-closed: an unauthenticated request must not mutate state.
-        expect(existsSync(configFile)).toBe(before);
+        expect(existsSync(target)).toBe(false);
       });
 
       it('a foreign Origin -> 403 before the token is even considered', async () => {
@@ -186,192 +183,6 @@ describe.skipIf(!serverBuilt)(
       });
     });
 
-    // ----------------------------------------------- AI resolution (shape) --
-    // Environment-aware by design: on this box a local Ollama is auto-detected,
-    // elsewhere there is no provider. Both must produce an internally
-    // consistent, honest response — never a hard-coded "all good".
-    describe('GET /api/ai/status and /api/ai/models', () => {
-      it('status: shape is complete and `configured` matches the resolved provider', async () => {
-        const res = await api(srv, '/api/ai/status');
-        expect(res.status).toBe(200);
-        const body = await res.json();
-
-        expect(body).toMatchObject({
-          provider: expect.any(String),
-          model: expect.any(String),
-          baseUrl: expect.any(String),
-          configured: expect.any(Boolean),
-          source: expect.any(String),
-          privacy: expect.any(String),
-          warnings: expect.any(Array),
-          localAvailable: expect.any(Boolean),
-        });
-
-        expect(['openai', 'anthropic', 'gemini', 'ollama', 'none']).toContain(body.provider);
-        expect(['settings', 'env', 'auto:ollama', 'none']).toContain(body.source);
-        // The flag must agree with the provider, not be hard-coded to true.
-        expect(body.configured).toBe(body.provider !== 'none');
-        if (body.provider === 'none') {
-          expect(body.source).toBe('none');
-          expect(body.warnings.length).toBeGreaterThan(0);
-        } else {
-          expect(typeof body.privacy).toBe('string');
-          expect(body.privacy.length).toBeGreaterThan(0);
-        }
-      });
-
-      it('models: real model ids, or an explicit error — never a fabricated success', async () => {
-        const res = await api(srv, '/api/ai/models');
-        expect(res.status).toBe(200);
-        const body = await res.json();
-
-        expect(typeof body.ok).toBe('boolean');
-        expect(Array.isArray(body.models)).toBe(true);
-        if (body.ok) {
-          expect(body.error).toBeNull();
-          expect(body.models.length).toBeGreaterThan(0);
-          for (const m of body.models as string[]) expect(typeof m).toBe('string');
-        } else {
-          // Honest failure: no models invented, and a reason is given.
-          expect(body.models).toEqual([]);
-          expect(typeof body.error).toBe('string');
-          expect((body.error as string).length).toBeGreaterThan(0);
-        }
-      });
-    });
-
-    // --------------------------------- AI settings save + honest failure ---
-    // The active provider is pointed at a port nothing listens on, making
-    // "provider unreachable" deterministic regardless of what is installed.
-    // Every AI endpoint must then report the failure as a failure.
-    describe('AI provider settings + failure reporting', () => {
-      it('POST /api/ai/settings saves, reads back, and never echoes the apiKey', async () => {
-        const res = await postJson(srv, '/api/ai/settings', {
-          enabled: true,
-          provider: 'openai',
-          baseUrl: DEAD_BASE_URL,
-          model: 'test-model',
-          apiKey: CANARY_KEY,
-          temperature: 0.5,
-          maxTokens: 256,
-        });
-        expect(res.status).toBe(200);
-
-        const raw = await res.text();
-        // The secret must not appear anywhere in the payload, and neither must
-        // the field name (the UI only learns hasKey).
-        expect(raw).not.toContain(CANARY_KEY);
-        expect(raw).not.toContain('apiKey');
-
-        const body = JSON.parse(raw);
-        expect(body.saved.provider).toBe('openai');
-        expect(body.saved.baseUrl).toBe(DEAD_BASE_URL);
-        expect(body.saved.model).toBe('test-model');
-        expect(body.saved.hasKey).toBe(true);
-        expect(body.saved.apiKey).toBeUndefined();
-
-        // The save really happened on disk (0600) — it just is not returned.
-        const configFile = path.join(srv.dataDir, 'ai-config.json');
-        expect(existsSync(configFile)).toBe(true);
-        expect(statSync(configFile).mode & 0o777).toBe(0o600);
-        expect(JSON.parse(readFileSync(configFile, 'utf8')).apiKey).toBe(CANARY_KEY);
-        expect(configFile.startsWith(srv.dataDir)).toBe(true);
-
-        // Follow-up GET agrees and still omits the key.
-        const getRes = await api(srv, '/api/ai/settings');
-        expect(getRes.status).toBe(200);
-        const getRaw = await getRes.text();
-        expect(getRaw).not.toContain(CANARY_KEY);
-        const getBody = JSON.parse(getRaw);
-        expect(getBody.saved.provider).toBe('openai');
-        expect(getBody.saved.hasKey).toBe(true);
-      });
-
-      it('GET /api/ai/status reflects the saved provider', async () => {
-        const body = await (await api(srv, '/api/ai/status')).json();
-        expect(body.configured).toBe(true);
-        expect(body.provider).toBe('openai');
-        expect(body.baseUrl).toBe(DEAD_BASE_URL);
-        expect(body.source).toBe('settings');
-      });
-
-      it('GET /api/ai/models surfaces the connection error, not an empty success', async () => {
-        const res = await api(srv, '/api/ai/models');
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.ok).toBe(false);
-        expect(body.models).toEqual([]);
-        expect(typeof body.error).toBe('string');
-        expect(body.error.length).toBeGreaterThan(0);
-      });
-
-      it('POST /api/ai/test reports ok:false with the real error, not a fake success', async () => {
-        const res = await postJson(srv, '/api/ai/test', {});
-        expect(res.status).toBe(200);
-        const body = await res.json();
-
-        expect(body.ok).toBe(false);
-        expect(body.reply).toBeNull();
-        expect(typeof body.error).toBe('string');
-        expect(body.error.length).toBeGreaterThan(0);
-        expect(body.provider).toBe('openai');
-        expect(body).toHaveProperty('latencyMs');
-      });
-
-      it('POST /api/ai/test with useForm:true tests unsaved values and does not persist them', async () => {
-        // Point the *form* at a different dead endpoint; the saved value must
-        // stay untouched.
-        const res = await postJson(srv, '/api/ai/test', {
-          useForm: true,
-          provider: 'openai',
-          baseUrl: 'http://127.0.0.1:8/v1',
-          model: 'form-model',
-          apiKey: CANARY_KEY,
-          prompt: 'ping',
-        });
-        expect(res.status).toBe(200);
-        const body = await res.json();
-        expect(body.ok).toBe(false);
-        expect(typeof body.error).toBe('string');
-
-        const saved = await (await api(srv, '/api/ai/settings')).json();
-        expect(saved.saved.baseUrl).toBe(DEAD_BASE_URL);
-        expect(saved.saved.model).toBe('test-model');
-      });
-
-      it('POST /api/ai/chat -> 502 with an honest [AI Error], source "error"', async () => {
-        const res = await postJson(srv, '/api/ai/chat', { prompt: 'hello', mode: 'assistant' });
-        expect(res.status).toBe(502);
-        const body = await res.json();
-
-        expect(body.result).toMatch(/^\[AI Error\]/);
-        expect(body.source).toBe('error');
-        expect(body.mode).toBe('assistant');
-      });
-
-      it('POST /api/ai/copilot (legacy alias) behaves identically', async () => {
-        const res = await postJson(srv, '/api/ai/copilot', { prompt: 'hello' });
-        expect(res.status).toBe(502);
-        const body = await res.json();
-        expect(body.source).toBe('error');
-        expect(body.result).toMatch(/^\[AI Error\]/);
-      });
-
-      it('clearing the settings removes the stored key from disk', async () => {
-        const reset = await postJson(srv, '/api/ai/settings', {
-          provider: 'none',
-          baseUrl: '',
-          model: '',
-          apiKey: '',
-        });
-        expect(reset.status).toBe(200);
-        expect((await reset.json()).saved.hasKey).toBe(false);
-        const configFile = path.join(srv.dataDir, 'ai-config.json');
-        expect(JSON.parse(readFileSync(configFile, 'utf8')).apiKey).toBe('');
-      });
-    });
-
-    // --------------------------------------------------- audit & alerts ----
     describe('GET /api/audit/export', () => {
       it('streams the real JSONL trail as an NDJSON attachment', async () => {
         const marker = 'echo coverage-audit-marker';

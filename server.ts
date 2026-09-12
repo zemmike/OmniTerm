@@ -4,17 +4,6 @@ import os from 'os';
 import fs from 'fs';
 import crypto from 'crypto';
 import { spawn, spawnSync } from 'child_process';
-import {
-  aiChat,
-  aiEffective,
-  aiListModels,
-  aiSettingsForUi,
-  aiTest,
-  loadAiConfig,
-  normaliseConfig,
-  saveAiConfig,
-  ollamaAvailable,
-} from './ai-provider';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -510,28 +499,6 @@ function securityPosture() {
     auditFile: AUDIT_FILE,
     auditEntries: activityLogs.length,
   };
-}
-
-/**
- * Copilot used by the `ai` terminal command and the /api/ai/copilot endpoint.
- * Which provider answers is entirely up to the user's settings; this helper
- * only decides what to ask and how to report a failure.
- */
-async function askCopilot(prompt: string, cwd: string): Promise<string> {
-  const config = loadAiConfig();
-  try {
-    const reply = await aiChat(
-      config.systemPrompt,
-      `Working directory: ${cwd}\nRequest: ${prompt}`,
-    );
-    return `${reply.text}\n\n[${reply.source} \u00b7 ${reply.latencyMs}ms]`;
-  } catch (err: any) {
-    return (
-      `[AI] ${err.message}\n` +
-      'Set up a provider with the OMNITERM_AI_* environment variables (any OpenAI-compatible API, Anthropic, Gemini, or a local Ollama)' +
-      ' or in ~/.local/share/omniterm/ai-config.json — see the AI section of the README.'
-    );
-  }
 }
 
 // ------------------- REAL EXECUTION ENGINE ------------------- //
@@ -1235,7 +1202,6 @@ app.get('/api/env', async (req, res) => {
     hostname: os.hostname(),
     shell: SHELL,
     version: appVersion(),
-    aiEnabled: (await aiEffective()).config.provider !== 'none',
   });
 });
 
@@ -1341,20 +1307,11 @@ app.post('/api/terminal/execute', async (req, res) => {
       `  clear               - Clear the terminal viewport (Ctrl+L)\n` +
       `  history             - Show commands run in this session\n` +
       `  backup [run]        - Snapshot the current directory to ${BACKUP_DIR}\n` +
-      `  ai <prompt>         - Ask your configured AI provider (OMNITERM_AI_* env vars, see README)\n` +
       `  help                - This list\n\n` +
       `Everything else (ls, git, docker, npm, python3, ...) runs in your real shell (${SHELL}) with ` +
       `your real environment. In the Terminal tab every program works, including full-screen ones ` +
       `(vim, top, ssh); this one-shot API runs commands without a TTY.`;
     syntaxType = 'bash';
-  } else if (bin === 'ai') {
-    const prompt = parts.slice(1).join(' ').trim();
-    if (!prompt) {
-      output = `[OmniTerm AI] Usage: ${bin} <your question about this system or a command>`;
-    } else {
-      output = await askCopilot(prompt, nextCwd);
-      syntaxType = 'bash';
-    }
   } else if (bin === 'backup') {
     const destDir = BACKUP_DIR;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -1427,86 +1384,6 @@ app.post('/api/terminal/execute', async (req, res) => {
     real: true,
     syntaxType,
   });
-});
-
-// 3. AI endpoints — provider-agnostic, see ai-provider.ts
-const aiChatHandler = async (req: any, res: any) => {
-  const { prompt, mode = 'assistant', contextLogs = '' } = req.body || {};
-
-  const systemInstruction = loadAiConfig().systemPrompt;
-  const userPrompt = contextLogs
-    ? `Recent terminal context:\n${contextLogs}\n\nRequest: ${prompt}`
-    : String(prompt || '');
-
-  try {
-    const reply = await aiChat(systemInstruction, userPrompt);
-    res.json({ result: reply.text, mode, source: reply.source, latencyMs: reply.latencyMs });
-  } catch (err: any) {
-    res.status(502).json({
-      result: `[AI Error] ${err.message || 'provider call failed'}`,
-      mode,
-      source: 'error',
-    });
-  }
-};
-
-app.post('/api/ai/copilot', aiChatHandler);
-// Neutral alias: /api/ai/copilot predates the provider switch.
-app.post('/api/ai/chat', aiChatHandler);
-
-// Read the current AI setup, save a new one, prove it works. There is no AI tab
-// in the UI any more; these serve the `ai` command and the settings file.
-app.get('/api/ai/settings', async (_req, res) => {
-  try {
-    res.json(await aiSettingsForUi());
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/ai/settings', async (req, res) => {
-  try {
-    const body = req.body || {};
-    const patch: Record<string, unknown> = {};
-    if (body.enabled !== undefined) patch.enabled = Boolean(body.enabled);
-    if (body.provider !== undefined) patch.provider = body.provider;
-    if (body.baseUrl !== undefined) patch.baseUrl = String(body.baseUrl);
-    if (body.model !== undefined) patch.model = String(body.model);
-    if (body.apiKey !== undefined) patch.apiKey = String(body.apiKey);
-    if (body.temperature !== undefined) patch.temperature = Number(body.temperature);
-    if (body.maxTokens !== undefined) patch.maxTokens = Number(body.maxTokens);
-    if (body.systemPrompt !== undefined) patch.systemPrompt = String(body.systemPrompt);
-    saveAiConfig(patch as any);
-    res.json(await aiSettingsForUi());
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-/**
- * Test the provider. With useForm: true the values currently typed in the AI
- * Settings form are tested without saving them (a blank key falls back to the
- * saved one), so the user can check a setup before committing to it.
- */
-app.post('/api/ai/test', async (req, res) => {
-  const body = req.body || {};
-  const override = body.useForm
-    ? normaliseConfig({
-        enabled: true,
-        provider: body.provider,
-        baseUrl: body.baseUrl,
-        model: body.model,
-        apiKey: body.apiKey ? String(body.apiKey) : loadAiConfig().apiKey,
-        temperature: body.temperature,
-        maxTokens: body.maxTokens,
-        systemPrompt: loadAiConfig().systemPrompt,
-      })
-    : undefined;
-  res.json(await aiTest(body.prompt, override));
-});
-
-app.get('/api/ai/models', async (_req, res) => {
-  res.json(await aiListModels());
 });
 
 // 4. File Manager Endpoints (real filesystem)
@@ -1622,20 +1499,6 @@ app.get('/api/toolchain', (req, res) => {
 
 app.get('/api/security', (req, res) => {
   res.json(securityPosture());
-});
-
-app.get('/api/ai/status', async (_req, res) => {
-  const { config, source, privacy, warnings } = await aiEffective();
-  res.json({
-    provider: config.provider,
-    model: config.model,
-    baseUrl: config.baseUrl,
-    configured: config.provider !== 'none',
-    source,
-    privacy,
-    warnings,
-    localAvailable: config.provider === 'ollama' ? true : await ollamaAvailable(),
-  });
 });
 
 // 7. Interactive terminal sessions & path completion
@@ -1816,35 +1679,6 @@ app.get('/api/api-docs', (req, res) => {
         post: {
           summary: 'Run one command in your real shell',
           responses: { 200: { description: 'Execution result' } },
-        },
-      },
-      '/api/ai/copilot': {
-        post: {
-          summary:
-            'Ask the configured AI provider (any OpenAI-compatible API, Anthropic, Gemini or a local Ollama)',
-          responses: { 200: { description: 'AI generated response' } },
-        },
-      },
-      '/api/ai/settings': {
-        get: {
-          summary: 'Read the AI provider settings (the API key itself is never returned)',
-          responses: { 200: { description: 'Provider, base URL, model, key presence, presets' } },
-        },
-        post: {
-          summary: 'Save AI provider settings',
-          responses: { 200: { description: 'Updated settings' } },
-        },
-      },
-      '/api/ai/test': {
-        post: {
-          summary: 'Send a real request to the provider and report the result',
-          responses: { 200: { description: 'ok, latency, reply or error' } },
-        },
-      },
-      '/api/ai/models': {
-        get: {
-          summary: 'List the models the configured provider offers',
-          responses: { 200: { description: 'Model ids' } },
         },
       },
       '/api/files': {

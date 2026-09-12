@@ -3,13 +3,12 @@
 [![Build](https://github.com/zemmike/OmniTerm/actions/workflows/build.yml/badge.svg)](https://github.com/zemmike/OmniTerm/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/zemmike/OmniTerm)](https://github.com/zemmike/OmniTerm/releases/latest)
 [![Licence](https://img.shields.io/github/license/zemmike/OmniTerm)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](.nvmrc)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.12-brightgreen)](.nvmrc)
 [![Platform](https://img.shields.io/badge/platform-linux-lightgrey)](#install)
 
 A real terminal emulator for Linux desktop — multi-tab sessions backed by your
-**actual shell**, split panes, an AI assistant you point at any provider, live
-host health monitoring, a backup snapshot engine and a file browser, packaged as
-a native Ubuntu/Debian app.
+**actual shell**, split panes, live host health monitoring, a backup snapshot
+engine and a file browser, packaged as a native Ubuntu/Debian app.
 
 ![OmniTerm icon](build/icon.png)
 
@@ -30,16 +29,14 @@ a native Ubuntu/Debian app.
   `~/.profile`, your aliases and functions from `~/.bashrc`, your prompt, your
   locale, your `~/.ssh` keys, and every package and tool you already installed.
   OmniTerm does not wrap, restrict or re-implement your shell.
-- **Real shell execution for scripts and the `ai` command** — one-shot commands
-  run through your `$SHELL` with real exit codes and real stderr.
+- **Real shell execution for scripts** — one-shot commands run through your
+  `$SHELL` with real exit codes and real stderr.
 - **Multi-tab sessions**, each with its own shell process, cwd and scrollback
   (10k lines) that survives tab switches.
 - **Split panes** — split the terminal area vertically (side by side) or
   horizontally (stacked). Each pane is an independent PTY session, panes are
   closed individually, and the layout lives per tab.
-- **Four tabs** — Terminal, Files, System Health and Settings. The previous
-  **System & Security** and **AI Settings** tabs have been removed (the AI
-  backend remains, see [Configuration](#configuration)).
+- **Four tabs** — Terminal, Files, System Health and Settings.
 - **A Settings tab for the whole app** — replaces the old per-tab clutter:
   built-in terminal colour schemes with a live preview, custom colours
   (background, foreground, cursor, selection, plus the UI accent), font family
@@ -81,14 +78,6 @@ a native Ubuntu/Debian app.
   `~/.local/share/omniterm/shell-integration.bash`.
 - **Snapshots** — create real `tar.gz` archives of any directory (stored under
   `~/.local/share/omniterm/backups`) and get the exact restore command back.
-- **AI assistant, any provider** — the backend still answers the `ai <prompt>`
-  terminal command: a local model (Ollama, LM Studio, llama.cpp) that keeps
-  everything on this machine, any OpenAI-compatible API (OpenAI, OpenRouter,
-  Groq, DeepSeek, Mistral, Together, vLLM …) or Anthropic / Google Gemini.
-  Nothing is hard-coded to one vendor and the key is write-only. It is
-  configured through environment variables or
-  `~/.local/share/omniterm/ai-config.json`; the **AI Settings** tab is gone from
-  the UI.
 - **Real host health** — RAM breakdown (used / cached+buffers / swap /
   available), the top processes by memory _and_ an aggregation by program name
   (so 20 chrome processes are shown as one entry), swap usage, every real mount
@@ -220,18 +209,13 @@ server.ts           Express API, all of it backed by the real machine:
                       /api/terminal/status   PTY availability + live sessions
                       /api/complete          path completion for app dialogs
                       /api/health            real host metrics
-                      /api/env               platform, home, shell, AI provider
+                      /api/env               platform, home, shell, version
                       /api/files[/read|/save] real filesystem CRUD
                       /api/repo/status       real git state
                       /api/docker/status     real container state
                       /api/security          firewall, sshd, sockets, sudoers
                       /api/backups[/run]     real tar.gz snapshots
                       /api/activity-logs     audit trail (+ /api/audit/export)
-                      /api/ai/settings       read the provider (key never returned)
-                      /api/ai/test           real request, real latency or real error
-                      /api/ai/models         models the provider offers
-                      /api/ai/copilot        ask the configured provider
-                      /api/ai/status         which provider is in use
 src/                React 19 + Vite + Tailwind frontend (tabbed terminal UI)
 src/settings.ts     persisted per-machine settings: theme, colours, font,
                     shortcut bindings (browser localStorage)
@@ -257,7 +241,7 @@ only sees the test process:
 
 - `coverage/` — everything the tests load in-process (the React components and the
   accessibility suite). HTML and lcov.
-- `coverage/backend/` — `server.ts`, `pty.ts` and `ai-provider.ts`, measured by
+- `coverage/backend/` — `server.ts` and `pty.ts`, measured by
   running the child under `NODE_V8_COVERAGE` and mapping the V8 data back through
   the source map esbuild emits. Printed in the CI log and written as lcov.
 
@@ -285,39 +269,16 @@ selection and the UI accent), pick a font family and size, and re-record or rese
 any keyboard shortcut. Settings persist per machine in browser `localStorage` and
 apply instantly.
 
-### AI: any provider, not one vendor
+### AI: removed
 
-The AI backend is still there for the `ai <prompt>` terminal command, but there
-is no **AI Settings** tab in the UI — configure it through environment variables
-or `~/.local/share/omniterm/ai-config.json` (mode `0600`). Supported backends:
+AI assistance was **removed in 1.7.0** — the `ai <prompt>` terminal command, the
+provider settings file and every `/api/ai/*` route are gone. OmniTerm runs
+commands and reports what happened; it does not send anything to a model
+provider, and it holds no API keys.
 
-- **Local, private** — Ollama (`http://127.0.0.1:11434` by default), LM Studio or
-  llama.cpp's server. No API key, nothing leaves the machine.
-- **OpenAI-compatible** — OpenAI, OpenRouter, Groq, DeepSeek, Mistral, Together,
-  vLLM, or any other server exposing `/chat/completions`: set base URL, model and
-  key, and it works.
-- **Anthropic** (`/messages`) and **Google Gemini** (`generateContent`) — native
-  request shapes.
-
-The API key is write-only: it lives in `~/.local/share/omniterm/ai-config.json`
-(mode `0600`) and is never returned to any interface. Choose the local provider
-and nothing leaves this machine; choose a cloud provider and the prompt (plus any
-terminal context you attach) is sent there.
-
-The config file takes precedence, then environment variables, then auto-detected
-local Ollama:
-
-- `OMNITERM_AI_PROVIDER` — `openai`, `anthropic`, `gemini` or `ollama`.
-- `OMNITERM_AI_BASE_URL` — endpoint, e.g. `https://api.deepseek.com/v1`.
-- `OMNITERM_AI_MODEL` — model name.
-- `OMNITERM_AI_API_KEY` — key. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are also
-  read, and `GEMINI_API_KEY` / `GOOGLE_API_KEY` act as a Gemini shortcut.
-- `OMNITERM_AI_CONFIG` — config file location.
-- `OLLAMA_URL`, `OMNITERM_OLLAMA_MODEL` — where the local daemon lives and which
-  model to prefer.
-
-Then use it from the terminal with `ai <question>`, or from the API at
-`POST /api/ai/copilot`.
+If you configured a provider in an earlier version,
+`~/.local/share/omniterm/ai-config.json` is now unused. OmniTerm neither reads nor
+writes it, so you can delete it.
 
 ### Other
 

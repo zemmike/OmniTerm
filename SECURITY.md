@@ -35,9 +35,9 @@ and is not a vulnerability here.
   rebinding, and the CSP restricts what the renderer may load or connect to.
 - **Path confusion in the file API.** Reading or writing outside the path the
   user asked for.
-- **Injection through a non-terminal path.** The AI provider layer, the
-  completion endpoint, backup paths, or the audit log — anywhere a value is
-  interpolated into a command rather than passed as an argument.
+- **Injection through a non-terminal path.** The completion endpoint, backup
+  paths, or the audit log — anywhere a value is interpolated into a command
+  rather than passed as an argument.
 - **Handing an unexpected scheme to the OS.** Links in terminal output are
   limited to `http`, `https` and `file` before they reach the operating system.
 - **Sandbox escapes in the packaged app.** `contextIsolation`, the preload
@@ -63,11 +63,12 @@ and is not a vulnerability here.
   loopback `Host`/`Origin` allowlist.
 - Unknown API routes answer a JSON 404 rather than falling through to the app
   shell.
-- AI provider keys are write-only from the UI: stored `0600` under
-  `~/.local/share/omniterm/`, never returned by the API, never logged.
+- OmniTerm holds no third-party API keys and has no AI integration: there is no
+  provider layer to leak a credential from (removed in 1.7.0).
 - The command audit log lives at `0600` and rotates at 8 MB.
-- No telemetry, no analytics, no network calls other than to the AI provider you
-  configure, and to GitHub if you ask for release information.
+- No telemetry and no analytics. With no AI provider to call, the app makes no
+  outbound network requests at all — the only exception is GitHub, and only when
+  you ask for release information.
 
 ## Dependencies
 

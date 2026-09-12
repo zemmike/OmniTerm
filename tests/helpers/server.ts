@@ -6,7 +6,7 @@
  *   - a free ephemeral port is allocated per run
  *   - OMNITERM_TOKEN is pinned to a known value
  *   - OMNITERM_DATA_DIR, OMNITERM_BACKUP_DIR and HOME all point inside a fresh
- *     temp root, so the real audit log / backups / ai-config are never touched
+ *     temp root, so the real audit log and backups are never touched
  *   - background/server env vars from the host (OMNITERM_*, OPENAI_API_KEY, ...)
  *     are stripped so the tests cannot depend on this machine's setup
  *
@@ -37,7 +37,7 @@ export interface TestServer {
   token: string;
   /** Temp root that holds everything the server writes. */
   root: string;
-  /** $OMNITERM_DATA_DIR (audit log + ai-config live here). */
+  /** $OMNITERM_DATA_DIR (audit log and backups live here). */
   dataDir: string;
   /** Temp $HOME. */
   homeDir: string;

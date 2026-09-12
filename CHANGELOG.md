@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-12
+
+### Removed
+- **AI assistance, completely.** The `ai <prompt>` terminal command, `ai-provider.ts`
+  (677 lines), the provider settings file, and all seven `/api/ai/*` routes
+  (`chat`, `copilot`, `settings`, `test`, `models`, `status`) are gone. `POST`ing to
+  any of them now answers the standard JSON 404, and `ai <prompt>` falls through to
+  your real shell, which reports `command not found` like any other missing binary.
+- `aiEnabled` from `/api/env`, the AI entries in `/api/api-docs`, the AI types in
+  `src/types.ts`, and the desktop file's `ai` keyword.
+- 12 tests that existed only to cover the AI endpoints; the suite is 67 tests and
+  still covers every remaining route.
+
+### Changed
+- Nothing is sent to a model provider any more, and the app holds no API keys. If
+  you configured a provider before, `~/.local/share/omniterm/ai-config.json` is
+  left untouched but is no longer read or written — you can delete it.
+- The README no longer claims an AI assistant, and `SECURITY.md` no longer
+  describes an AI data flow (there is none to describe).
+
+### Note
+- This is a feature removal, so it is a minor version rather than a patch: any
+  script that called `/api/ai/*` or the `ai` command will need to change.
+
+
 ## [1.6.5] - 2026-09-11
 
 ### Fixed
@@ -245,7 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...v1.7.0
 [1.6.5]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/zemmike/OmniTerm/compare/v1.6.2...v1.6.3

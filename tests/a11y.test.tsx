@@ -419,7 +419,6 @@ describe('the /api/* stub is populated for every endpoint the UI reads', () => {
     '/api/repo/status',
     '/api/docker/status',
     '/api/terminal/status',
-    '/api/ai/settings',
     '/api/backups',
     '/api/alerts',
     '/api/activity-logs',

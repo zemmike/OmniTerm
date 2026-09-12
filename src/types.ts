@@ -1,5 +1,5 @@
 export type OSPreset = 'macos' | 'linux' | 'windows';
-export type EnvironmentType = 'local' | 'remote-ssh' | 'claude-coder-ai';
+export type EnvironmentType = 'local' | 'remote-ssh';
 export type UserRole = 'admin' | 'developer' | 'auditor' | 'viewer';
 
 export interface TerminalCommand {
@@ -45,7 +45,6 @@ export interface UserPermissions {
   canManageBackups: boolean;
   canManageUsers: boolean;
   canInstallPlugins: boolean;
-  canAccessAiCopilot: boolean;
   canSyncCloudStorage: boolean;
 }
 
@@ -202,11 +201,4 @@ export interface BackupTask {
   targetCloud: 's3' | 'gcs' | 'dropbox' | 'local';
   status: 'idle' | 'running' | 'completed' | 'failed';
   sizeMb: number;
-}
-
-export interface AiToolConfig {
-  mode: 'claude-coder' | 'gemini-cli' | 'cursor-agent';
-  systemPrompt: string;
-  autoSuggestOnError: boolean;
-  temperature: number;
 }
