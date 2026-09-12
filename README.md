@@ -6,11 +6,87 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22.12-brightgreen)](.nvmrc)
 [![Platform](https://img.shields.io/badge/platform-linux-lightgrey)](#install)
 
-A real terminal emulator for Linux desktop — multi-tab sessions backed by your
-**actual shell**, split panes, live host health monitoring, a backup snapshot
-engine and a file browser, packaged as a native Ubuntu/Debian app.
+A **local-first Linux operations console**: a real shell over `node-pty`, a
+workspace for the files on this machine, live health of _this_ host, and an
+audit trail of what actually ran — in one window, packaged as a native
+Ubuntu/Debian app. It is not a "faster terminal", and it does not pretend to be.
+
+Every tab is a real PTY running your login shell. The file browser reads and
+writes real paths. The health tab reads `/proc`, `ps` and `statfs` for the
+machine you are sitting at. Every command OmniTerm runs is appended to an audit
+log with its real exit code and cwd. Nothing in the UI is mocked, and nothing
+leaves the machine.
+
+### What it costs
+
+OmniTerm is an **Electron** app, and that has a price you should know before you
+install it:
+
+- **~97 MB** installed (the `.deb`), **~200 MB resident** (measured PSS across
+  its 8 processes), and **several seconds** to first paint.
+- **Kitty, alacritty and Ghostty are faster and lighter.** If raw terminal speed
+  and memory are what you are optimising for, use one of those — they are better
+  at that, and this README will not pretend otherwise.
+- OmniTerm is for when you want the shell, the files, the host state and the
+  audit trail in the same window, and will pay a few hundred megabytes for it.
 
 ![OmniTerm icon](build/icon.png)
+
+## What it is
+
+- **A real terminal** — multi-tab, split panes, one actual PTY per pane running
+  your `$SHELL`, with your prompt, aliases, functions and history.
+- **A file workspace** — browse, read and edit real files on disk, colour-coded
+  by type.
+- **Live host health of this machine** — RAM breakdown, top processes by memory,
+  every mount, disk I/O, per-core CPU, load, network rates and CPU temperature
+  where the hardware exposes it, all read from `/proc`, `ps` and `statfs`.
+- **An audit trail** — every command OmniTerm runs, one-shot or interactive, is
+  written to `~/.local/share/omniterm/activity.jsonl` (mode 0600) with exit code,
+  cwd and timestamp, and is exportable as JSONL evidence.
+- **Real snapshots** — `tar.gz` archives of any directory, stored under
+  `~/.local/share/omniterm/backups`, with the exact restore command returned.
+- **Local-only** — the API binds `127.0.0.1` and requires a per-launch session
+  token. Nothing is sent to any remote service.
+
+## What it is not
+
+- **Not a lightweight terminal.** See the cost above; Kitty/alacritty/Ghostty
+  beat it on startup time and memory, and always will.
+- **Not cross-platform.** Linux only. macOS and Windows are **not supported**
+  and there is no plan to claim otherwise.
+- **Not an AI tool.** AI assistance was removed in 1.7.0 — there is no `ai`
+  command, no provider configuration and no API keys. See
+  [AI: removed](#ai-removed).
+- **Not a remote or cloud product.** There is no fleet view, no SSH manager and
+  no sync. The health tab reports the machine OmniTerm is running on, and only
+  that.
+- **Not a shell.** It spawns your shell; it does not wrap, restrict or
+  re-implement it.
+- **Not a mock-up.** Every number in the UI comes from this machine. Features
+  that could not be backed by anything real were deleted rather than decorated.
+
+## Supported platforms
+
+"Fully supported" means CI exercises it. "Best-effort" means the artifact is
+built and published but nothing in CI runs it. "Untested" means exactly that.
+
+| Platform                               | Status                    | What is actually verified                                                                                                                     |
+| -------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ubuntu / Debian **x64** `.deb`         | **Fully supported**       | CI builds the `.deb`, installs it on a runner, and checks the binary and desktop entry exist                                                  |
+| Ubuntu / Debian **arm64** `.deb`       | Best-effort               | CI builds and publishes it; no CI runner installs it                                                                                          |
+| Ubuntu / Debian `.tar.gz` (x64, arm64) | Best-effort               | CI builds it; no smoke test                                                                                                                   |
+| AppImage (x86_64)                      | Best-effort               | CI builds it; no smoke test                                                                                                                   |
+| RPM (x86_64)                           | Best-effort               | CI builds it; no smoke test                                                                                                                   |
+| **X11**                                | Verified on real hardware | Manual testing. CI is headless and does not exercise a display server                                                                         |
+| **Wayland**                            | **Untested**              | Nothing. It may work; it is not claimed. See [TROUBLESHOOTING](docs/TROUBLESHOOTING.md)                                                       |
+| **bash, zsh, fish**                    | **Fully supported**       | CI shell matrix: prompt, a user alias from the shell's own config, Ctrl+C, the audit entry and its exit code — all checks pass for each shell |
+| **dash / POSIX** (`sh`, `ash`)         | Best-effort               | CI runs dash through the same matrix with reduced integration: the shell works, exit codes are reported as blank rather than guessed          |
+| Other / unknown shells                 | Reduced-integration mode  | Not tested. The shell still runs; command and exit-code reporting is disabled                                                                 |
+| **macOS, Windows**                     | **Not supported**         | No builds, no CI, no plans                                                                                                                    |
+
+Everything except Linux is out of scope. If you need a terminal on macOS or
+Windows, this is not it.
 
 ## Features
 
@@ -113,7 +189,7 @@ be reset to its default.
 | `Tab`                                                             | path and command completion (from your shell) |
 | `Ctrl+C`, `Ctrl+D`, `Ctrl+L`, `Ctrl+R`, …                         | handled by your shell, as usual               |
 
-## What OmniTerm deliberately does _not_ do
+## Nothing is simulated
 
 Fake features were removed rather than decorated: the previous "plugins" module,
 "API & unit tests" runner and encryption toggles were UI mock-ups with no
@@ -128,7 +204,12 @@ metrics — every number in the UI now comes from this machine.
 ![What is using your RAM, per-mount usage and per-core CPU](docs/screenshots/system-health.png)
 ![Themes, custom colours and remappable shortcuts](docs/screenshots/settings.png)
 
-## Install on Ubuntu / Debian / Mint / Pop!_OS
+## Install
+
+The **`.deb` is the supported path** on Ubuntu, Debian, Mint and Pop!_OS. The
+AppImage, `.tar.gz` and RPM builds are published as a convenience but are
+best-effort and not smoke-tested — see
+[Supported platforms](#supported-platforms).
 
 ### Option 1 — one command (recommended)
 
@@ -175,7 +256,7 @@ Uninstall with `sudo apt remove omniterm`.
 ```bash
 git clone https://github.com/zemmike/OmniTerm.git
 cd OmniTerm
-npm install
+npm ci                        # Node 24 per .nvmrc
 npm run build                 # frontend + backend bundle into dist/
 npx electron-builder --linux deb    # → release/OmniTerm-<version>-amd64.deb
 ```
@@ -184,11 +265,17 @@ Requirements: Node.js 22.12 or newer (`.nvmrc` pins 24, which is what CI uses; t
 (`libgtk-3-0 libnss3 libxss1 libxtst6 libatspi2.0-0 libsecret-1-0 xdg-utils`) —
 the `.deb` declares them, apt pulls them in for you.
 
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup, the
+gates CI enforces and the rules that are not negotiable.
+
 ### Development
 
 ```bash
-npm run dev      # Express + Vite dev server on http://localhost:3000
-npm run lint     # tsc --noEmit
+npm run dev        # Express + Vite dev server on http://localhost:3000
+npm run typecheck  # tsc --noEmit
+npm run lint       # eslint
+npm run format:check
+npm test           # vitest
 ```
 
 ## Architecture
@@ -292,22 +379,38 @@ writes it, so you can delete it.
 
 ## Shell support
 
-| Shell                | Config adopted                                               | Prompt | Audit: command | Audit: exit code                |
-| -------------------- | ------------------------------------------------------------ | ------ | -------------- | ------------------------------- |
-| bash                 | `/etc/profile`, `~/.bash_profile`, `~/.profile`, `~/.bashrc` | yes    | yes            | yes                             |
-| zsh                  | `$ZDOTDIR` (or `~`) `.zshenv/.zprofile/.zshrc/.zlogin`       | yes    | yes            | yes                             |
-| fish                 | `~/.config/fish/config.fish`                                 | yes    | yes            | yes                             |
-| dash, ash, sh, other | the shell's own defaults                                     | yes    | yes            | no (unknown, reported as empty) |
+Every shell below runs as your real interactive shell. What differs is how much
+of the _integration_ OmniTerm can install, and therefore what it can report.
+
+| Shell                | Config adopted                                               | Prompt | Audit: command | Audit: exit code                | CI                            |
+| -------------------- | ------------------------------------------------------------ | ------ | -------------- | ------------------------------- | ----------------------------- |
+| bash                 | `/etc/profile`, `~/.bash_profile`, `~/.profile`, `~/.bashrc` | yes    | yes            | yes                             | all checks pass each run      |
+| zsh                  | `$ZDOTDIR` (or `~`) `.zshenv/.zprofile/.zshrc/.zlogin`       | yes    | yes            | yes                             | all checks pass each run      |
+| fish                 | `~/.config/fish/config.fish`                                 | yes    | yes            | yes                             | all checks pass each run      |
+| dash, ash, sh, other | the shell's own defaults                                     | yes    | yes            | no (unknown, reported as empty) | dash runs; exit code is blank |
+
+A shell that cannot report its exit code shows a blank exit badge rather than a
+guess — there is no synthetic `0` anywhere in the UI.
 
 `npm run test:pty-socket` checks one shell end to end; `bash
 scripts/shell-matrix-test.sh` checks every installed shell (prompt, command
 execution, a user alias from the shell's own config, Ctrl+C, and the audit
-entries with their exit codes) against a throwaway `$HOME`.
+entries with their exit codes) against a throwaway `$HOME`. That matrix is what
+CI runs, and what "fully supported" in the
+[platform table](#supported-platforms) means.
 
 ## Roadmap
 
 - Hash-chained audit entries (tamper-evident retention) and a signed apt repo.
 - Per-tab tab titles.
+
+## Troubleshooting
+
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) covers the failure modes you
+are actually likely to hit: the app not starting, `node-pty` unavailable, a shell
+that hangs at startup, `401 unauthorized` from the API, Wayland rendering, where
+your data lives and how to reset it — and exactly what to include in a bug
+report.
 
 ## Security
 

@@ -1,0 +1,24 @@
+# Gitleaks configuration for OmniTerm.
+#
+# The default ruleset is kept in full (`useDefault = true`) and extended with a
+# single allowlist. Nothing else is replaced.
+#
+# Why an allowlist is needed at all: `.env.example` is a committed template that
+# documents the variable *names* the headless API understands, with placeholder
+# values ("60000", "8388608", ""). It carries no credential, but gitleaks
+# classifies it as an env file and its generic/entropy rules are noisy on it.
+# Allowlisting the path is narrower than allowlisting a rule, and much narrower
+# than turning the default ruleset off.
+#
+# NOTE ON SYNTAX: at the top level the key is `[allowlist]` (singular) — the
+# plural `[[allowlists]]` form only exists per-rule (`[[rules.allowlists]]`).
+# A top-level `[[allowlists]]` is silently ignored by gitleaks 8.24.x, which
+# looks like a working allowlist while quietly flagging everything anyway.
+# Verified against the gitleaks 8.24.3 binary.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Committed example env file: variable names and placeholder values, never a real secret."
+paths = ['''(^|/)\.env\.example$''']

@@ -476,8 +476,15 @@ function trackInput(s: Session, data: string) {
   }
 }
 
+/**
+ * Spawn a session. Deliberately takes NO environment overrides: the renderer is
+ * not allowed to influence how the shell is started. A client-supplied env would
+ * let anything that reaches the socket (a compromised renderer, a stolen token)
+ * set LD_PRELOAD / BASH_ENV / PATH for the spawned shell, and the app itself
+ * never sends one — the UI sends only sessionId, cwd, cols and rows.
+ */
 function spawnSession(
-  opts: { id: string; cwd?: string; cols?: number; rows?: number; env?: Record<string, string> },
+  opts: { id: string; cwd?: string; cols?: number; rows?: number },
   attach?: WebSocket,
 ) {
   const pty = loadPty();
@@ -520,7 +527,7 @@ function spawnSession(
       cwd,
       env: {
         ...process.env,
-        ...(opts.env || {}),
+        // No client-supplied values here, by design (see spawnSession).
         ...launch.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
@@ -585,10 +592,9 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
           }
         } else {
           try {
-            session = spawnSession(
-              { id, cwd: msg.cwd, cols: msg.cols, rows: msg.rows, env: msg.env },
-              ws,
-            );
+            // msg.env is ignored on purpose: the renderer does not get to
+            // shape the shell's environment.
+            session = spawnSession({ id, cwd: msg.cwd, cols: msg.cols, rows: msg.rows }, ws);
           } catch (err: any) {
             ws.send(JSON.stringify({ type: 'error', message: err?.message || String(err) }));
             return;

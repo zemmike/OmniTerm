@@ -32,7 +32,7 @@
  * either way.
  */
 import React from 'react';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { AxeResults } from 'axe-core';
 import { axe } from 'vitest-axe';
@@ -54,6 +54,11 @@ const toHaveNoViolations = (
   }
 ).toHaveNoViolations;
 
+import PasteConfirmDialog from '../src/components/PasteConfirmDialog';
+import DataControls from '../src/components/DataControls';
+import ShortcutsCheatsheet from '../src/components/ShortcutsCheatsheet';
+import { assessCommand } from '../src/risk';
+import { bindingFor, formatBinding } from '../src/keys';
 import { installBrowserApiStubs } from './helpers/a11y-env';
 import { installApiStub, TEST_HOME, type ApiStub } from './helpers/a11y-api';
 import {
@@ -470,6 +475,86 @@ describe('the guard fails on deliberately broken fixtures (no src/** involved)',
     await expect(expectNoViolations(container, 'BrokenIconButtonFixture')).rejects.toThrow(
       /button-name/,
     );
+  });
+});
+
+/* ------------------------------------------ the new safety surfaces */
+
+describe('PasteConfirmDialog', () => {
+  it('shows a destructive paste with its reasons and is axe-clean', async () => {
+    const assessment = assessCommand('sudo rm -rf /');
+    const { container } = render(
+      h(PasteConfirmDialog, {
+        text: 'sudo rm -rf /',
+        assessment,
+        onConfirm: () => {},
+        onCancel: () => {},
+      }),
+    );
+
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /review this paste/i })).toBeTruthy();
+    // Both reasons are on screen: the privilege escalation and the delete itself.
+    expect(screen.getByText(/elevated privileges/i)).toBeTruthy();
+    expect(screen.getByText(/system or home directory/i)).toBeTruthy();
+    // It never claims the command is safe.
+    expect(container.textContent || '').toMatch(/not a guarantee/i);
+    // And the destructive button does not invite a reflex Enter.
+    expect(screen.getByRole('button', { name: /send it anyway/i })).toBeTruthy();
+
+    await expectNoViolations(container, 'PasteConfirmDialog (destructive)');
+  });
+
+  it('is axe-clean for a multi-line paste with no risky pattern', async () => {
+    const text = 'cd /var/log\necho one\necho two';
+    const { container } = render(
+      h(PasteConfirmDialog, {
+        text,
+        assessment: assessCommand(text),
+        onConfirm: () => {},
+        onCancel: () => {},
+      }),
+    );
+    expect(screen.getByText(/more than one command/i)).toBeTruthy();
+    await expectNoViolations(container, 'PasteConfirmDialog (multi-line)');
+  });
+
+  it('focuses Cancel first and cancels on Escape — nothing runs by accident', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      h(PasteConfirmDialog, {
+        text: 'sudo rm -rf /',
+        assessment: assessCommand('sudo rm -rf /'),
+        onConfirm,
+        onCancel,
+      }),
+    );
+
+    expect(document.activeElement?.textContent).toMatch(/cancel/i);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('DataControls', () => {
+  it('offers the two deletions and is axe-clean', async () => {
+    const { container } = render(h(DataControls));
+    expect(screen.getByRole('heading', { name: /your data/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /delete command history/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /delete all snapshots/i })).toBeTruthy();
+    await expectNoViolations(container, 'DataControls');
+  });
+});
+
+describe('ShortcutsCheatsheet', () => {
+  it('lists real bindings and is axe-clean', async () => {
+    const { container } = render(h(ShortcutsCheatsheet));
+    expect(screen.getByText(/keyboard shortcuts/i)).toBeTruthy();
+    // A binding that exists in the registry must be rendered, not invented here.
+    expect(container.textContent || '').toContain(formatBinding(bindingFor('newTab')));
+    await expectNoViolations(container, 'ShortcutsCheatsheet');
   });
 });
 

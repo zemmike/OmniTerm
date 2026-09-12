@@ -1,0 +1,66 @@
+name: Released artifact E2E
+
+# Installs the .deb that was actually published to the latest GitHub Release on
+# a clean Ubuntu 24.04 and drives it end to end, so a broken package, a broken
+# desktop entry or a backend that will not come up is caught without waiting for
+# a user to report it. Runs nightly and on demand; release.yml already proves a
+# freshly built .deb installs, but only this proves the *shipped* one still does.
+on:
+  schedule:
+    # 03:17 UTC: off the top of the hour, when GitHub's scheduler is busiest.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artifact-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  released-deb:
+    name: Install and exercise the latest .deb
+    # The ubuntu-latest image is Ubuntu 24.04; the first step asserts it, so this
+    # is a clean 24.04 as the test intends rather than an assumption.
+    runs-on: ubuntu-latest
+    # The whole run is a download, an apt install, one app launch and an apt
+    # remove; 22 minutes leaves room for a slow mirror while staying under the
+    # 25-minute budget.
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Assert the runner is Ubuntu 24.04
+        run: |
+          set -euo pipefail
+          . /etc/os-release
+          echo "runner: $PRETTY_NAME"
+          [ "$VERSION_ID" = "24.04" ] || {
+            echo "::error::expected Ubuntu 24.04, got $PRETTY_NAME"
+            exit 1
+          }
+
+      - name: Install the latest release, run it headlessly, uninstall it
+        env:
+          # gh resolves the release through the API and downloads the assets.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Fixed token so the test can authenticate deterministically; the app
+          # generates a random one otherwise and it would have to be scraped.
+          OMNITERM_TOKEN: omniterm-e2e-ci-token
+          OMNITERM_E2E_DIR: ${{ runner.temp }}/omniterm-e2e
+        # Everything the sweep needs lives in the script so the same command can
+        # be run locally: it resolves the latest release, checks the checksum,
+        # installs, validates the desktop entry, launches under xvfb-run with
+        # openbox, posts a command to /api/terminal/execute, then uninstalls and
+        # asserts nothing was left behind.
+        run: bash scripts/artifact-e2e.sh
+
+      - name: Upload the app log
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: artifact-e2e-logs
+          path: ${{ runner.temp }}/omniterm-e2e/
+          if-no-files-found: ignore
+          retention-days: 7

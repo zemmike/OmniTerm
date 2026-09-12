@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import PasteConfirmDialog from './PasteConfirmDialog';
+import { assessCommand, type RiskAssessment } from '../risk';
 import { Terminal, IDisposable, IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -94,6 +96,38 @@ export default function TerminalPane({
   const markersRef = useRef<IMarker[]>([]);
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
+
+  // A paste that is multi-line or matches a risk pattern waits here for the user
+  // to read it. Nothing reaches the shell until they confirm.
+  const [pastePrompt, setPastePrompt] = useState<{
+    text: string;
+    assessment: RiskAssessment;
+  } | null>(null);
+
+  /**
+   * Single decision point for every paste route (Ctrl+V inside xterm, middle
+   * click, the context menu, Ctrl+Shift+V): low-risk single-line text goes
+   * straight through, anything else is held for review.
+   */
+  const decidePaste = useCallback((text: string, term: Terminal) => {
+    const assessment = assessCommand(text);
+    if (assessment.multiline || assessment.level !== 'low') {
+      setPastePrompt({ text, assessment });
+      return;
+    }
+    term.paste(text);
+  }, []);
+
+  const requestPaste = useCallback(async () => {
+    const term = termRef.current;
+    if (!term) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) decidePaste(text, term);
+    } catch {
+      /* clipboard permission denied — nothing to do */
+    }
+  }, [decidePaste]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -269,6 +303,19 @@ export default function TerminalPane({
 
     // ------------------------------------------------------------- input side
     const dataSub = term.onData((data) => {
+      // Bracketed paste (xterm wraps pastes in \x1b[200~ … \x1b[201~ when the
+      // shell enables it, which bash and zsh do by default). This is the choke
+      // point every paste passes through, so the review gate lives here: a
+      // multi-line or risky paste is held, and not a byte of it reaches the shell.
+      const pasted = bracketedPasteContent(data);
+      if (pasted !== null) {
+        const assessment = assessCommand(pasted);
+        if (assessment.multiline || assessment.level !== 'low') {
+          setPastePrompt({ text: pasted, assessment });
+          return;
+        }
+      }
+
       // Track the line under the cursor so Up/Down can use it as a prefix.
       for (const ch of data) {
         if (ch === '\r' || ch === '\n') {
@@ -371,7 +418,7 @@ export default function TerminalPane({
       // Middle click pastes, like an X11 terminal.
       if (event.button === 1 && settingsRef.current.middleClickPaste) {
         event.preventDefault();
-        void pasteFromClipboard(term);
+        void requestPaste();
       }
     };
     const onContextMenu = (event: MouseEvent) => {
@@ -434,7 +481,9 @@ export default function TerminalPane({
         const text = term.getSelection();
         if (text) navigator.clipboard?.writeText(text).catch(() => undefined);
       },
-      paste: () => pasteFromClipboard(term),
+      paste: async () => {
+        await requestPaste();
+      },
       selectAll: () => term.selectAll(),
       clear: () => term.clear(),
       focus: () => term.focus(),
@@ -529,7 +578,7 @@ export default function TerminalPane({
     // respawn the running PTY, so the callbacks (onReady, onExit, onCwdChange,
     // onFocusPane, registerApi) it closes over are deliberately not dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, cwd]);
+  }, [sessionId, cwd, requestPaste]);
 
   // Live option updates: theme, font and cursor change without a reconnect.
   useEffect(() => {
@@ -742,15 +791,33 @@ export default function TerminalPane({
           </button>
         </div>
       )}
+      {pastePrompt && (
+        <PasteConfirmDialog
+          text={pastePrompt.text}
+          assessment={pastePrompt.assessment}
+          onCancel={() => setPastePrompt(null)}
+          onConfirm={() => {
+            termRef.current?.paste(pastePrompt.text);
+            setPastePrompt(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-async function pasteFromClipboard(term: Terminal) {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text) term.paste(text);
-  } catch {
-    /* clipboard permission denied — nothing to do */
-  }
+/**
+ * Returns the text of a bracketed paste, or null when the data is ordinary
+ * keystrokes. The markers are what xterm.js emits when a shell has bracketed
+ * paste enabled (bash and zsh do by default); without them we cannot tell a paste
+ * from typing, which is why the explicit paste routes also go through the gate.
+ */
+function bracketedPasteContent(data: string): string | null {
+  const START = '\x1b[200~';
+  const END = '\x1b[201~';
+  if (!data.startsWith(START)) return null;
+  const body = data.endsWith(END)
+    ? data.slice(START.length, -END.length)
+    : data.slice(START.length);
+  return body;
 }

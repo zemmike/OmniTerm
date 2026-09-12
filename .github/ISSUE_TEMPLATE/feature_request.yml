@@ -1,0 +1,80 @@
+name: Feature request
+description: A problem OmniTerm should solve, or a change you would like to see.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lead with the problem, not the solution. A request that explains what
+        you cannot do today is far easier to act on than a request that
+        prescribes an implementation — and it often turns out there is a smaller
+        change that solves it.
+
+        Before you write: OmniTerm is deliberately Linux-only, it has no AI
+        features (removed in 1.7.0), and it does not pretend to be a faster
+        terminal. Feature requests that contradict those will be closed with a
+        pointer back to the README's
+        [What it is not](https://github.com/zemmike/OmniTerm/blob/main/README.md#what-it-is-not)
+        section.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what stops you today? Concrete situations beat general wishes — include what you actually type or click, and what happens instead.
+      placeholder: |
+        I run three long builds in three tabs and I cannot tell which one finished
+        while I am looking at another tab. I end up clicking through every tab
+        just to see if a prompt came back.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do instead today?
+      description: Any workaround you have — a script, another tool, a habit — even a bad one. It tells us how much the problem actually costs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Your proposed solution
+      description: Now the solution. How would you expect this to work in OmniTerm, and where does it live — terminal, Files, System Health or Settings?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other tools that solve this, or other shapes the feature could take. If another terminal already does it well, link it — that is useful information, not a reason to be dismissed.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: honesty
+    attributes:
+      label: Would this need data OmniTerm cannot actually read from this machine?
+      description: |
+        Every value in the UI has to come from the real machine. If a feature
+        would require inventing or estimating a number, tell us here — it is the
+        single most likely reason a request gets declined.
+      options:
+        - 'No — everything it needs is readable from this machine'
+        - 'Yes — it would need data from a remote host or a service'
+        - 'Not sure'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I have searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I understand OmniTerm is Linux-only, requires no cloud service, and has no AI features.
+          required: true

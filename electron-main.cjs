@@ -20,6 +20,15 @@ const { spawn } = require('child_process');
 // Fixed token when explicitly provided (kiosk / scripted setups), random otherwise.
 const TOKEN = (process.env.OMNITERM_TOKEN || '').trim() || crypto.randomBytes(32).toString('hex');
 const VERSION = app.getVersion();
+
+// `omniterm --version` answers without opening a window. The troubleshooting
+// guide and the bug-report template both ask for the version, and until now
+// nothing handled the flag: `omniterm --version` launched the whole app instead.
+// Exiting before app.whenReady() also means it works with no display attached.
+if (process.argv.slice(1).some((arg) => arg === '--version' || arg === '-v')) {
+  process.stdout.write(`${app.getName()} ${VERSION}\n`);
+  process.exit(0);
+}
 // Optional landing tab (e.g. OMNITERM_START_TAB=backups) — handy for kiosk
 // setups and for automated UI checks.
 const START_TAB = (process.env.OMNITERM_START_TAB || '').trim();
@@ -34,6 +43,25 @@ function log(...args) {
   const line = `[${new Date().toISOString()}] ${args.map(String).join(' ')}\n`;
   process.stdout.write(line);
   if (logStream) logStream.write(line);
+}
+
+/**
+ * True only for URLs served by our own backend on loopback. Used to decide
+ * whether a frame may use the preload bridge and whether the window is allowed
+ * to navigate. Anything that does not parse, or points anywhere else, is false —
+ * the safe answer for a privileged window.
+ */
+function isLocalAppUrl(value) {
+  if (!value) return false;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const loopback =
+    url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]';
+  return loopback && (url.protocol === 'http:' || url.protocol === 'https:');
 }
 
 function openLogFile() {
@@ -190,6 +218,24 @@ function createWindow() {
       mainWindow.show();
     });
 
+  // A privileged window must never navigate away from the local app: a redirect,
+  // a crafted link or a future remote feature would otherwise leave the preload
+  // bridge attached to foreign content. Open externally instead of navigating.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isLocalAppUrl(url)) return;
+    event.preventDefault();
+    log(`[main] blocked navigation to ${url}`);
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+  });
+
+  // No page in this app needs camera, microphone, geolocation, notifications or
+  // the clipboard-read permission; deny by default rather than inheriting
+  // Chromium's defaults.
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    log(`[main] denied permission request: ${permission}`);
+    callback(false);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -220,12 +266,24 @@ if (!app.requestSingleInstanceLock()) {
   process.on('exit', stopBackendServer);
 
   /**
-   * Opening a link from terminal output. Only http(s) and file URLs are ever
-   * passed to the OS: terminal output is attacker-controlled (an SSH banner, a
-   * log line), and handing an arbitrary scheme to the desktop handler is how
-   * terminal emulators have been turned into RCE vectors.
+   * Opening a link from terminal output. Terminal output is attacker-controlled
+   * (an SSH banner, a log line, a program's error message), so only schemes that
+   * cannot execute anything locally are accepted: http and https go to the
+   * browser. `file:` is deliberately NOT allowed — it hands a path to the
+   * desktop's MIME handler, which is how a crafted `.desktop` file or script gets
+   * run, and it has been a real terminal-emulator RCE vector. Nothing in the UI
+   * needs it: the terminal link detector only ever emits http(s).
    */
-  ipcMain.handle('omniterm:open-external', (_event, rawUrl) => {
+  ipcMain.handle('omniterm:open-external', (event, rawUrl) => {
+    // Refuse anything that is not the app's own window. Today there is exactly
+    // one local window, but "the renderer is the only caller" is an assumption
+    // worth enforcing rather than trusting (a future webview, an iframe, or a
+    // devtools call from another origin would otherwise inherit this bridge).
+    if (!isLocalAppUrl(event.senderFrame?.url)) {
+      log(`[main] refused open-external from a foreign frame: ${event.senderFrame?.url}`);
+      return false;
+    }
+
     const value = String(rawUrl || '');
     let parsed;
     try {
@@ -233,7 +291,7 @@ if (!app.requestSingleInstanceLock()) {
     } catch {
       return false;
     }
-    if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) return false;
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
     shell.openExternal(parsed.toString());
     return true;
   });

@@ -72,6 +72,8 @@ function buildChildEnv(input: {
   dataDir: string;
   homeDir: string;
   port: number;
+  /** Extra environment for the child, applied last (used by the limits tests). */
+  overrides?: Record<string, string>;
 }): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
 
@@ -105,6 +107,7 @@ function buildChildEnv(input: {
     HOME: input.homeDir,
     // Deterministic shell: the server runs `$SHELL -lc <command>`.
     SHELL: '/bin/bash',
+    ...(input.overrides || {}),
   };
 }
 
@@ -112,7 +115,7 @@ function buildChildEnv(input: {
  * Spawn the built server and wait until GET /api/health answers 200.
  * Throws with the captured server output if it never becomes healthy.
  */
-export async function startServer(): Promise<TestServer> {
+export async function startServer(overrides?: Record<string, string>): Promise<TestServer> {
   if (!existsSync(SERVER_ENTRY)) {
     throw new Error(
       `Built server not found at ${SERVER_ENTRY}. Run \`npm run build:server\` and re-run the tests.`,
@@ -135,7 +138,7 @@ export async function startServer(): Promise<TestServer> {
 
   const proc = spawn(process.execPath, [SERVER_ENTRY], {
     cwd: REPO_ROOT,
-    env: buildChildEnv({ dataDir, homeDir, port }),
+    env: buildChildEnv({ dataDir, homeDir, port, overrides }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

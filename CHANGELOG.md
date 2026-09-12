@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-12
+
+### Security
+- **Links in terminal output can no longer reach `file:`.** The handler accepted
+  `http:`, `https:` and `file:`; terminal output is attacker-controlled (an SSH
+  banner, a log line), and handing a path to the desktop's MIME handler is how a
+  crafted `.desktop` file or script gets executed. Only `http(s)` is passed to the
+  OS now, which is all the link detector ever emits.
+- **The IPC bridge validates its caller.** `omniterm:open-external` refuses any
+  frame that is not the app's own window on loopback, instead of assuming the
+  renderer is the only caller.
+- **The window can no longer navigate away from the app**, and permission requests
+  (camera, microphone, geolocation, notifications) are denied by default.
+- **The renderer can no longer influence how the shell is started.** It used to be
+  able to send `env` with the session's `start` message, which was merged into the
+  spawn environment — enough to set `LD_PRELOAD` or `BASH_ENV` for the shell. The
+  UI never sent it, so the field is gone.
+- **Requests are rate limited and work is capped.** Every `/api` request now runs
+  against a per-caller budget (default 120 per 10s) and the endpoints that spawn
+  work — command execution and snapshots — share a concurrency cap (default 4).
+  Both answer 429 with a JSON body, so a runaway loop spawns a bounded number of
+  shells instead of one per request. Configurable via `OMNITERM_RATE_LIMIT_*` and
+  `OMNITERM_MAX_CONCURRENCY`.
+
+### Added
+- **A paste guard.** Pasting into the terminal now goes through a review step when
+  the text is multi-line or matches a known risk pattern. `src/risk.ts` classifies
+  a command against 20 inspectable rule groups and reports which ones it actually
+  checked; the dialog shows the exact text, the reasons, and waits. `Esc` cancels,
+  and focus starts on Cancel so a stray Enter cannot run anything. Low-risk
+  single-line pastes are untouched.
+- **`DELETE /api/audit-log` and `DELETE /api/backups`**, with a "Your data" section
+  in Settings. Deleting the audit trail records one entry saying it was cleared,
+  so a silent wipe cannot hide itself.
+- **A keyboard-shortcut cheat sheet** in Settings, reading the live binding
+  registry (a re-bound key shows its real binding).
+
+### Changed
+- New tests for all of the above: the classifier (53 cases, including that the
+  module cannot reach a process API), the limits (unit boundary conditions plus
+  real HTTP 429s), the paste dialog and the new panels through the axe suite, and
+  the two delete routes. The suite is 140 tests across 5 files, up from 67.
+
+
 ## [1.7.0] - 2026-09-12
 
 ### Removed
@@ -270,7 +314,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...v1.7.0
 [1.6.5]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/zemmike/OmniTerm/compare/v1.6.3...v1.6.4

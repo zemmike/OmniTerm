@@ -1,0 +1,144 @@
+name: Bug report
+description: Something in OmniTerm is broken, wrong, or claims a number it should not.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Before you fill this in, please skim
+        [docs/TROUBLESHOOTING.md](https://github.com/zemmike/OmniTerm/blob/main/docs/TROUBLESHOOTING.md) —
+        the common failures (app does not start, `node-pty` unavailable, a shell
+        that hangs, API 401) are documented there with fixes, and the
+        [diagnostics section](https://github.com/zemmike/OmniTerm/blob/main/docs/TROUBLESHOOTING.md#collecting-diagnostics-for-a-bug-report)
+        gives you the exact commands for the fields below.
+
+        **Security problems do not belong here** — report them privately, see
+        [SECURITY.md](https://github.com/zemmike/OmniTerm/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: OmniTerm version
+      description: 'Output of `dpkg -s omniterm | grep -E "^(Package|Version|Status)"`. If you built from source, say so and give the git commit.'
+      placeholder: 'Version: 1.8.0'
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and version
+      description: 'Output of `cat /etc/os-release | head -3` and `uname -m`. Include the architecture — amd64 vs arm64 matters here.'
+      placeholder: 'Ubuntu 24.04.1 LTS, x86_64'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: How did you install it?
+      options:
+        - '`install-linux.sh` (one command)'
+        - '.deb via apt / Ubuntu Software'
+        - 'AppImage (.x86_64.AppImage)'
+        - 'tarball (.tar.gz)'
+        - 'RPM'
+        - 'Built from source'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: display_server
+    attributes:
+      label: Display server
+      description: '`echo "session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"`'
+      options:
+        - 'X11 (Xorg)'
+        - 'Wayland (including under XWayland)'
+        - 'Not sure / headless (no DISPLAY or WAYLAND_DISPLAY)'
+    validations:
+      required: true
+
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      description: '`echo $SHELL` and the shell version — bash, zsh, fish, dash, or something else.'
+      placeholder: '/bin/zsh (zsh 5.9)'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pty_available
+    attributes:
+      label: Is terminal backend (PTY) available?
+      description: |
+        `grep -E 'Terminal backend|node-pty' ~/.config/OmniTerm/omniterm.log | tail -3`.
+        `node-pty ready` means yes; `node-pty UNAVAILABLE — <error>` means no —
+        if it is unavailable, paste that error text in the description too.
+      options:
+        - "Yes — the log says 'node-pty ready'"
+        - "No — the log says 'node-pty UNAVAILABLE'"
+        - 'Not sure'
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered, minimal, and starting from launching the app. If you can reproduce it outside OmniTerm too, say so — that tells us it is not us.
+      placeholder: |
+        1. Launch OmniTerm
+        2. Open a second tab with Ctrl+T
+        3. Press Ctrl+Shift+E to split right
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+      placeholder: The right-hand pane opens a new shell in the same directory.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: If the UI showed a wrong number, a blank value or a wrong exit code, say exactly what it showed. OmniTerm is not supposed to display anything it cannot read from your machine, so a fabricated-looking value is itself the bug.
+      placeholder: The pane opens but never draws a prompt.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: |
+        Paste the last ~60 lines of `~/.config/OmniTerm/omniterm.log`, and any
+        terminal output from launching `omniterm` in a shell.
+
+        **Redact first.** The log contains the per-launch session token
+        (`... one was generated for this run: <token>`), and both the log and the
+        audit trail can contain command lines, paths and hostnames from your
+        machine. Replace the token with `<redacted>` and cut anything else you
+        would not post publicly.
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked docs/TROUBLESHOOTING.md and this is not one of the documented failures.
+          required: true
+        - label: I have redacted the session token and any other sensitive data from the logs and text above.
+          required: true
+        - label: This report is about Linux. OmniTerm does not support macOS or Windows.
+          required: true

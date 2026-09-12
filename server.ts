@@ -8,6 +8,7 @@ import { spawn, spawnSync } from 'child_process';
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
+import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import {
   attachTerminalSocket,
   onPtyCommand,
@@ -90,6 +91,23 @@ app.use('/api', (req, res, next) => {
   }
   next();
 });
+
+// Rate limit, deliberately *after* authentication: rejecting an unauthenticated
+// request is already cheap (a length check and a constant-time compare), and
+// this way the counter is per token rather than per peer address — every caller
+// here is on loopback anyway.
+const rateLimiter = createRateLimiter({
+  windowMs: positiveInt(process.env.OMNITERM_RATE_LIMIT_WINDOW_MS, 10_000),
+  max: positiveInt(process.env.OMNITERM_RATE_LIMIT_MAX, 120),
+});
+app.use('/api', rateLimiter.middleware);
+
+// One shared cap for the endpoints that do real work, so "how much can this API
+// have running at once" has a single answer instead of one per route.
+const expensiveWork = createConcurrencyLimit(
+  positiveInt(process.env.OMNITERM_MAX_CONCURRENCY, 4),
+  'this API',
+);
 
 // Security headers. Everything the renderer needs is same-origin; inline styles
 // are required by xterm and by Tailwind's runtime classes.
@@ -1206,7 +1224,7 @@ app.get('/api/env', async (req, res) => {
 });
 
 // 2. Terminal Command Execution API
-app.post('/api/terminal/execute', async (req, res) => {
+app.post('/api/terminal/execute', expensiveWork, async (req, res) => {
   const { command, cwd = DEFAULT_CWD } = req.body;
   const startTime = Date.now();
 
@@ -1618,7 +1636,86 @@ app.get('/api/backups', (req, res) => {
   res.json({ dir: BACKUP_DIR, backups: listBackups() });
 });
 
-app.post('/api/backups/run', (req, res) => {
+/**
+ * Deleting your own data. Both routes are irreversible, so they answer with
+ * exactly what they removed rather than a bare success. The deletion is recorded
+ * in the audit trail itself: for the audit log the surviving entry is the one
+ * saying it was cleared, which is more useful than silence, and for snapshots the
+ * record is what lets you confirm later that nobody else deleted them.
+ */
+app.delete('/api/audit-log', (req, res) => {
+  try {
+    let removed = activityLogs.length;
+    try {
+      if (fs.existsSync(AUDIT_FILE)) {
+        removed = fs
+          .readFileSync(AUDIT_FILE, 'utf8')
+          .split('\n')
+          .filter((line) => line.trim()).length;
+      }
+    } catch {
+      /* unreadable: fall back to the in-memory count */
+    }
+
+    for (const file of [AUDIT_FILE, `${AUDIT_FILE}.1`]) {
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        /* already gone */
+      }
+    }
+    activityLogs.length = 0;
+
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      username: os.userInfo().username,
+      role: 'local',
+      action: 'AUDIT_CLEARED',
+      details: `Deleted the audit trail (${removed} entries) at the user's request`,
+      ip: '127.0.0.1',
+      severity: 'warning',
+    });
+
+    res.json({ removed, auditFile: AUDIT_FILE });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/backups', (req, res) => {
+  try {
+    const snapshots = listBackups();
+    let removed = 0;
+    let freedBytes = 0;
+    for (const snapshot of snapshots) {
+      try {
+        freedBytes += fs.statSync(snapshot.path).size;
+        fs.unlinkSync(snapshot.path);
+        removed += 1;
+      } catch {
+        /* one unreadable file must not abort the rest */
+      }
+    }
+
+    appendAuditLog({
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      username: os.userInfo().username,
+      role: 'local',
+      action: 'BACKUPS_CLEARED',
+      details: `Deleted ${removed} snapshot(s), ${(freedBytes / 1048576).toFixed(1)} MB freed`,
+      ip: '127.0.0.1',
+      severity: 'warning',
+    });
+
+    res.json({ removed, freedBytes, dir: BACKUP_DIR });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/backups/run', expensiveWork, (req, res) => {
   const dir = resolveCwd(req.body?.cwd);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const archive = path.join(BACKUP_DIR, `snapshot-${stamp}.tar.gz`);

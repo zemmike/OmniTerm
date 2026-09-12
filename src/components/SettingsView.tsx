@@ -10,6 +10,8 @@ import {
   X,
 } from 'lucide-react';
 import { useSettings, resetSettings, FONT_STACKS, TerminalSettings } from '../settings';
+import DataControls from './DataControls';
+import ShortcutsCheatsheet from './ShortcutsCheatsheet';
 import { THEMES, themeById } from '../themes';
 import {
   ACTIONS,
@@ -436,6 +438,11 @@ export const SettingsView: React.FC = () => {
             })}
           </div>
         </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <ShortcutsCheatsheet />
+        <DataControls />
       </div>
     </div>
   );

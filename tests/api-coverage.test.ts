@@ -30,7 +30,15 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { api, postJson, serverBuilt, startServer, type TestServer } from './helpers/server';
+import {
+  api,
+  postJson,
+  serverBuilt,
+  startServer,
+  TOKEN,
+  TOKEN_HEADER,
+  type TestServer,
+} from './helpers/server';
 
 describe.skipIf(!serverBuilt)(
   serverBuilt
@@ -462,6 +470,66 @@ describe.skipIf(!serverBuilt)(
         const res = await postJson(srv, '/api/terminal/kill', { sessionId: 'does-not-exist' });
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ success: false });
+      });
+    });
+    // ------------------------------------------------- overwriting your data --
+    describe('deleting local data (DELETE /api/audit-log and /api/backups)', () => {
+      it('DELETE /api/audit-log without a token -> 401 and the file survives', async () => {
+        const res = await fetch(`${srv.baseUrl}/api/audit-log`, { method: 'DELETE' });
+        expect(res.status).toBe(401);
+      });
+
+      it('DELETE /api/audit-log clears the trail and records that it did', async () => {
+        // Put something in the trail first, so "cleared" is a real assertion.
+        await postJson(srv, '/api/terminal/execute', { command: 'echo before-the-wipe' });
+        expect(readFileSync(srv.auditFile, 'utf8')).toContain('before-the-wipe');
+
+        const res = await fetch(`${srv.baseUrl}/api/audit-log`, {
+          method: 'DELETE',
+          headers: { [TOKEN_HEADER]: TOKEN },
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.removed).toBeGreaterThan(0);
+
+        const after = readFileSync(srv.auditFile, 'utf8');
+        expect(after).not.toContain('before-the-wipe');
+        // The one entry that survives is the admission that it was cleared: a
+        // silent deletion would leave the user unable to tell what happened.
+        expect(after).toContain('AUDIT_CLEARED');
+        expect(await (await api(srv, '/api/activity-logs')).json()).toHaveProperty('entries');
+      });
+
+      it('DELETE /api/backups removes the snapshots that exist and reports the bytes', async () => {
+        const created = await postJson(srv, '/api/backups/run', { cwd: fixtureDir });
+        const createdPath = (await created.json()).path;
+        expect(existsSync(createdPath)).toBe(true);
+
+        const res = await fetch(`${srv.baseUrl}/api/backups`, {
+          method: 'DELETE',
+          headers: { [TOKEN_HEADER]: TOKEN },
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.removed).toBeGreaterThanOrEqual(1);
+        expect(body.freedBytes).toBeGreaterThan(0);
+
+        expect(existsSync(createdPath)).toBe(false);
+        expect((await (await api(srv, '/api/backups')).json()).backups).toEqual([]);
+      });
+
+      it('is idempotent: deleting an empty trail is a 200 with removed: 0', async () => {
+        const first = await fetch(`${srv.baseUrl}/api/backups`, {
+          method: 'DELETE',
+          headers: { [TOKEN_HEADER]: TOKEN },
+        });
+        expect(first.status).toBe(200);
+        const second = await fetch(`${srv.baseUrl}/api/backups`, {
+          method: 'DELETE',
+          headers: { [TOKEN_HEADER]: TOKEN },
+        });
+        expect(second.status).toBe(200);
+        expect((await second.json()).removed).toBe(0);
       });
     });
   },

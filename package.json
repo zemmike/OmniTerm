@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "A real Linux terminal emulator: your own shell in tabs and split panes, live host health, file browser and snapshots.",
   "private": true,
   "type": "module",
