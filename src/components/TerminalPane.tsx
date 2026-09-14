@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PasteConfirmDialog from './PasteConfirmDialog';
 import { decideHistoryKey, stepIndex } from '../historyNav';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { assessCommand, type RiskAssessment } from '../risk';
 import { Terminal, IDisposable, IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -102,6 +103,7 @@ export default function TerminalPane({
   // The text the user had typed when they started walking history, so stepping
   // past the newest entry puts it back instead of leaving an empty line.
   const historyPrefixRef = useRef('');
+  const webglRef = useRef<WebglAddon | null>(null);
   const markersRef = useRef<IMarker[]>([]);
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
@@ -183,6 +185,7 @@ export default function TerminalPane({
     termRef.current = term;
     fitRef.current = fit;
     searchRef.current = search;
+    if (settingsRef.current.webglRenderer) webglRef.current = enableWebgl(term);
 
     // ------------------------------------------------------------- transport
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${location.port}/term?token=${encodeURIComponent(OMNITERM_TOKEN)}`;
@@ -617,6 +620,16 @@ export default function TerminalPane({
     term.options.cursorStyle = settings.cursorStyle;
     term.options.cursorBlink = settings.cursorBlink;
     term.options.scrollback = settings.scrollback;
+
+    // The renderer switches live, so the difference is measurable without
+    // reopening the app.
+    if (settings.webglRenderer && !webglRef.current) {
+      webglRef.current = enableWebgl(term);
+    } else if (!settings.webglRenderer && webglRef.current) {
+      webglRef.current.dispose();
+      webglRef.current = null;
+      console.debug('[renderer] dom (webgl disabled in settings)');
+    }
     try {
       fitRef.current?.fit();
     } catch {
@@ -830,6 +843,31 @@ export default function TerminalPane({
       )}
     </div>
   );
+}
+
+/**
+ * Turn on xterm's WebGL renderer, falling back to the DOM renderer.
+ *
+ * The DOM renderer is xterm's default and the app's biggest throughput ceiling,
+ * but WebGL is not universally available: headless displays, virtual machines and
+ * older drivers can refuse a context, and a live context can be lost when the GPU
+ * resets. Both cases must degrade to a working terminal rather than a blank pane,
+ * so every failure path disposes the addon and leaves the DOM renderer in place.
+ */
+function enableWebgl(term: Terminal): WebglAddon | null {
+  try {
+    const addon = new WebglAddon();
+    addon.onContextLoss(() => {
+      console.debug('[renderer] webgl context lost - falling back to dom');
+      addon.dispose();
+    });
+    term.loadAddon(addon);
+    console.debug('[renderer] webgl');
+    return addon;
+  } catch (err) {
+    console.debug('[renderer] dom (webgl unavailable:', (err as Error)?.message ?? err, ')');
+    return null;
+  }
 }
 
 /**

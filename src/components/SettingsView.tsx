@@ -327,6 +327,11 @@ export const SettingsView: React.FC = () => {
                 'Typing “git” then Up/Down cycles only commands starting with “git”.',
               ],
               [
+                'webglRenderer',
+                'Experimental: WebGL renderer',
+                'Renders through WebGL instead of the DOM. Faster for very heavy output, but unverified on real GPU hardware — on a machine without working WebGL it can leave the pane blank until it is switched back off.',
+              ],
+              [
                 'commandDecorations',
                 'Show exit code and duration',
                 'Each prompt line is labelled with how the previous command ended.',

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Added
+- **An opt-in WebGL renderer setting** (`Settings → Experimental: WebGL renderer`),
+  built on `@xterm/addon-webgl`, with a live toggle and a disposal path on context
+  loss. It is **off by default**, and that is a finding rather than a default: on
+  this build machine enabling it loaded the addon successfully and then threw
+  inside xterm's render loop (`Cannot read properties of undefined (reading
+  '_isDisposed')` / `'dimensions'`), which unmounted the app and left a blank
+  window. The DOM renderer was verified painting 38 rows with all four tabs
+  present in the same environment. Until it is verified on real GPU hardware, the
+  faster renderer is a switch the user can try, not something we turn on for them.
+
+### Notes
+- Measured with CDP against the running window rather than assumed; the probe and
+  the reproduction are described in the plan document.
+
 ## [1.8.1] - 2026-09-12
 
 ### Fixed

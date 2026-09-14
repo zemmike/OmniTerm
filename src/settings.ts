@@ -27,6 +27,12 @@ export interface TerminalSettings {
   middleClickPaste: boolean;
   /** Typing `git` then Up/Down cycles only commands starting with `git`. */
   prefixHistory: boolean;
+  /**
+   * Use xterm's experimental WebGL renderer. Off by default on purpose: WebGL is
+   * faster for heavy output, but its failure mode is severe (see the note in
+   * Settings), and it could not be verified on real GPU hardware before shipping.
+   */
+  webglRenderer: boolean;
   /** Show `exit 0 · 1.2s` next to each prompt line. */
   commandDecorations: boolean;
   /** Right click opens a context menu; off means it does nothing. */
@@ -64,6 +70,7 @@ export const DEFAULT_SETTINGS: TerminalSettings = {
   copyOnSelect: true,
   middleClickPaste: true,
   prefixHistory: true,
+  webglRenderer: false,
   commandDecorations: true,
   contextMenu: true,
   shortcuts: {},
