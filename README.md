@@ -22,8 +22,9 @@ leaves the machine.
 OmniTerm is an **Electron** app, and that has a price you should know before you
 install it:
 
-- **~97 MB** installed (the `.deb`), **~200 MB resident** (measured PSS across
-  its 8 processes), and **several seconds** to first paint.
+- **~97 MB** installed (the `.deb`), **~250 MB resident** (measured PSS across its
+  8 processes, one tab idle — see [docs/PERFORMANCE.md](docs/PERFORMANCE.md)), and
+  **~1.2 s** from launch to a usable prompt.
 - **Kitty, alacritty and Ghostty are faster and lighter.** If raw terminal speed
   and memory are what you are optimising for, use one of those — they are better
   at that, and this README will not pretend otherwise.

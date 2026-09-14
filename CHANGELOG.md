@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Unreleased]
-
 ### Added
 - **An opt-in WebGL renderer setting** (`Settings → Experimental: WebGL renderer`),
   built on `@xterm/addon-webgl`, with a live toggle and a disposal path on context
@@ -23,6 +21,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
+
+## [1.9.0] - 2026-09-14
+
+### Added
+- **A tamper-evident audit log.** Every entry now carries `seq`, `prevHash` and a
+  `hash` (sha256 over a documented canonical form), so an entry that is edited,
+  deleted or hand-written after the fact no longer verifies. `npm run audit:verify`
+  (or `node dist/audit-verify.cjs [file] [--json] [--prefix]`) reports
+  `intact` / `tampered` / `legacy` / `empty` and the first bad index, exiting 2 on
+  tampering. Logs written before this release have no hashes and are reported as
+  `legacy`, never as corrupt. Rotation keeps the chain continuous across
+  `activity.jsonl.1` and `activity.jsonl`.
+- **A reproducible benchmark harness** (`npm run bench`) and
+  [docs/PERFORMANCE.md](docs/PERFORMANCE.md) with the measured numbers, the machine,
+  the method and an explicit list of what is not measured.
+- **An opt-in WebGL renderer** setting (`Settings → Experimental: WebGL renderer`),
+  off by default — see the note below.
+
+### Changed
+- **Corrected memory claims with measurements.** The README said "~200 MB
+  resident" and "several seconds to first paint". Measured: **250 MB** PSS for one
+  idle tab, and **1212 ms** from launch to a usable prompt. The new figure is worse
+  than the old claim, which is why it is now measured rather than estimated.
+
+### Notes
+- **Wayland remains untested.** An investigation was started (weston is installed on
+  the build machine) but did not complete, so the platform matrix still says
+  untested rather than guessing. This is the next Phase 1 item.
+- **The WebGL renderer could not be verified working.** Enabling it on this build
+  machine loaded the addon and then threw inside xterm's render loop, unmounting the
+  app and leaving a blank window, while the DOM renderer in the same environment
+  painted correctly. It is therefore opt-in and labelled experimental, not a default.
 
 ## [1.8.1] - 2026-09-12
 
@@ -358,7 +388,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...v1.7.0

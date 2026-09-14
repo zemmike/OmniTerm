@@ -9,6 +9,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
+import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
 import {
   attachTerminalSocket,
   onPtyCommand,
@@ -153,6 +154,11 @@ type AuditEntry = {
   exitCode?: number | null;
   durationMs?: number;
   command?: string;
+  // Hash-chain fields (audit-chain.ts documents the canonical form). Absent from
+  // entries written by v1.8.x, which are kept verbatim as a legacy prelude.
+  seq?: number;
+  prevHash?: string;
+  hash?: string;
 };
 
 function loadAuditLog(limit = 300): AuditEntry[] {
@@ -175,14 +181,37 @@ function loadAuditLog(limit = 300): AuditEntry[] {
 
 const AUDIT_MAX_BYTES = Number(process.env.OMNITERM_AUDIT_MAX_BYTES) || 8 * 1024 * 1024;
 
+// Where the chain currently ends, so the next entry can extend it. Read once at
+// startup from the log itself (legacy entries count towards seq, see
+// audit-chain.ts) and kept up to date on every append — including across a
+// rotation, which is what keeps the chain continuous when activity.jsonl becomes
+// activity.jsonl.1.
+let auditChainTail: ChainTail = GENESIS_TAIL;
+
+/**
+ * Append one entry, hash-chained to the one before it.
+ *
+ * The entry is sealed before it is stored: seq is the previous seq + 1, prevHash
+ * is the previous entry's hash, and hash covers its own canonical form plus those
+ * two. An entry edited, removed or hand-written after this point no longer
+ * verifies (see audit-verify.ts). The hashes are computed even if the file write
+ * then fails, so the in-memory log stays a usable chain.
+ */
 function appendAuditLog(entry: AuditEntry) {
-  activityLogs.unshift(entry);
+  const seq = auditChainTail.seq + 1;
+  const prevHash = auditChainTail.hash;
+  const chained: AuditEntry = { ...entry, seq, prevHash };
+  const hash = computeEntryHash(chained);
+  chained.hash = hash;
+
+  activityLogs.unshift(chained);
   if (activityLogs.length > 500) activityLogs.length = 500;
   try {
     fs.mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o700 });
     // Rotate before writing: one generation (activity.jsonl.1) is plenty for a
     // local log, and it stops the file growing without bound on a long-running
-    // machine.
+    // machine. The tail stays in memory, so the first entry of the fresh file
+    // chains onto the renamed one.
     try {
       if (fs.statSync(AUDIT_FILE).size > AUDIT_MAX_BYTES) {
         fs.renameSync(AUDIT_FILE, `${AUDIT_FILE}.1`);
@@ -190,13 +219,15 @@ function appendAuditLog(entry: AuditEntry) {
     } catch {
       /* no log yet, or it disappeared under us */
     }
-    fs.appendFileSync(AUDIT_FILE, JSON.stringify(entry) + '\n', { mode: 0o600 });
+    fs.appendFileSync(AUDIT_FILE, JSON.stringify(chained) + '\n', { mode: 0o600 });
+    auditChainTail = { seq, hash };
   } catch {
     /* auditing must never break command execution */
   }
 }
 
 const activityLogs: AuditEntry[] = loadAuditLog(200);
+auditChainTail = loadAuditChainTail(AUDIT_FILE);
 
 const systemAlerts: Array<{
   id: string;
@@ -1665,6 +1696,10 @@ app.delete('/api/audit-log', (req, res) => {
       }
     }
     activityLogs.length = 0;
+    // The whole chain is gone with the files, so the record of the deletion
+    // starts a fresh chain at seq 1 instead of claiming a predecessor that no
+    // longer exists (that would make the surviving entry fail verification).
+    auditChainTail = GENESIS_TAIL;
 
     appendAuditLog({
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,

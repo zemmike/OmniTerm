@@ -104,6 +104,8 @@ export default tseslint.config(
       'server.ts',
       'pty.ts',
       'ai-provider.ts',
+      'audit-chain.ts',
+      'audit-verify.ts',
       'tests/**/*.ts',
       'vite.config.ts',
       'vitest.config.ts',
