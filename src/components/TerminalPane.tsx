@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PasteConfirmDialog from './PasteConfirmDialog';
+import { decideHistoryKey, stepIndex } from '../historyNav';
 import { assessCommand, type RiskAssessment } from '../risk';
 import { Terminal, IDisposable, IMarker } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -92,7 +93,15 @@ export default function TerminalPane({
   const lineRef = useRef('');
   const historyRef = useRef<string[] | null>(null);
   const historyIndexRef = useRef(-1);
-  const pendingHistory = useRef<{ requestId: string; prefix: string } | null>(null);
+  const pendingHistory = useRef<{
+    requestId: string;
+    prefix: string;
+    direction: -1 | 1;
+    queued: number;
+  } | null>(null);
+  // The text the user had typed when they started walking history, so stepping
+  // past the newest entry puts it back instead of leaving an empty line.
+  const historyPrefixRef = useRef('');
   const markersRef = useRef<IMarker[]>([]);
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
@@ -210,10 +219,17 @@ export default function TerminalPane({
       } else if (msg.type === 'cwd') {
         onCwdChange?.(msg.cwd);
       } else if (msg.type === 'history-result') {
-        if (pendingHistory.current && pendingHistory.current.requestId === msg.requestId) {
+        const pending = pendingHistory.current;
+        if (pending && pending.requestId === msg.requestId) {
           historyRef.current = Array.isArray(msg.items) ? msg.items : [];
           pendingHistory.current = null;
-          applyHistory(1);
+          // The first reveal always shows the newest match, whichever arrow asked
+          // for it; only later presses move in the pressed direction.
+          const first = historyIndexRef.current === -1;
+          const direction: -1 | 1 = first ? -1 : pending.direction;
+          for (let i = 0; i < Math.max(1, pending.queued); i += 1) {
+            if (!applyHistory(direction)) break;
+          }
         }
       } else if (msg.type === 'command') {
         if (msg.cwd) onCwdChange?.(msg.cwd);
@@ -336,14 +352,14 @@ export default function TerminalPane({
     function applyHistory(direction: -1 | 1) {
       const items = historyRef.current;
       if (!items || items.length === 0) return false;
-      let idx = historyIndexRef.current + (direction === -1 ? 1 : -1);
-      if (idx < 0) idx = 0;
-      if (idx > items.length - 1) {
-        // Past the newest match: clear the line back to the original prefix.
+      const idx = stepIndex(historyIndexRef.current, direction, items.length);
+      if (idx === null) {
+        // Past the newest entry: put back what the user had typed, rather than
+        // wiping the line.
         historyIndexRef.current = -1;
-        term.write('');
-        send({ type: 'input', data: '\u0015' });
-        lineRef.current = '';
+        const restore = historyPrefixRef.current;
+        send({ type: 'input', data: `\u0015${restore}` });
+        lineRef.current = restore;
         return true;
       }
       historyIndexRef.current = idx;
@@ -354,9 +370,17 @@ export default function TerminalPane({
       return true;
     }
 
-    function requestHistory(prefix: string) {
+    function requestHistory(prefix: string, direction: -1 | 1) {
+      const inFlight = pendingHistory.current;
+      if (inFlight) {
+        // Another press arrived before the answer: remember it so it still counts.
+        inFlight.queued += 1;
+        inFlight.direction = direction;
+        return;
+      }
       const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      pendingHistory.current = { requestId, prefix };
+      pendingHistory.current = { requestId, prefix, direction, queued: 1 };
+      historyPrefixRef.current = prefix;
       historyIndexRef.current = -1;
       send({ type: 'history', prefix, limit: 400, requestId });
     }
@@ -377,23 +401,25 @@ export default function TerminalPane({
         return true;
       }
 
-      if (
-        s2.prefixHistory &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey
-      ) {
-        const prefix = lineRef.current.trim();
-        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-          const direction: -1 | 1 = event.key === 'ArrowUp' ? -1 : 1;
-          const haveFresh = historyRef.current && historyRef.current.length > 0;
-          if (!prefix && !haveFresh) return true; // plain shell history
-          if (!haveFresh) {
-            requestHistory(prefix);
-          } else {
-            applyHistory(direction);
-          }
+      if (s2.prefixHistory) {
+        const action = decideHistoryKey({
+          key: event.key,
+          enabled: s2.prefixHistory,
+          modifierHeld: event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
+          altScreen: term.buffer.active.type === 'alternate',
+          prefix: lineRef.current.trim(),
+          cachedCount: historyRef.current ? historyRef.current.length : 0,
+        });
+        if (action.kind === 'step') {
+          applyHistory(action.direction);
+          event.preventDefault();
+          return false;
+        }
+        if (action.kind === 'request') {
+          // This covers the empty line too: with nothing typed, walk the whole
+          // history instead of handing the key to the shell, which is what made
+          // Up appear dead.
+          requestHistory(action.prefix, action.direction);
           event.preventDefault();
           return false;
         }

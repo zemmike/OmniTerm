@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-09-12
+
+### Fixed
+- **Up/Down now walk every previous command when the line is empty.** The handler
+  handed an empty prompt to the shell ("plain shell history"), which appears to do
+  nothing when the interactive rcfile has no history of its own — so the arrow keys
+  felt dead. An empty line now requests the full history (session entries plus the
+  shell's own history file) and steps through it. Verified over the app's own
+  WebSocket: an empty prefix returns every entry, newest first.
+- **The first press is no longer swallowed.** The list is fetched over the
+  WebSocket, and the press that triggered the fetch was consumed and forgotten, so
+  the first Up appeared to do nothing and the press had to be repeated. The
+  direction now travels with the request and is applied the moment the answer
+  arrives; presses that land while a request is in flight are counted rather than
+  dropped.
+- **Arrow keys belong to full-screen programs again.** Up/Down are no longer
+  intercepted while the alternate screen is active, so vim, less and htop get their
+  own keys.
+- **Stepping past the newest entry restores what you typed** instead of clearing the
+  line.
+
+### Changed
+- The navigation logic moved to `src/historyNav.ts` as pure functions
+  (`decideHistoryKey`, `stepIndex`) with 14 tests, including a guard that no step can
+  ever return an index outside the list.
+
+
 ## [1.8.0] - 2026-09-12
 
 ### Security
@@ -314,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/zemmike/OmniTerm/compare/v1.6.5...v1.7.0
 [1.6.5]: https://github.com/zemmike/OmniTerm/compare/v1.6.4...v1.6.5
