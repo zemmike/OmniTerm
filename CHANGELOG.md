@@ -73,10 +73,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the audit integration.
 
 ### Note
-- The width fix could not be confirmed in the running window on the build machine
-  (a stale Electron instance held the single-instance lock and the debug port never
-  opened), so it is verified by build, typecheck and the full test suite only. Worth
-  a look on a real desktop.
+- Confirmed in the running window after the fact: the pane is 1278 px wide and the
+  rendered terminal 1268 px, so it fills 99% of the pane (the remaining 10 px is the
+  pane's own border and padding), with 40 rows painted. Visible app footers on the
+  Terminal tab: 0, which is the merged single bottom bar.
+- The font-change path was fixed by ordering and is not covered by that measurement:
+  settings are only persisted once changed, so the harness could not switch fonts.
+  If dead space reappears, it will be after a font size or family change.
 
 ## [1.9.2] - 2026-09-14
 
