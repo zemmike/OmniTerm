@@ -36,6 +36,11 @@ export interface PaneApi {
   search(query: string, direction: 'next' | 'prev'): void;
   openSearch(): void;
   scrollToPrompt(direction: -1 | 1): void;
+  /**
+   * Everything the terminal currently holds, as plain text. Read-only by design:
+   * the AI Reader observes the pane, it never writes to it.
+   */
+  readBuffer(): string;
   send(text: string): void;
   /** Handles an app-level action coming from a shortcut. */
   runAction(actionId: string): boolean;
@@ -595,6 +600,14 @@ export default function TerminalPane({
       },
       selectAll: () => term.selectAll(),
       clear: () => term.clear(),
+      readBuffer: () => {
+        const buffer = term.buffer.active;
+        const lines: string[] = [];
+        for (let i = 0; i < buffer.length; i += 1) {
+          lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
+        }
+        return lines.join('\n');
+      },
       focus: () => term.focus(),
       search: (query, direction) => {
         if (!query) return;
