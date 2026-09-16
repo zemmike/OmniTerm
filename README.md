@@ -109,7 +109,9 @@ Windows, this is not it.
 - **Real shell execution for scripts** — one-shot commands run through your
   `$SHELL` with real exit codes and real stderr.
 - **Multi-tab sessions**, each with its own shell process, cwd and scrollback
-  (10k lines) that survives tab switches.
+  (10k lines) that survives tab switches. Reloading the UI restores the tab and
+  split-pane workspace and reconnects to the still-running PTYs; closing a tab
+  explicitly terminates every shell it owns.
 - **Split panes** — split the terminal area vertically (side by side) or
   horizontally (stacked). Each pane is an independent PTY session, panes are
   closed individually, and the layout lives per tab.
@@ -135,6 +137,10 @@ Windows, this is not it.
   browser — only `http`, `https` and `file` are ever opened, validated before
   being handed to the OS. Full-screen apps (vim, htop, tmux) receive mouse events
   when they enable mouse reporting.
+- **Clickable local paths** — click paths printed in terminal output to jump to
+  their directory or open the file in the Files tab. Absolute paths, `~/`,
+  `./`, `../`, project-relative paths and compiler locations such as
+  `src/App.tsx:42:7` are recognised.
 - **Command decorations and prompt navigation** — the OSC 133 markers the shell
   integration already installs are parsed into a per-command duration and
   exit-status decoration in the gutter, and jump-to-previous/next-prompt

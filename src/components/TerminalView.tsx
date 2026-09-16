@@ -15,6 +15,7 @@ import TerminalPane, { PaneApi } from './TerminalPane';
 import { TerminalTab } from '../types';
 import { useSettings } from '../settings';
 import { actionForEvent } from '../keys';
+import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
 interface Props {
   tabs: TerminalTab[];
@@ -23,6 +24,8 @@ interface Props {
   setActiveTabId: (id: string) => void;
   currentTheme?: string;
   onOpenSettings?: () => void;
+  home?: string;
+  onOpenFilePath?: (path: string) => void;
 }
 
 interface PaneState {
@@ -31,10 +34,8 @@ interface PaneState {
   title: string;
 }
 
-interface TabLayout {
+interface TabLayout extends PersistedLayout {
   panes: PaneState[];
-  orientation: 'vertical' | 'horizontal';
-  activeId: string;
 }
 
 const LAST_DIR_KEY = 'omniterm_last_dir';
@@ -60,6 +61,8 @@ export default function TerminalView({
   activeTabId,
   setActiveTabId,
   onOpenSettings,
+  home = '',
+  onOpenFilePath,
 }: Props) {
   const [settings] = useSettings();
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
@@ -86,7 +89,9 @@ export default function TerminalView({
   const chooserReturnRef = useRef<HTMLElement | null>(null);
 
   // ---- pane layout, one entry per tab: a list of panes plus an orientation
-  const [layouts, setLayouts] = useState<Record<string, TabLayout>>({});
+  const [layouts, setLayouts] = useState<Record<string, TabLayout>>(
+    () => loadWorkspace()?.layouts || {},
+  );
 
   const layoutFor = useCallback(
     (tabId: string): TabLayout => {
@@ -104,25 +109,6 @@ export default function TerminalView({
 
   const activeLayout = activeTab ? layoutFor(activeTab.id) : null;
   const activeCwd = (activeTab && (cwdByTab[activeTab.id] || activeTab.cwd)) || '';
-
-  // The app shell sizes itself with min-height, so percentage heights never
-  // resolve; measure the space we actually have or the terminal gets a
-  // zero-height box and renders nothing.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [rootH, setRootH] = useState<number | null>(null);
-  useEffect(() => {
-    const parent = rootRef.current?.parentElement;
-    if (!parent) return;
-    const measure = () => setRootH(parent.clientHeight || null);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(parent);
-    window.addEventListener('resize', measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, []);
 
   // ------------------------------------------------------- status bar (real)
   useEffect(() => {
@@ -233,6 +219,32 @@ export default function TerminalView({
 
   const closeTab = useCallback(
     (tabId: string) => {
+      // Keep the last tab (and its shell) alive, matching the hidden close
+      // button and the previous Ctrl+W behaviour.
+      if (tabs.length <= 1) return;
+      const layout = layouts[tabId] || layoutFor(tabId);
+      // Unmounting a TerminalPane only detaches its WebSocket by design. A tab
+      // closure is different: it is explicit user intent to end every shell in
+      // that tab, so reap them instead of leaving invisible PTYs behind.
+      for (const pane of layout.panes) {
+        delete apiRef.current[pane.sessionId];
+        delete shellInfo.current[pane.sessionId];
+        fetch('/api/terminal/kill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: pane.sessionId }),
+        }).catch(() => undefined);
+      }
+      setLayouts((prev) => {
+        const next = { ...prev };
+        delete next[tabId];
+        return next;
+      });
+      setCwdByTab((prev) => {
+        const next = { ...prev };
+        delete next[tabId];
+        return next;
+      });
       setTabs((prev) => {
         if (prev.length <= 1) return prev;
         const next = prev.filter((t) => t.id !== tabId);
@@ -240,8 +252,24 @@ export default function TerminalView({
         return next;
       });
     },
-    [activeTabId, setActiveTabId, setTabs],
+    [activeTabId, layoutFor, layouts, setActiveTabId, setTabs, tabs.length],
   );
+
+  // Keep only lightweight topology and cwd metadata. Scrollback remains in the
+  // live backend session and is replayed on reconnect; command content is never
+  // copied into browser storage.
+  useEffect(() => {
+    const persistedTabs = tabs.map((tab) => ({ ...tab, cwd: cwdByTab[tab.id] || tab.cwd }));
+    const persistedLayouts: Record<string, TabLayout> = {};
+    for (const tab of persistedTabs)
+      persistedLayouts[tab.id] = layouts[tab.id] || layoutFor(tab.id);
+    saveWorkspace({
+      version: 1,
+      activeTabId,
+      tabs: persistedTabs,
+      layouts: persistedLayouts,
+    });
+  }, [activeTabId, cwdByTab, layoutFor, layouts, tabs]);
 
   const cycleTab = useCallback(
     (direction: -1 | 1) => {
@@ -410,11 +438,7 @@ export default function TerminalView({
   }
 
   return (
-    <div
-      ref={rootRef}
-      className="flex flex-col bg-[#0A0A0B]"
-      style={{ height: rootH ? `${rootH}px` : 'calc(100vh - 200px)' }}
-    >
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#0A0A0B]">
       {/* ------------------------------------------------------------- tab bar */}
       <div className="flex items-center gap-1 border-b border-[#1E1E22] px-2 py-1 bg-[#0F0F10] shrink-0">
         <div
@@ -615,6 +639,8 @@ export default function TerminalView({
                         cwd={tab.cwd}
                         active={isCurrent && isActive}
                         settings={settings}
+                        home={home}
+                        onOpenFilePath={onOpenFilePath}
                         registerApi={registerApi}
                         onFocusPane={() => focusPane(tab.id, pane.sessionId)}
                         onAction={(actionId, sessionId) =>

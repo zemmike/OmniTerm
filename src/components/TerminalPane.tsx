@@ -12,6 +12,8 @@ import { OMNITERM_TOKEN, IS_DESKTOP } from '../token';
 import { terminalTheme, XtermTheme } from '../themes';
 import { TerminalSettings } from '../settings';
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { terminalFileLinks } from '../fileLinks';
+import { createPreOpenMessageQueue } from '../socketQueue';
 
 export type { XtermTheme };
 
@@ -55,6 +57,8 @@ interface Props {
   onFocusPane?: () => void;
   onAction?: (actionId: string, paneId: string) => void;
   registerApi?: (id: string, api: PaneApi | null) => void;
+  home?: string;
+  onOpenFilePath?: (path: string) => void;
 }
 
 export default function TerminalPane({
@@ -68,6 +72,8 @@ export default function TerminalPane({
   onFocusPane,
   onAction,
   registerApi,
+  home = '',
+  onOpenFilePath,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -107,6 +113,9 @@ export default function TerminalPane({
   const markersRef = useRef<IMarker[]>([]);
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
+  const cwdRef = useRef(cwd || home);
+  const homeRef = useRef(home);
+  homeRef.current = home;
 
   // A paste that is multi-line or matches a risk pattern waits here for the user
   // to read it. Nothing reaches the shell until they confirm.
@@ -174,6 +183,25 @@ export default function TerminalPane({
         openExternal(uri);
       }),
     );
+    const fileLinkProvider = term.registerLinkProvider({
+      provideLinks(bufferLineNumber, callback) {
+        const line =
+          term.buffer.active.getLine(bufferLineNumber - 1)?.translateToString(true) || '';
+        const links = terminalFileLinks(line, cwdRef.current, homeRef.current).map((link) => ({
+          range: {
+            start: { x: link.start, y: bufferLineNumber },
+            end: { x: link.end, y: bufferLineNumber },
+          },
+          text: link.text,
+          activate(event: MouseEvent) {
+            event.preventDefault();
+            onOpenFilePath?.(link.path);
+          },
+          decorations: { pointerCursor: true, underline: true },
+        }));
+        callback(links.length ? links : undefined);
+      },
+    });
 
     host.innerHTML = '';
     term.open(host);
@@ -191,12 +219,16 @@ export default function TerminalPane({
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${location.port}/term?token=${encodeURIComponent(OMNITERM_TOKEN)}`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
-
-    const send = (msg: unknown) => {
+    const outbound = createPreOpenMessageQueue<unknown>((msg) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    };
+    });
+    const send = (msg: unknown) => outbound.send(msg);
 
-    ws.onopen = () => send({ type: 'start', sessionId, cwd, cols: term.cols, rows: term.rows });
+    ws.onopen = () => {
+      // The backend requires `start` before every input/history frame. Anything
+      // typed during startup is therefore queued and flushed only after start.
+      outbound.open({ type: 'start', sessionId, cwd, cols: term.cols, rows: term.rows });
+    };
 
     ws.onmessage = (event) => {
       let msg: any;
@@ -208,6 +240,7 @@ export default function TerminalPane({
       if (msg.type === 'data') {
         term.write(msg.data);
       } else if (msg.type === 'ready') {
+        cwdRef.current = msg.cwd || cwdRef.current;
         setStatus('live');
         onReady?.({
           shell: msg.shell,
@@ -220,6 +253,7 @@ export default function TerminalPane({
         setStatus('exited');
         onExit?.(msg.exitCode);
       } else if (msg.type === 'cwd') {
+        cwdRef.current = msg.cwd || cwdRef.current;
         onCwdChange?.(msg.cwd);
       } else if (msg.type === 'history-result') {
         const pending = pendingHistory.current;
@@ -235,6 +269,7 @@ export default function TerminalPane({
           }
         }
       } else if (msg.type === 'command') {
+        cwdRef.current = msg.cwd || cwdRef.current;
         if (msg.cwd) onCwdChange?.(msg.cwd);
         decorateCommand(msg);
       } else if (msg.type === 'error') {
@@ -349,7 +384,7 @@ export default function TerminalPane({
           lineRef.current += ch;
         }
       }
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+      send({ type: 'input', data });
     });
 
     function applyHistory(direction: -1 | 1) {
@@ -578,6 +613,7 @@ export default function TerminalPane({
       dataSub.dispose();
       selSub.dispose();
       resizeSub.dispose();
+      fileLinkProvider.dispose();
       decorations.current.forEach((d) => {
         try {
           d.dispose();
@@ -595,6 +631,7 @@ export default function TerminalPane({
       decorations.current = [];
       markersRef.current = [];
       try {
+        outbound.clear();
         ws.close();
       } catch {
         /* ignore */

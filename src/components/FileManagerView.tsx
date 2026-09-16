@@ -462,7 +462,11 @@ const FILE_FILTERS: { id: FilterId; label: string; match: (s: FileStyle) => bool
   },
 ];
 
-export const FileManagerView: React.FC = () => {
+interface FileManagerViewProps {
+  openTarget?: { path: string; requestId: number } | null;
+}
+
+export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) => {
   const [cwd, setCwd] = useState<string>('');
   const [parent, setParent] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -518,8 +522,62 @@ export const FileManagerView: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    listDir();
-  }, [listDir]);
+    if (!openTarget?.path) return;
+    let cancelled = false;
+    const navigate = async () => {
+      if (dirty && selected?.path !== openTarget.path) {
+        const discard = window.confirm(
+          `Discard unsaved changes to ${selected?.name || 'the current file'} and open ${openTarget.path}?`,
+        );
+        if (!discard) return;
+      }
+      setError(null);
+      setStatus(null);
+      try {
+        // A directory succeeds directly. A file returns 400, in which case its
+        // parent listing provides the full Entry metadata used by the editor.
+        const direct = await fetch(`/api/files?path=${encodeURIComponent(openTarget.path)}`);
+        const directData = await direct.json();
+        if (cancelled) return;
+        if (direct.ok) {
+          setCwd(directData.path);
+          setParent(directData.parent);
+          setEntries(directData.entries || []);
+          setSelected(null);
+          setDirty(false);
+          setNewPath(`${directData.path}/new-file.txt`);
+          return;
+        }
+
+        const slash = openTarget.path.lastIndexOf('/');
+        const parentPath = slash > 0 ? openTarget.path.slice(0, slash) : '/';
+        const listing = await fetch(`/api/files?path=${encodeURIComponent(parentPath)}`);
+        const data = await listing.json();
+        if (!listing.ok) throw new Error(data.error || `Unable to open ${openTarget.path}`);
+        if (cancelled) return;
+        setCwd(data.path);
+        setParent(data.parent);
+        setEntries(data.entries || []);
+        setNewPath(`${data.path}/new-file.txt`);
+        const entry = (data.entries || []).find((item: Entry) => item.path === openTarget.path);
+        if (!entry) throw new Error(`Path not found: ${openTarget.path}`);
+        if (entry.type === 'directory') await listDir(entry.path);
+        else await openFile(entry);
+      } catch (err: any) {
+        if (!cancelled) setError(err.message || String(err));
+      }
+    };
+    void navigate();
+    return () => {
+      cancelled = true;
+    };
+    // A request id intentionally retriggers navigation when the same path is clicked twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTarget?.requestId]);
+
+  useEffect(() => {
+    if (!openTarget?.path) void listDir();
+  }, [listDir, openTarget?.path]);
 
   // The create-file overlay is a modal dialog: Escape closes it, and focus
   // returns to the button that opened it.

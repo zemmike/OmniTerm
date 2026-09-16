@@ -46,19 +46,6 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
     { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
   ];
 
-  // The panel switched by the primary tabs lives in App.tsx, which we do not
-  // own. To complete the tablist -> tab -> tabpanel relationship (and to give
-  // the skip link a real target) the header labels the existing <main> as the
-  // tabpanel. This only sets ARIA attributes / an id: no layout or behaviour.
-  useEffect(() => {
-    const main = document.querySelector('main');
-    if (!main) return;
-    if (!main.id) main.id = 'main-content';
-    main.setAttribute('role', 'tabpanel');
-    main.setAttribute('aria-labelledby', `nav-tab-${activeTab}`);
-    main.setAttribute('tabindex', '-1');
-  }, [activeTab]);
-
   // Escape closes whichever header popover is open and returns focus to its
   // trigger, so keyboard users are never stranded behind a menu.
   useEffect(() => {
@@ -106,7 +93,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   };
 
   return (
-    <header className="bg-[#161618] border-b border-[#2A2A2E] sticky top-0 z-50 text-[#E0E0E5] font-mono select-none">
+    <header className="shrink-0 bg-[#161618] border-b border-[#2A2A2E] sticky top-0 z-50 text-[#E0E0E5] font-mono select-none">
       {/* Skip link: first element of the shell, slides into view on focus. */}
       <a
         href="#main-content"
@@ -135,11 +122,8 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#0A0A0B] border border-[#2A2A2E] text-[10px] text-[#88888E]"
             role="status"
           >
-            <span
-              aria-hidden="true"
-              className="w-1.5 h-1.5 rounded-full bg-[#00FF41] animate-pulse"
-            />
-            <span className="text-[#00FF41]">ONLINE</span>
+            <span aria-hidden="true" className="w-1.5 h-1.5 rounded-full bg-[#00FF41]" />
+            <span className="text-[#00FF41]">LOCAL</span>
           </div>
         </div>
 

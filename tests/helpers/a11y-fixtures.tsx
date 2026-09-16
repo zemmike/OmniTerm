@@ -43,8 +43,8 @@ export interface AppShellFixtureProps {
 }
 
 /**
- * Mirrors src/App.tsx: <HeaderNavbar> followed by the <main> panel it labels as
- * the tabpanel (the header's own effect sets role/id on the first <main>).
+ * Mirrors src/App.tsx: the tabpanel is nested inside the <main> landmark so the
+ * landmark keeps valid native semantics.
  */
 export const AppShellFixture: React.FC<AppShellFixtureProps> = ({
   activeTab = 'health',
@@ -63,7 +63,9 @@ export const AppShellFixture: React.FC<AppShellFixtureProps> = ({
       markAlertsAsRead={() => undefined}
     />
     <main className="flex-1 overflow-hidden bg-[#0F0F10]">
-      <p>Panel content for {activeTab}</p>
+      <div id="main-content" role="tabpanel" aria-labelledby={`nav-tab-${activeTab}`} tabIndex={-1}>
+        <p>Panel content for {activeTab}</p>
+      </div>
     </main>
   </>
 );

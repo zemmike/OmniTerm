@@ -6,10 +6,12 @@ import { ServerHealthView } from './components/ServerHealthView';
 import { SettingsView } from './components/SettingsView';
 import { useSettings } from './settings';
 import { applyUiTheme } from './themes';
+import { loadWorkspace } from './workspace';
 
 import { TerminalTab, SystemAlert } from './types';
 
 export default function App() {
+  const [initialWorkspace] = useState(() => loadWorkspace());
   // Deep link: the desktop shell can open a specific tab (?tab=backups).
   const [activeTab, setActiveTab] = useState<string>(
     () => new URLSearchParams(window.location.search).get('tab') || 'terminal',
@@ -28,6 +30,8 @@ export default function App() {
   // round-trip time of that very request.
   const [mem, setMem] = useState<{ usedMb: number; totalMb: number; percent: number } | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
+  const [home, setHome] = useState('');
+  const [fileTarget, setFileTarget] = useState<{ path: string; requestId: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,21 +67,26 @@ export default function App() {
   }, []);
 
   // Terminal Tabs State
-  const [activeTabId, setActiveTabId] = useState<string>('tab-1');
-  const [tabs, setTabs] = useState<TerminalTab[]>([
-    {
-      id: 'tab-1',
-      title: 'Terminal',
-      osPreset: 'linux',
-      environment: 'local',
-      cwd: '',
-      // Nothing is pre-seeded: the shell, its working directory and everything it
-      // prints come from the real PTY session.
-      history: [],
-      colorTheme: 'matrix',
-      activePluginIds: [],
-    },
-  ]);
+  const [activeTabId, setActiveTabId] = useState<string>(
+    () => initialWorkspace?.activeTabId || 'tab-1',
+  );
+  const [tabs, setTabs] = useState<TerminalTab[]>(
+    () =>
+      initialWorkspace?.tabs || [
+        {
+          id: 'tab-1',
+          title: 'Terminal',
+          osPreset: 'linux',
+          environment: 'local',
+          cwd: '',
+          // Nothing is pre-seeded: the shell, its working directory and everything it
+          // prints come from the real PTY session.
+          history: [],
+          colorTheme: 'matrix',
+          activePluginIds: [],
+        },
+      ],
+  );
 
   // Alerts come from the host; there are none until something real happens.
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
@@ -93,6 +102,8 @@ export default function App() {
         // The host reports its real working directory. Nothing is written into
         // the scrollback here: the PTY session produces that for real.
         const realCwd = typeof env.cwd === 'string' ? env.cwd : '';
+        if (typeof env.home === 'string') setHome(env.home);
+        if (initialWorkspace) return;
         setTabs((prev) =>
           prev.map((t, idx) =>
             idx === 0 ? { ...t, osPreset: 'linux', title: 'Terminal', cwd: realCwd } : t,
@@ -103,14 +114,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialWorkspace]);
 
   const markAlertsAsRead = () => {
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
   };
 
   return (
-    <div className="min-h-screen bg-[#0F0F10] text-[#E0E0E5] flex flex-col font-mono selection:bg-[#00FF41] selection:text-black">
+    <div className="h-screen overflow-hidden bg-[#0F0F10] text-[#E0E0E5] flex flex-col font-mono selection:bg-[#00FF41] selection:text-black">
       {/* Top Navbar */}
       <HeaderNavbar
         activeTab={activeTab}
@@ -122,31 +133,49 @@ export default function App() {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 overflow-hidden bg-[#0F0F10]">
-        {activeTab === 'terminal' && (
-          <TerminalView
-            tabs={tabs}
-            setTabs={setTabs}
-            activeTabId={activeTabId}
-            setActiveTabId={setActiveTabId}
-            currentTheme={currentTheme}
-            onOpenSettings={() => setActiveTab('settings')}
-          />
-        )}
+      <main className="flex-1 min-h-0 overflow-hidden bg-[#0F0F10]">
+        <div
+          id="main-content"
+          role="tabpanel"
+          aria-labelledby={`nav-tab-${activeTab}`}
+          tabIndex={-1}
+          className="h-full min-h-0 overflow-hidden"
+        >
+          {activeTab === 'terminal' && (
+            <TerminalView
+              tabs={tabs}
+              setTabs={setTabs}
+              activeTabId={activeTabId}
+              setActiveTabId={setActiveTabId}
+              currentTheme={currentTheme}
+              onOpenSettings={() => setActiveTab('settings')}
+              home={home}
+              onOpenFilePath={(path) => {
+                setFileTarget({ path, requestId: Date.now() });
+                setActiveTab('files');
+              }}
+            />
+          )}
 
-        {activeTab === 'files' && <FileManagerView />}
+          {activeTab === 'files' && <FileManagerView openTarget={fileTarget} />}
 
-        {activeTab === 'health' && <ServerHealthView />}
+          {activeTab === 'health' && <ServerHealthView />}
 
-        {activeTab === 'settings' && <SettingsView />}
+          {activeTab === 'settings' && <SettingsView />}
+        </div>
       </main>
 
       {/* Persistent OmniTerm OS Status Footer */}
-      <footer className="h-7 bg-[#161618] border-t border-[#2A2A2E] flex items-center justify-between px-4 text-[11px] text-[#88888E] font-mono select-none z-40">
+      <footer className="h-7 shrink-0 bg-[#161618] border-t border-[#2A2A2E] flex items-center justify-between px-4 text-[11px] text-[#88888E] font-mono select-none z-40">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-[#00FF41]">
-            <span className="w-2 h-2 rounded-full bg-[#00FF41] animate-pulse" />
-            <span className="font-bold">CONNECTED</span>
+          <div
+            className={`flex items-center gap-1.5 ${latency === null ? 'text-[#FF5555]' : 'text-[#00FF41]'}`}
+            role="status"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${latency === null ? 'bg-[#FF5555]' : 'bg-[#00FF41] animate-pulse'}`}
+            />
+            <span className="font-bold">{latency === null ? 'OFFLINE' : 'CONNECTED'}</span>
           </div>
           <span className="text-[#2A2A2E]">|</span>
           <div>

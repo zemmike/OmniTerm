@@ -125,23 +125,6 @@ interface KnownViolation {
   why: string;
 }
 
-/**
- * `aria-allowed-role` (minor) on <main id="main-content">.
- *
- * HeaderNavbar's effect (src/components/HeaderNavbar.tsx, the one that labels the
- * panel) sets role="tabpanel" on the first <main> it finds, and src/App.tsx
- * renders the panel as <main>. HTML-ARIA does not let <main>'s landmark role be
- * overridden, so axe reports the role as inappropriate for the element.
- * FIX (in src/, one line, either side works): render the switched panel as
- * <div role="tabpanel"> in App.tsx, or stop overriding <main>'s role in the
- * header and expose the panel relationship some other way.
- */
-const KNOWN_MAIN_TABPANEL: KnownViolation = {
-  rule: 'aria-allowed-role',
-  target: '#main-content',
-  why: 'role="tabpanel" is set on <main> by HeaderNavbar; <main> may not have its role overridden',
-};
-
 /** Runs axe and prints a one-line summary (+ the full report when it fails). */
 async function audit(container: HTMLElement, label: string): Promise<AxeResults> {
   const results = await axe(container);
@@ -248,12 +231,6 @@ afterAll(() => {
 
 /* ------------------------------------------------------------ HeaderNavbar */
 
-/**
- * The header is the one component with a documented, pre-existing violation (see
- * KNOWN_MAIN_TABPANEL). Everything else about it is asserted strictly: the only
- * tolerated entry is `aria-allowed-role` on `#main-content`, and the matcher's
- * full report for it is printed on every run so the defect stays visible.
- */
 describe('HeaderNavbar', () => {
   it('app shell: tablist with roving tabindex + main tabpanel, no violations', async () => {
     const { container } = render(h(AppShellFixture, { activeTab: 'health' }));
@@ -265,13 +242,11 @@ describe('HeaderNavbar', () => {
     expect(tabs.filter((t) => t.getAttribute('tabindex') === '0')).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Skip to content' })).toBeTruthy();
 
-    // The header's effect labels <main> as the tabpanel for the active tab —
-    // which is exactly what axe flags as aria-allowed-role (see KNOWN_MAIN_TABPANEL).
     const panel = screen.getByRole('tabpanel');
     expect(panel.id).toBe('main-content');
     expect(panel.getAttribute('aria-labelledby')).toBe('nav-tab-health');
 
-    await expectNoViolations(container, 'HeaderNavbar (menus closed)', [KNOWN_MAIN_TABPANEL]);
+    await expectNoViolations(container, 'HeaderNavbar (menus closed)');
   });
 
   it('theme menu (role=menu / role=menuitem) has no new violations', async () => {
@@ -289,7 +264,7 @@ describe('HeaderNavbar', () => {
         .filter((m) => m.getAttribute('aria-current') === 'true'),
     ).toHaveLength(1);
 
-    await expectNoViolations(container, 'HeaderNavbar (theme menu open)', [KNOWN_MAIN_TABPANEL]);
+    await expectNoViolations(container, 'HeaderNavbar (theme menu open)');
   });
 
   it('alerts drawer shows the populated alert list, no new violations', async () => {
@@ -303,7 +278,7 @@ describe('HeaderNavbar', () => {
     expect(within(drawer).getByText('Command denied')).toBeTruthy();
     expect(within(drawer).getByText(`${A11Y_ALERTS.length} total`)).toBeTruthy();
 
-    await expectNoViolations(container, 'HeaderNavbar (alerts drawer open)', [KNOWN_MAIN_TABPANEL]);
+    await expectNoViolations(container, 'HeaderNavbar (alerts drawer open)');
   });
 });
 

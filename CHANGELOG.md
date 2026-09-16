@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Clickable file paths in terminal output.** Absolute, home-relative,
+  dot-relative, project-relative and bare filename links open the containing
+  directory in Files and select the file. Compiler-style `:line:column` suffixes
+  are recognised without becoming part of the filesystem path, and relative
+  paths resolve against the pane's live cwd.
+- **Terminal workspace recovery across renderer reloads.** Tab order, working
+  directories, split orientation, pane IDs and the active tab/pane are stored as
+  a small validated snapshot. Reloading reconnects to the live backend PTYs and
+  their scrollback instead of replacing the workspace with one blank tab.
+- Workspace snapshots are versioned and bounded (20 tabs, 6 panes per tab), and
+  deliberately never copy command history or scrollback into browser storage.
 - **An opt-in WebGL renderer setting** (`Settings → Experimental: WebGL renderer`),
   built on `@xterm/addon-webgl`, with a live toggle and a disposal path on context
   loss. It is **off by default**, and that is a finding rather than a default: on
@@ -17,6 +28,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window. The DOM renderer was verified painting 38 rows with all four tabs
   present in the same environment. Until it is verified on real GPU hardware, the
   faster renderer is a switch the user can try, not something we turn on for them.
+
+### Fixed
+- Up/Down history requests and keystrokes entered while the terminal socket is
+  still connecting are now queued behind the required session-start frame. An
+  early arrow press can no longer leave history navigation permanently stuck in
+  an in-flight state.
+- The application shell now uses a bounded viewport flex layout. The terminal
+  status bar and global host-status footer reserve their own height instead of
+  overlapping or clipping the bottom rows of full-screen tools such as Claude
+  Code.
+- Closing a terminal tab now terminates every PTY in that tab instead of leaving
+  invisible shells running until OmniTerm exits. Closing the final tab remains a
+  no-op so its shell is not accidentally killed.
+- The app connection badge now reports `OFFLINE` when health polling fails, and
+  the header describes the app as `LOCAL` instead of claiming an unmeasured
+  online state.
+- The primary tab panel no longer overrides the native `<main>` landmark role;
+  the real header states now pass the accessibility suite with zero violations.
+
+### Security
+- Upgraded Electron from 38 to 44.4.1, removing the published sandbox,
+  context-isolation and archive-extraction advisories reported against the
+  previous packaged runtime.
 
 ### Notes
 - Measured with CDP against the running window rather than assumed; the probe and
