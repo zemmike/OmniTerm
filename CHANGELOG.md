@@ -57,6 +57,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.10.0] - 2026-09-14
+
+### Added
+- **Resizable split panes.** Every pair of panes now has a divider between them:
+  drag it, or focus it and use the arrow keys (Shift for a bigger step). This works
+  for both orientations - side by side (`Ctrl+Shift+E`) and stacked (`Ctrl+Shift+O`) -
+  and matches the file-list divider added in 1.9.2. A drag moves only the two panes
+  either side of it, no pane can go below 12% of the split, and sizes are saved with
+  the rest of the workspace so they survive a restart. This closes the known gap
+  recorded against 1.9.2.
+
+### Implementation
+- `src/splitSizes.ts` (new): pane sizes as fractions summing to 1, with pure
+  `normalizeSizes` and `resizeNeighbours` functions so the clamping rules are
+  testable in isolation.
+- `src/components/TerminalView.tsx`: `role="separator"` dividers with
+  `aria-valuenow`/`aria-valuemin`/`aria-valuemax`, pointer capture while dragging,
+  and arrow-key resizing; panes size themselves with `flex-basis` instead of `flex-1`.
+- `src/workspace.ts`: `sizes` is persisted, and only accepted when it describes
+  exactly the panes present, so a closed pane or a hand-edited file cannot load a
+  broken layout.
+
+### Tests
+- 209 across 12 files, including 11 new cases for the split maths: equal defaults,
+  renormalising, wrong-length lists (what a closed pane leaves behind), garbage
+  values, dragging in both directions, the minimum clamp on both sides, no-op at the
+  ends, and a 200-drag sequence asserting the total stays 1.
+
+### Note
+- The pointer drag was verified by maths, build and the full suite, not by hand in a
+  running window on the build machine.
+
 ## [1.9.3] - 2026-09-14
 
 ### Fixed
@@ -500,7 +532,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...v1.10.0
 [1.9.3]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...v1.9.1
