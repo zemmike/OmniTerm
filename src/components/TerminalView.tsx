@@ -15,6 +15,7 @@ import TerminalPane, { PaneApi } from './TerminalPane';
 import { TerminalTab } from '../types';
 import { useSettings } from '../settings';
 import { actionForEvent } from '../keys';
+import { normalizeSizes, resizeNeighbours, PANE_KEY_STEP } from '../splitSizes';
 import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
 interface Props {
@@ -154,6 +155,83 @@ export default function TerminalView({
       });
     },
     [layoutFor],
+  );
+
+  // ---- resizable split panes ------------------------------------------------
+  // The divider between two panes drags, and it is keyboard-operable: a resize that
+  // only works with a mouse is not a resize for everyone.
+  const paneDrag = useRef<{
+    tabId: string;
+    index: number;
+    total: number;
+    last: number;
+    orientation: 'vertical' | 'horizontal';
+    sizes: number[];
+  } | null>(null);
+
+  const onDividerPointerDown = useCallback(
+    (
+      event: React.PointerEvent<HTMLDivElement>,
+      tabId: string,
+      layout: TabLayout,
+      index: number,
+    ) => {
+      const container = event.currentTarget.parentElement;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const total = layout.orientation === 'vertical' ? rect.width : rect.height;
+      if (!total) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      paneDrag.current = {
+        tabId,
+        index,
+        total,
+        last: layout.orientation === 'vertical' ? event.clientX : event.clientY,
+        orientation: layout.orientation,
+        sizes: normalizeSizes(layout.panes.length, layout.sizes),
+      };
+    },
+    [],
+  );
+
+  const onDividerPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = paneDrag.current;
+      if (!drag) return;
+      const position = drag.orientation === 'vertical' ? event.clientX : event.clientY;
+      const delta = (position - drag.last) / drag.total;
+      drag.last = position;
+      const next = resizeNeighbours(drag.sizes, drag.index, delta);
+      drag.sizes = next;
+      mutateLayout(drag.tabId, (l) => ({ ...l, sizes: next }));
+    },
+    [mutateLayout],
+  );
+
+  const onDividerPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!paneDrag.current) return;
+    paneDrag.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const onDividerKeyDown = useCallback(
+    (
+      event: React.KeyboardEvent<HTMLDivElement>,
+      tabId: string,
+      layout: TabLayout,
+      index: number,
+    ) => {
+      const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+      if (!keys.includes(event.key)) return;
+      const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+      const step = PANE_KEY_STEP * (event.shiftKey ? 5 : 1) * (forward ? 1 : -1);
+      event.preventDefault();
+      mutateLayout(tabId, (l) => ({
+        ...l,
+        sizes: resizeNeighbours(normalizeSizes(l.panes.length, l.sizes), index, step),
+      }));
+    },
+    [mutateLayout],
   );
 
   const splitPane = useCallback(
@@ -612,72 +690,97 @@ export default function TerminalView({
                     : 'flex flex-col w-full h-full'
                 }
               >
-                {layout.panes.map((pane, index) => {
-                  const isActive = layout.activeId === pane.sessionId;
-                  return (
-                    <div
-                      key={pane.sessionId}
-                      className="relative flex-1 min-w-0 min-h-0"
-                      style={{
-                        borderLeft:
-                          layout.orientation === 'vertical' && index > 0
-                            ? '1px solid #1E1E22'
-                            : undefined,
-                        borderTop:
-                          layout.orientation === 'horizontal' && index > 0
-                            ? '1px solid #1E1E22'
-                            : undefined,
-                        boxShadow:
-                          isActive && layout.panes.length > 1
-                            ? 'inset 0 0 0 1px var(--ui-accent)'
-                            : undefined,
-                      }}
-                      onMouseDown={() => focusPane(tab.id, pane.sessionId)}
-                    >
-                      <TerminalPane
-                        sessionId={pane.sessionId}
-                        cwd={tab.cwd}
-                        active={isCurrent && isActive}
-                        settings={settings}
-                        home={home}
-                        onOpenFilePath={onOpenFilePath}
-                        registerApi={registerApi}
-                        onFocusPane={() => focusPane(tab.id, pane.sessionId)}
-                        onAction={(actionId, sessionId) =>
-                          splitPane(
-                            tab.id,
-                            actionId === 'splitRight' ? 'vertical' : 'horizontal',
-                            sessionId,
-                          )
-                        }
-                        onReady={(info) => {
-                          shellInfo.current[pane.sessionId] = info;
-                        }}
-                        onCwdChange={(cwd) => {
-                          if (cwd) {
-                            setCwdByTab((prev) =>
-                              prev[tab.id] === cwd ? prev : { ...prev, [tab.id]: cwd },
-                            );
-                            localStorage.setItem(LAST_DIR_KEY, cwd);
-                          }
-                        }}
-                      />
-                      {layout.panes.length > 1 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            closePane(tab.id, pane.sessionId);
+                {(() => {
+                  const sizes = normalizeSizes(layout.panes.length, layout.sizes);
+                  return layout.panes.map((pane, index) => {
+                    const isActive = layout.activeId === pane.sessionId;
+                    const vertical = layout.orientation === 'vertical';
+                    return (
+                      <React.Fragment key={pane.sessionId}>
+                        {index > 0 && (
+                          <div
+                            role="separator"
+                            aria-orientation={vertical ? 'vertical' : 'horizontal'}
+                            aria-label={`Resize pane ${index} and ${index + 1}`}
+                            aria-valuemin={Math.round(PANE_KEY_STEP * 100)}
+                            aria-valuemax={100 - Math.round(PANE_KEY_STEP * 100)}
+                            aria-valuenow={Math.round(sizes[index] * 100)}
+                            tabIndex={0}
+                            onPointerDown={(event) =>
+                              onDividerPointerDown(event, tab.id, layout, index - 1)
+                            }
+                            onPointerMove={onDividerPointerMove}
+                            onPointerUp={onDividerPointerUp}
+                            onKeyDown={(event) =>
+                              onDividerKeyDown(event, tab.id, layout, index - 1)
+                            }
+                            className={
+                              vertical
+                                ? 'relative z-10 w-[5px] shrink-0 cursor-col-resize touch-none bg-[#1E1E22] hover:bg-[var(--ui-accent)] focus-visible:bg-[var(--ui-accent)] focus-visible:outline-none'
+                                : 'relative z-10 h-[5px] shrink-0 cursor-row-resize touch-none bg-[#1E1E22] hover:bg-[var(--ui-accent)] focus-visible:bg-[var(--ui-accent)] focus-visible:outline-none'
+                            }
+                          />
+                        )}
+                        <div
+                          key={pane.sessionId}
+                          className="relative min-w-0 min-h-0"
+                          style={{
+                            flexGrow: 0,
+                            flexShrink: 1,
+                            flexBasis: `${(sizes[index] * 100).toFixed(3)}%`,
+                            boxShadow:
+                              isActive && layout.panes.length > 1
+                                ? 'inset 0 0 0 1px var(--ui-accent)'
+                                : undefined,
                           }}
-                          className="absolute top-1 right-1 z-10 p-0.5 rounded bg-black/50 text-[#88888E] hover:text-[#FF5555] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
-                          title="Close pane (Ctrl+Shift+W)"
-                          aria-label="Close pane"
+                          onMouseDown={() => focusPane(tab.id, pane.sessionId)}
                         >
-                          <X aria-hidden="true" className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                          <TerminalPane
+                            sessionId={pane.sessionId}
+                            cwd={tab.cwd}
+                            active={isCurrent && isActive}
+                            settings={settings}
+                            home={home}
+                            onOpenFilePath={onOpenFilePath}
+                            registerApi={registerApi}
+                            onFocusPane={() => focusPane(tab.id, pane.sessionId)}
+                            onAction={(actionId, sessionId) =>
+                              splitPane(
+                                tab.id,
+                                actionId === 'splitRight' ? 'vertical' : 'horizontal',
+                                sessionId,
+                              )
+                            }
+                            onReady={(info) => {
+                              shellInfo.current[pane.sessionId] = info;
+                            }}
+                            onCwdChange={(cwd) => {
+                              if (cwd) {
+                                setCwdByTab((prev) =>
+                                  prev[tab.id] === cwd ? prev : { ...prev, [tab.id]: cwd },
+                                );
+                                localStorage.setItem(LAST_DIR_KEY, cwd);
+                              }
+                            }}
+                          />
+                          {layout.panes.length > 1 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                closePane(tab.id, pane.sessionId);
+                              }}
+                              className="absolute top-1 right-1 z-10 p-0.5 rounded bg-black/50 text-[#88888E] hover:text-[#FF5555] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+                              title="Close pane (Ctrl+Shift+W)"
+                              aria-label="Close pane"
+                            >
+                              <X aria-hidden="true" className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </React.Fragment>
+                    );
+                  });
+                })()}
               </div>
             </div>
           );

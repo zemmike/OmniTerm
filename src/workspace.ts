@@ -10,6 +10,12 @@ export interface PersistedLayout {
   panes: PersistedPane[];
   orientation: 'vertical' | 'horizontal';
   activeId: string;
+  /**
+   * Pane sizes as fractions of the split, summing to 1. Optional: layouts written
+   * before this existed (and any layout whose pane count changed) fall back to
+   * equal panes.
+   */
+  sizes?: number[];
 }
 
 export interface TerminalWorkspace {
@@ -79,10 +85,21 @@ export function parseWorkspace(raw: string | null): TerminalWorkspace | null {
       const activeId = panes.some((pane) => pane.sessionId === candidate.activeId)
         ? String(candidate.activeId)
         : panes[0].sessionId;
+      // Only keep sizes that describe exactly these panes and are usable numbers;
+      // anything else is dropped rather than loaded into a broken layout.
+      const rawSizes = Array.isArray(candidate.sizes) ? candidate.sizes : null;
+      const sizes =
+        rawSizes &&
+        rawSizes.length === panes.length &&
+        rawSizes.every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)
+          ? rawSizes
+          : undefined;
+
       layouts[tab.id] = {
         panes,
         orientation: candidate.orientation === 'horizontal' ? 'horizontal' : 'vertical',
         activeId,
+        ...(sizes ? { sizes } : {}),
       };
     }
 
