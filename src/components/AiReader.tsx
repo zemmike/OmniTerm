@@ -38,7 +38,12 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Escape') return;
+      // Escape belongs to the shell while the terminal (or any input) has focus: vim,
+      // less and ssh all need it. Only close when the reader is what is focused.
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('textarea, input, select, [contenteditable="true"], .xterm')) return;
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -127,7 +132,10 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
       <div
         ref={bodyRef}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        tabIndex={0}
+        role="region"
+        aria-label="Reader content"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
         style={{ fontSize: `${13 * scale}px`, lineHeight: 1.65 }}
       >
         {blocks.length === 0 ? (
@@ -158,6 +166,8 @@ function ReaderBlockView({
   block: ReaderBlock;
   scale: number;
   onOpenPath?: (path: string) => void;
+  // React 19 passes `key` through as a normal prop, so it has to be accepted here.
+  // It is destructured (and ignored) purely so it is not spread onto the DOM node.
   key?: React.Key;
 }) {
   switch (block.kind) {

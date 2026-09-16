@@ -40,8 +40,10 @@ export default tseslint.config(
 
   // Terminal escape-sequence parsing legitimately matches the control bytes
   // \x1b (ESC) and \x07 (BEL) — no-control-regex would flag every OSC parser.
+  // pty.ts parses the shell's live output stream; src/readerMarkdown.ts strips ANSI
+  // and OSC from captured pane text before it is rendered as prose.
   {
-    files: ['pty.ts', 'scripts/pty-socket-test.cjs'],
+    files: ['pty.ts', 'src/readerMarkdown.ts', 'scripts/pty-socket-test.cjs'],
     rules: {
       'no-control-regex': 'off',
     },

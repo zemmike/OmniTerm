@@ -169,19 +169,31 @@ export function parseReaderText(raw: string): ReaderBlock[] {
 }
 
 /**
- * Does this line look like a path worth making clickable?
+ * Does this token look like a path worth making clickable?
  *
- * Absolute paths, ./ and ../ relative paths, and bare filenames with a known
- * extension. Deliberately conservative: a wrong click target is worse than a missing
- * one, so `README` alone is not a path (it is far more often a word).
+ * Absolute paths, ./ and ../ relative paths, and names that carry a known file
+ * extension. Deliberately conservative, because a wrong click target is worse than a
+ * missing one: prose that merely contains a slash (`and/or`, `24/7`, `TCP/IP`,
+ * `was/were`) is not a path, and neither is `README` (far more often a word).
+ *
+ * The cost of that caution is that an extensionless two-segment path (`src/utils`)
+ * is not clickable; three segments (`src/components/TerminalPane.tsx`) and anything
+ * with an extension is.
  */
+const FILE_EXTENSION =
+  /\.(ts|tsx|js|jsx|json|md|py|rs|go|java|rb|sh|bash|zsh|fish|yml|yaml|toml|ini|conf|cfg|css|html|sql|txt|log|env|lock|png|jpg|svg)$/i;
+
 export function looksLikePath(candidate: string): boolean {
   if (!candidate || candidate.length > 300) return false;
-  if (/^\.{0,2}\/[\w./+-]+$/.test(candidate)) return true;
-  // A relative path with at least one slash, e.g. src/components/TerminalView.tsx
-  if (/^[\w.-]+(\/[\w.+-]+)+$/.test(candidate)) return true;
-  if (/^\/[\w./+ -]+$/.test(candidate) && candidate.includes('/')) return true;
-  return /^[\w.-]+\.(ts|tsx|js|jsx|json|md|py|rs|go|java|rb|sh|bash|zsh|fish|yml|yaml|toml|toml|ini|conf|cfg|css|html|sql|txt|log|env|lock)$/.test(
-    candidate,
-  );
+  // Paths printed by agents do not contain spaces, so prose that does is not a path.
+  if (/\s/.test(candidate)) return false;
+  // An explicit relative prefix, or a rooted path holding a real name, is enough.
+  if (/^\.{1,2}\//.test(candidate)) return true;
+  if (/^\//.test(candidate) && /\w/.test(candidate)) return true;
+
+  const segments = candidate.split('/');
+  if (segments.length === 1) return FILE_EXTENSION.test(candidate);
+  // Two segments only count when the last one is a file (`src/index.ts`) or the token
+  // reaches deeper (`src/components/TerminalView.tsx`). Two bare words are prose.
+  return FILE_EXTENSION.test(segments[segments.length - 1]) || segments.length >= 3;
 }

@@ -710,10 +710,7 @@ export default function TerminalView({
       </div>
 
       {/* ------------------------------------------------------------- panes */}
-      <div
-        className="flex-1 min-h-0 relative overflow-hidden"
-        style={{ paddingRight: readerOpen ? '42%' : undefined }}
-      >
+      <div className={`flex-1 min-h-0 relative overflow-hidden ${readerOpen ? 'sm:pr-[42%]' : ''}`}>
         {tabs.map((tab) => {
           const layout = layouts[tab.id] || layoutFor(tab.id);
           const isCurrent = tab.id === activeTabId;

@@ -131,4 +131,27 @@ describe('looksLikePath', () => {
     expect(looksLikePath('e.g.')).toBe(false);
     expect(looksLikePath('')).toBe(false);
   });
+
+  // Prose is full of `x/y` shapes. Every one of these used to become a clickable
+  // "path" that opened the Files tab.
+  it('refuses a slash in ordinary prose', () => {
+    expect(looksLikePath('and/or')).toBe(false);
+    expect(looksLikePath('24/7')).toBe(false);
+    expect(looksLikePath('TCP/IP')).toBe(false);
+    expect(looksLikePath('read/write')).toBe(false);
+    expect(looksLikePath('client/server')).toBe(false);
+    expect(looksLikePath('was/were')).toBe(false);
+    expect(looksLikePath('5/10')).toBe(false);
+    expect(looksLikePath('N/A')).toBe(false);
+  });
+
+  it('still accepts two segments when the last one is a file', () => {
+    expect(looksLikePath('src/index.ts')).toBe(true);
+    expect(looksLikePath('tests/helpers')).toBe(false); // extensionless dir: too risky
+    expect(looksLikePath('src/components/TerminalPane.tsx')).toBe(true);
+  });
+
+  it('refuses a token containing a space', () => {
+    expect(looksLikePath('/home/my folder/app.ts')).toBe(false);
+  });
 });
