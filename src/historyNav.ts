@@ -26,10 +26,13 @@ export interface HistoryKeyInput {
   /** Ctrl, Alt, Meta or Shift held — the shell's own bindings win. */
   modifierHeld: boolean;
   /**
-   * A full-screen program (vim, less, htop) owns the screen. Arrow keys belong to
-   * it, and hijacking them is how a terminal becomes unusable.
+   * A foreground program owns the keyboard: vim, less, htop, an interactive
+   * installer, or a CLI's yes/no prompt. Arrow keys belong to it, and hijacking
+   * them is how a terminal becomes unusable. This is true while the shell reports
+   * a command running, while the alternate screen is active, or while the program
+   * has switched the arrows into application mode.
    */
-  altScreen: boolean;
+  interactiveProgram: boolean;
   /** The line currently under the cursor, trimmed. */
   prefix: string;
   /** How many history entries are already cached for this prefix. */
@@ -40,9 +43,12 @@ export interface HistoryKeyInput {
  * Decide what an arrow key should do. Pure: no DOM, no timers, no side effects.
  */
 export function decideHistoryKey(input: HistoryKeyInput): HistoryAction {
-  const { key, enabled, modifierHeld, altScreen, prefix, cachedCount } = input;
+  const { key, enabled, modifierHeld, interactiveProgram, prefix, cachedCount } = input;
 
-  if (!enabled || modifierHeld || altScreen) return { kind: 'pass' };
+  // The running-program check comes first and is never overridden by anything
+  // else: whatever the user was doing before, once a program is in control its
+  // arrow keys are not ours to take.
+  if (!enabled || modifierHeld || interactiveProgram) return { kind: 'pass' };
   if (key !== 'ArrowUp' && key !== 'ArrowDown') return { kind: 'pass' };
 
   const direction: -1 | 1 = key === 'ArrowUp' ? -1 : 1;

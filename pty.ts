@@ -332,6 +332,12 @@ function handleChunk(s: Session, chunk: string) {
   out = out.replace(OSC_RE, (_m, code: string, payload: string) => {
     if (code === '133' && payload.startsWith('C')) {
       s.startedAt = Date.now();
+      // A foreground program is now running until 133;D arrives. The renderer
+      // needs this to know that arrow keys belong to that program: an interactive
+      // prompt (an installer, a yes/no chooser, Claude Code) reads them itself and
+      // must not have them eaten by history navigation. Shell integration gives us
+      // an exact bracket for that, which no heuristic can match.
+      broadcast(s, { type: 'command-start' });
     } else if (code === '133' && payload.startsWith('D;')) {
       const rest = payload.slice(2);
       const semi = rest.indexOf(';');
@@ -347,6 +353,8 @@ function handleChunk(s: Session, chunk: string) {
       }
       if (!command) command = s.typed.trim();
       s.integrationSeen = true;
+      // The program has exited: the shell prompt owns the keyboard again.
+      broadcast(s, { type: 'command-end' });
       s.lastExit = Number.isFinite(Number(exitRaw)) ? Number(exitRaw) : null;
       s.typed = '';
       const durationMs = s.startedAt ? Date.now() - s.startedAt : null;

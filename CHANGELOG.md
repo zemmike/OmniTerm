@@ -57,6 +57,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.9.1] - 2026-09-14
+
+### Fixed
+- **Arrow keys now reach an interactive prompt.** Up/Down were being claimed by
+  history navigation while a program was running, so a yes/no chooser — Claude
+  Code's prompts, an installer, any inline CLI menu — could not be driven with the
+  keyboard. The shell integration already brackets a running command (OSC 133 `;C`
+  to `;D`), so the PTY now broadcasts that start and end and the renderer hands the
+  arrows over for the duration. The alternate screen and application-cursor-key
+  modes are checked too, which covers programs that run without shell integration.
+  History navigation resumes the moment the program exits.
+- **The terminal is ready to type as soon as it opens.** The window could be
+  visible and focused while the pane still did not hold the keyboard, so the first
+  keystrokes went nowhere until the terminal was clicked. The pane now focuses
+  itself on mount and whenever the window regains focus.
+
+### Verified
+- Arrows reach a running program: a real `cat -v` in non-canonical mode received
+  `^[[A ^[[B ^[[C` as literal bytes over the same WebSocket the UI uses, and history
+  answered again with 50 entries after that program exited.
+- Focus without a click: on a fresh launch, `document.activeElement` is
+  `xterm-helper-textarea` and `document.hasFocus()` is true.
+- 192 tests across 10 files (up from 189), typecheck, build and lint clean.
+
 ## [1.9.0] - 2026-09-14
 
 ### Added
@@ -423,7 +447,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/zemmike/OmniTerm/compare/v1.7.0...v1.8.0

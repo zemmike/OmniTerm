@@ -110,6 +110,11 @@ export default function TerminalPane({
   // past the newest entry puts it back instead of leaving an empty line.
   const historyPrefixRef = useRef('');
   const webglRef = useRef<WebglAddon | null>(null);
+  // True while the shell reports a command running (OSC 133 ;C .. ;D), which is
+  // what stops Up/Down being taken from an interactive prompt.
+  const programRunningRef = useRef(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const markersRef = useRef<IMarker[]>([]);
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
@@ -215,6 +220,15 @@ export default function TerminalPane({
     searchRef.current = search;
     if (settingsRef.current.webglRenderer) webglRef.current = enableWebgl(term);
 
+    // Ready to type straight away. The `active` effect below covers tab switches,
+    // but on first launch the window itself may not have focus yet, in which case
+    // the pane is focused and still receives nothing.
+    const refocus = () => {
+      if (activeRef.current) term.focus();
+    };
+    refocus();
+    window.addEventListener('focus', refocus);
+
     // ------------------------------------------------------------- transport
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${location.port}/term?token=${encodeURIComponent(OMNITERM_TOKEN)}`;
     const ws = new WebSocket(url);
@@ -237,9 +251,14 @@ export default function TerminalPane({
       } catch {
         return;
       }
-      if (msg.type === 'data') {
+      if (msg.type === 'command-start') {
+        programRunningRef.current = true;
+      } else if (msg.type === 'command-end') {
+        programRunningRef.current = false;
+      } else if (msg.type === 'data') {
         term.write(msg.data);
       } else if (msg.type === 'ready') {
+        programRunningRef.current = false;
         cwdRef.current = msg.cwd || cwdRef.current;
         setStatus('live');
         onReady?.({
@@ -444,7 +463,11 @@ export default function TerminalPane({
           key: event.key,
           enabled: s2.prefixHistory,
           modifierHeld: event.ctrlKey || event.altKey || event.metaKey || event.shiftKey,
-          altScreen: term.buffer.active.type === 'alternate',
+          interactiveProgram:
+            programRunningRef.current ||
+            term.buffer.active.type === 'alternate' ||
+            Boolean(term.modes?.applicationCursorKeysMode) ||
+            Boolean(term.modes?.applicationKeypadMode),
           prefix: lineRef.current.trim(),
           cachedCount: historyRef.current ? historyRef.current.length : 0,
         });
@@ -606,6 +629,7 @@ export default function TerminalPane({
       registerApi?.(sessionId, null);
       apiRef.current = null;
       observer.disconnect();
+      window.removeEventListener('focus', refocus);
       window.removeEventListener('resize', onWindowResize);
       host.removeEventListener('mousedown', onMouseDown);
       host.removeEventListener('auxclick', onAuxClick);

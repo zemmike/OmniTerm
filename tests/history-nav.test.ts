@@ -12,7 +12,7 @@ const base = {
   key: 'ArrowUp',
   enabled: true,
   modifierHeld: false,
-  altScreen: false,
+  interactiveProgram: false,
   prefix: '',
   cachedCount: 0,
 };
@@ -49,10 +49,10 @@ describe('decideHistoryKey', () => {
     });
   });
 
-  it('leaves the arrows alone while a full-screen program owns the screen', () => {
+  it('leaves the arrows alone while a program owns the keyboard', () => {
     // vim, less, htop: hijacking Up/Down there makes the terminal unusable.
-    expect(decideHistoryKey({ ...base, altScreen: true })).toEqual({ kind: 'pass' });
-    expect(decideHistoryKey({ ...base, altScreen: true, cachedCount: 5 })).toEqual({
+    expect(decideHistoryKey({ ...base, interactiveProgram: true })).toEqual({ kind: 'pass' });
+    expect(decideHistoryKey({ ...base, interactiveProgram: true, cachedCount: 5 })).toEqual({
       kind: 'pass',
     });
   });
@@ -62,6 +62,21 @@ describe('decideHistoryKey', () => {
     expect(decideHistoryKey({ ...base, modifierHeld: true, cachedCount: 5 })).toEqual({
       kind: 'pass',
     });
+  });
+
+  it('gives the arrows back the moment the program exits', () => {
+    // Same empty line, same settings: only the running-program flag differs, so the
+    // history walk resumes exactly as it was.
+    expect(decideHistoryKey({ ...base, interactiveProgram: true }).kind).toBe('pass');
+    expect(decideHistoryKey({ ...base, interactiveProgram: false }).kind).toBe('request');
+  });
+
+  it('an inline prompt that is not full-screen still keeps its arrows', () => {
+    // The reported case: a CLI yes/no chooser that renders inline, so there is no
+    // alternate screen and an empty line is exactly what the prompt looks like.
+    const input = { ...base, key: 'ArrowUp', cachedCount: 0, interactiveProgram: true };
+    expect(decideHistoryKey(input)).toEqual({ kind: 'pass' });
+    expect(decideHistoryKey({ ...input, cachedCount: 12 })).toEqual({ kind: 'pass' });
   });
 
   it('does nothing when prefix history is switched off', () => {
