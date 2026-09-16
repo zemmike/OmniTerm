@@ -166,7 +166,16 @@ export default function App() {
       </main>
 
       {/* Persistent OmniTerm OS Status Footer */}
-      <footer className="h-7 shrink-0 bg-[#161618] border-t border-[#2A2A2E] flex items-center justify-between px-4 text-[11px] text-[#88888E] font-mono select-none z-40">
+      {/* One bottom bar, not two. On the Terminal tab this app-level footer was
+          stacked directly above the terminal's own status row, which is where the
+          "two panels" impression came from; the terminal row already reports the
+          connection and the shell, so this one is hidden there and kept for the
+          tabs that have nothing of their own. */}
+      <footer
+        className={`h-7 shrink-0 bg-[#161618] border-t border-[#2A2A2E] flex items-center justify-between px-4 text-[11px] text-[#88888E] font-mono select-none z-40 ${
+          activeTab === 'terminal' ? 'hidden' : ''
+        }`}
+      >
         <div className="flex items-center gap-4">
           <div
             className={`flex items-center gap-1.5 ${latency === null ? 'text-[#FF5555]' : 'text-[#00FF41]'}`}

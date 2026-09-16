@@ -57,6 +57,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.9.3] - 2026-09-14
+
+### Fixed
+- **The terminal fills the pane instead of leaving dead space on the right.** xterm
+  derives its column count from the measured cell width, and two paths refitted
+  against the wrong font: the live settings effect fitted *before* applying the new
+  font (so changing size or family left the old column count, and a larger font left
+  the rest of the pane empty), and the first fit could run before the terminal font
+  had loaded. Refits now happen after the font options are applied, on the next
+  frame, when `document.fonts.ready` resolves, and once more shortly after.
+- **One bottom bar instead of two on the Terminal tab.** The app-level footer was
+  stacked directly above the terminal's own status row; the footer is now hidden on
+  the Terminal tab, where the terminal row already reports the connection, the shell
+  and the audit integration.
+
+### Note
+- The width fix could not be confirmed in the running window on the build machine
+  (a stale Electron instance held the single-instance lock and the debug port never
+  opened), so it is verified by build, typecheck and the full test suite only. Worth
+  a look on a real desktop.
+
 ## [1.9.2] - 2026-09-14
 
 ### Fixed
@@ -476,7 +497,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...HEAD
+[1.9.3]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...v1.9.0

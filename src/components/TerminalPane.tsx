@@ -210,10 +210,32 @@ export default function TerminalPane({
 
     host.innerHTML = '';
     term.open(host);
+    /**
+     * Re-fit against the *rendered* font.
+     *
+     * The first fit can run before the terminal font has loaded. xterm measures the
+     * cell width from whatever font is active, so a fallback font measures wider
+     * than the real one, the column count comes out too low, and the pane is left
+     * with dead space on the right that never corrects itself because nothing
+     * resizes afterwards. Fitting again on the next frame, when the font is ready,
+     * and shortly after, closes that gap.
+     */
+    const refit = () => {
+      try {
+        fit.fit();
+      } catch {
+        /* layout not ready yet */
+      }
+    };
     try {
       fit.fit();
     } catch {
       /* container not laid out yet — the ResizeObserver below will retry */
+    }
+    const refitFrame = requestAnimationFrame(refit);
+    const refitTimer = window.setTimeout(refit, 400);
+    if (typeof document.fonts?.ready?.then === 'function') {
+      void document.fonts.ready.then(refit);
     }
     termRef.current = term;
     fitRef.current = fit;
@@ -630,6 +652,8 @@ export default function TerminalPane({
       apiRef.current = null;
       observer.disconnect();
       window.removeEventListener('focus', refocus);
+      cancelAnimationFrame(refitFrame);
+      clearTimeout(refitTimer);
       window.removeEventListener('resize', onWindowResize);
       host.removeEventListener('mousedown', onMouseDown);
       host.removeEventListener('auxclick', onAuxClick);
@@ -681,6 +705,16 @@ export default function TerminalPane({
     term.options.cursorStyle = settings.cursorStyle;
     term.options.cursorBlink = settings.cursorBlink;
     term.options.scrollback = settings.scrollback;
+
+    // Refit *after* the font options, never before. xterm derives its column count
+    // from the measured cell width, so fitting first measured the old font: a bigger
+    // font left the pane with dead space on the right and a smaller one overflowed.
+    // This is the visible cause of a terminal that only uses part of its width.
+    try {
+      fitRef.current?.fit();
+    } catch {
+      /* container not laid out yet */
+    }
 
     // The renderer switches live, so the difference is measurable without
     // reopening the app.
