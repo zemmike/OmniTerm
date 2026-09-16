@@ -57,6 +57,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.9.2] - 2026-09-14
+
+### Fixed
+- **Clicking a file path in the terminal now opens it.** Navigation used to require
+  the file to appear in its parent directory listing and threw "Path not found"
+  otherwise, so a perfectly readable path was refused - for example a file the
+  listing did not return, or a name that only matched after normalisation. The
+  parent listing is now a convenience rather than a gate: if the entry is not in it,
+  the file is read directly and opened. Paths are also normalised first, so the
+  punctuation that trails a path in a sentence ("see /etc/hosts,") no longer
+  becomes part of the path.
+- **A clicked file is shown in the list.** Opening a path now sets the list filter to
+  that file's name, so the folder's other files with the same name are visible
+  instead of the opened file hiding behind an active filter.
+
+### Added
+- **The file list panel is resizable.** Drag the divider between the list and the
+  viewer, or focus it and use the arrow keys (Shift for a larger step). The width is
+  clamped to a usable range and remembered between sessions.
+
+### Tests
+- 199 across 11 files (up from 192), including new coverage for path normalisation
+  (trailing punctuation, quotes, duplicate slashes), basename/dirname splitting, and
+  the panel width clamp.
+
+### Known gap
+- **Terminal split panes are not yet resizable.** The divider work landed for the
+  Files tab only; the split-pane divider is still to do.
+
 ## [1.9.1] - 2026-09-14
 
 ### Fixed
@@ -447,7 +476,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/zemmike/OmniTerm/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/zemmike/OmniTerm/compare/v1.8.1...v1.9.0
 [1.8.1]: https://github.com/zemmike/OmniTerm/compare/v1.8.0...v1.8.1

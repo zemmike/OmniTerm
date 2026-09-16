@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  basenameOf,
+  clampListWidth,
+  dirnameOf,
+  LIST_PANEL_DEFAULT,
+  LIST_PANEL_MAX,
+  LIST_PANEL_MIN,
+  normalizeTargetPath,
+} from '../fileTarget';
+import {
   Folder,
   FileCode,
   FileText,
@@ -475,6 +484,67 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   const [dirty, setDirty] = useState(false);
   const [readOnly, setReadOnly] = useState(false);
   const [search, setSearch] = useState('');
+
+  // The file list is the one panel whose useful width depends on the project, so
+  // it is resizable and the width is remembered.
+  const [listWidth, setListWidth] = useState(() => {
+    try {
+      const stored = localStorage.getItem('omniterm:files:listWidth');
+      return stored === null ? LIST_PANEL_DEFAULT : clampListWidth(Number(stored));
+    } catch {
+      return LIST_PANEL_DEFAULT;
+    }
+  });
+  const listDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const persistListWidth = useCallback((width: number) => {
+    try {
+      localStorage.setItem('omniterm:files:listWidth', String(width));
+    } catch {
+      /* storage unavailable (private mode) */
+    }
+  }, []);
+
+  const onHandleDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      listDragRef.current = { startX: event.clientX, startWidth: listWidth };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [listWidth],
+  );
+
+  const onHandleMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = listDragRef.current;
+    if (!drag) return;
+    setListWidth(clampListWidth(drag.startWidth + (event.clientX - drag.startX)));
+  }, []);
+
+  const onHandleUp = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!listDragRef.current) return;
+      listDragRef.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      setListWidth((current) => {
+        persistListWidth(current);
+        return current;
+      });
+    },
+    [persistListWidth],
+  );
+
+  const onHandleKey = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const step = event.shiftKey ? 48 : 16;
+      setListWidth((current) => {
+        const next = clampListWidth(current + (event.key === 'ArrowRight' ? step : -step));
+        persistListWidth(next);
+        return next;
+      });
+    },
+    [persistListWidth],
+  );
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -527,16 +597,19 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
     const navigate = async () => {
       if (dirty && selected?.path !== openTarget.path) {
         const discard = window.confirm(
-          `Discard unsaved changes to ${selected?.name || 'the current file'} and open ${openTarget.path}?`,
+          `Discard unsaved changes to ${selected?.name || 'the current file'} and open ${normalizeTargetPath(openTarget.path)}?`,
         );
         if (!discard) return;
       }
       setError(null);
       setStatus(null);
+      // Paths arrive from terminal output, so they carry whatever punctuation
+      // followed them in the sentence.
+      const targetPath = normalizeTargetPath(openTarget.path);
       try {
         // A directory succeeds directly. A file returns 400, in which case its
         // parent listing provides the full Entry metadata used by the editor.
-        const direct = await fetch(`/api/files?path=${encodeURIComponent(openTarget.path)}`);
+        const direct = await fetch(`/api/files?path=${encodeURIComponent(targetPath)}`);
         const directData = await direct.json();
         if (cancelled) return;
         if (direct.ok) {
@@ -549,20 +622,43 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
           return;
         }
 
-        const slash = openTarget.path.lastIndexOf('/');
-        const parentPath = slash > 0 ? openTarget.path.slice(0, slash) : '/';
+        const parentPath = dirnameOf(targetPath);
         const listing = await fetch(`/api/files?path=${encodeURIComponent(parentPath)}`);
         const data = await listing.json();
-        if (!listing.ok) throw new Error(data.error || `Unable to open ${openTarget.path}`);
+        if (!listing.ok) throw new Error(data.error || `Unable to open ${targetPath}`);
         if (cancelled) return;
         setCwd(data.path);
         setParent(data.parent);
         setEntries(data.entries || []);
         setNewPath(`${data.path}/new-file.txt`);
-        const entry = (data.entries || []).find((item: Entry) => item.path === openTarget.path);
-        if (!entry) throw new Error(`Path not found: ${openTarget.path}`);
-        if (entry.type === 'directory') await listDir(entry.path);
-        else await openFile(entry);
+        const entry = (data.entries || []).find((item: Entry) => item.path === targetPath);
+        if (entry) {
+          if (entry.type === 'directory') {
+            await listDir(entry.path);
+          } else {
+            // Filter the list to this name, so a click shows every file with that
+            // name in the folder instead of hiding the one just opened behind an
+            // active filter.
+            setSearch(entry.name);
+            await openFile(entry);
+          }
+          return;
+        }
+
+        // Not in the listing - hidden from it, or the name only matches after
+        // normalisation. Read it directly rather than refusing a path that works.
+        const readable = await fetch(`/api/files/read?path=${encodeURIComponent(targetPath)}`);
+        if (readable.ok) {
+          setSearch(basenameOf(targetPath));
+          await openFile({
+            name: basenameOf(targetPath),
+            path: targetPath,
+            type: 'file',
+          } as Entry);
+          return;
+        }
+        const why = await readable.json().catch(() => ({}) as { error?: string });
+        throw new Error(why.error || `Path not found: ${targetPath}`);
       } catch (err: any) {
         if (!cancelled) setError(err.message || String(err));
       }
@@ -667,7 +763,26 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-125px)] bg-[#0F0F10] text-[#E0E0E5] font-mono text-xs">
       {/* Explorer */}
-      <div className="w-full md:w-96 bg-[#161618] border-r border-[#2A2A2E] flex flex-col">
+      <div
+        className="relative w-full shrink-0 md:w-[var(--list-w)] bg-[#161618] border-r border-[#2A2A2E] flex flex-col"
+        style={{ ['--list-w' as string]: `${listWidth}px` } as React.CSSProperties}
+      >
+        {/* Draggable divider. Keyboard-operable on purpose: a mouse-only resize is
+            not a resize for everyone, so it takes focus and arrow keys. */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize the file list"
+          aria-valuemin={LIST_PANEL_MIN}
+          aria-valuemax={LIST_PANEL_MAX}
+          aria-valuenow={listWidth}
+          tabIndex={0}
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+          onKeyDown={onHandleKey}
+          className="absolute -right-[3px] top-0 z-10 h-full w-[6px] cursor-col-resize touch-none hover:bg-[#00FF41]/40 focus-visible:bg-[#00FF41]/60 focus-visible:outline-none"
+        />
         <div className="p-3 border-b border-[#2A2A2E] space-y-2">
           <div className="flex items-center justify-between font-bold">
             <span className="flex items-center gap-2">
