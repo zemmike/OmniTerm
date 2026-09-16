@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dot-relative, project-relative and bare filename links open the containing
   directory in Files and select the file. Compiler-style `:line:column` suffixes
   are recognised without becoming part of the filesystem path, and relative
-  paths resolve against the pane's live cwd.
+  paths resolve against the pane's live cwd. Common extensionless project files
+  such as `Makefile`, `Dockerfile`, `LICENSE` and `README` are recognised too.
 - **Terminal workspace recovery across renderer reloads.** Tab order, working
   directories, split orientation, pane IDs and the active tab/pane are stored as
   a small validated snapshot. Reloading reconnects to the live backend PTYs and

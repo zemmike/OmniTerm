@@ -9,7 +9,7 @@ export interface TerminalFileLink {
 }
 
 const PATH_TOKEN =
-  /(?:^|[\s("'`[])((?:~\/|\.{1,2}\/|\/)[^\s"'`<>|),;\]]+|(?:[A-Za-z0-9_.@+-]+\/)+[A-Za-z0-9_.@+-]+(?::\d+(?::\d+)?)?|[A-Za-z0-9_.@+-]+\.[A-Za-z][A-Za-z0-9]{0,9}(?::\d+(?::\d+)?)?)(?=$|[\s)"'`,;\]])/g;
+  /(?:^|[\s("'`[])((?:~\/|\.{1,2}\/|\/)[^\s"'`<>|),;\]]+|(?:[A-Za-z0-9_.@+-]+\/)+[A-Za-z0-9_.@+-]+(?::\d+(?::\d+)?)?|[A-Za-z0-9_.@+-]+\.[A-Za-z][A-Za-z0-9]{0,9}(?::\d+(?::\d+)?)?|(?:Makefile|Dockerfile|Containerfile|Vagrantfile|Gemfile|Rakefile|Procfile|README|CHANGELOG|CONTRIBUTING|LICENSE|NOTICE|COPYING)(?::\d+(?::\d+)?)?)(?=$|[\s)"'`,;\]])/g;
 
 function normalizeAbsolutePath(value: string): string {
   const parts: string[] = [];

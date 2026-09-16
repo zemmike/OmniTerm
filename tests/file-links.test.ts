@@ -35,4 +35,16 @@ describe('terminal file links', () => {
       line: 12,
     });
   });
+
+  it('recognises common extensionless project files without linking ordinary words', () => {
+    const links = terminalFileLinks(
+      'Edit Dockerfile and LICENSE, then run the build',
+      '/work/project',
+      '/home/me',
+    );
+    expect(links.map((link) => link.path)).toEqual([
+      '/work/project/Dockerfile',
+      '/work/project/LICENSE',
+    ]);
+  });
 });
