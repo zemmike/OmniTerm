@@ -389,3 +389,39 @@ the same thing as a JSON `available` boolean — see
 
 For a security problem, **do not open an issue** — use the private reporting
 route in [SECURITY.md](../SECURITY.md).
+
+## The app does not start on a Wayland session
+
+Symptom, in the terminal that launched it:
+
+```
+ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:249] Missing X server or $DISPLAY
+ERROR:ui/aura/env.cc:257] The platform failed to initialize.  Exiting.
+```
+
+**Cause.** Chromium's Linux backend is chosen before OmniTerm's own code runs, and
+the default is X11. On a session that is Wayland-only — no X server and no XWayland —
+there is nothing for that backend to connect to, so the process exits during startup.
+
+**This is a known limitation, not a misconfiguration on your side.** Measured on
+Electron 44.4.1 under headless Weston: the default launch and
+`--ozone-platform-hint=auto` both end up on X11 and exit; only an explicit platform
+selection gets past that point.
+
+**Either of these gets you running:**
+
+1. Install XWayland (on Debian/Ubuntu the `xwayland` package) so an X server is
+   available. This is the path the app is verified on.
+2. Launch with the Wayland backend selected explicitly:
+
+   ```
+   omniterm --enable-features=UseOzonePlatform --ozone-platform=wayland
+   ```
+
+   **Caveat, stated plainly:** with those flags the app does select Wayland (the X11
+   error disappears), but it could not be confirmed to render and run on the build
+   machine, which has no GPU and no desktop session — it failed in GPU-process
+   initialisation there. On a real Wayland desktop it may work; it is not claimed.
+
+If you try option 2, a report either way is genuinely useful: it is the one path that
+cannot be tested where this project is built.

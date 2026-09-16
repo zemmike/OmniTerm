@@ -51,6 +51,28 @@ function log(...args) {
  * to navigate. Anything that does not parse, or points anywhere else, is false —
  * the safe answer for a privileged window.
  */
+// Wayland-only sessions (a real limitation, reported rather than papered over).
+//
+// Chromium's Linux backend is selected before this file runs, so an X11-only
+// session without XWayland fails before any JavaScript can intervene:
+//
+//   ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:249] Missing X server or $DISPLAY
+//   ERROR:ui/aura/env.cc:257] The platform failed to initialize.  Exiting.
+//
+// Measured on Electron 44.4.1 under headless Weston: the default launch and
+// --ozone-platform-hint=auto both end up on X11 and exit; only an explicit
+// --enable-features=UseOzonePlatform --ozone-platform=wayland selection gets past
+// that point. Adding those switches here does NOT help - the choice is already
+// made - so this says so plainly instead of pretending to fix it, and points at
+// docs/TROUBLESHOOTING.md, which documents the working launch flags.
+if (process.env.WAYLAND_DISPLAY && !process.env.DISPLAY) {
+  log(
+    '[main] Wayland session with no DISPLAY detected. This build needs X11 or XWayland;',
+    'launch with --enable-features=UseOzonePlatform --ozone-platform=wayland, or see',
+    'docs/TROUBLESHOOTING.md.',
+  );
+}
+
 function isLocalAppUrl(value) {
   if (!value) return false;
   let url;
