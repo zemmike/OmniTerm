@@ -186,7 +186,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "katex": "^0.18.7",
-    "lucide-react": "^0.546.0",
+    "lucide-react": "^1.46.0",
     "motion": "^12.23.24",
     "node-pty": "^1.1.0",
     "react": "^19.0.1",
