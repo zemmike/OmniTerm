@@ -335,8 +335,11 @@ describe.skipIf(!serverBuilt)(
         expect(body.success).toBe(true);
         expect(typeof body.path).toBe('string');
         expect(body.source).toBe(fixtureDir);
+        expect(body.format).toBe(process.platform === 'win32' ? 'zip' : 'tar.gz');
+        expect(typeof body.restoreHint).toBe('string');
+        expect(body.restore).toBe(body.restoreHint);
 
-        // A real tar.gz exists on disk and is non-empty.
+        // A real platform-native archive exists on disk and is non-empty.
         expect(existsSync(body.path)).toBe(true);
         const st = statSync(body.path);
         expect(st.size).toBeGreaterThan(0);

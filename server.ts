@@ -14,6 +14,7 @@ import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } fr
 import { resolveDataDir } from './platform/paths';
 import { discoverShellProfile } from './platform/shell';
 import { collectHealthSnapshot } from './platform/metrics';
+import { createSnapshot, listSnapshots } from './platform/archive';
 import {
   attachTerminalSocket,
   onPtyCommand,
@@ -840,27 +841,13 @@ app.post('/api/terminal/execute', expensiveWork, async (req, res) => {
       `(vim, top, ssh); this one-shot API runs commands without a TTY.`;
     syntaxType = 'bash';
   } else if (bin === 'backup') {
-    const destDir = BACKUP_DIR;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const archive = path.join(destDir, `snapshot-${stamp}.tar.gz`);
     try {
-      fs.mkdirSync(destDir, { recursive: true });
-      const result = spawnSync(
-        'tar',
-        ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', nextCwd, '.'],
-        { timeout: 120_000 },
-      );
-      if (result.status !== 0) {
-        output = `[OmniTerm backup] tar failed: ${(result.stderr || '').toString().trim() || `exit ${result.status}`}`;
-        status = 'error';
-      } else {
-        const sizeMb = fs.statSync(archive).size / 1048576;
-        output =
-          `[OmniTerm backup] Snapshot of ${nextCwd}\n` +
-          `Archive: ${archive}\nSize: ${sizeMb.toFixed(2)} MB\n` +
-          `Restore with: tar -xzf "${archive}" -C <target-dir>`;
-        syntaxType = 'bash';
-      }
+      const snapshot = createSnapshot(nextCwd, BACKUP_DIR);
+      output =
+        `[OmniTerm backup] Snapshot of ${nextCwd}\n` +
+        `Archive: ${snapshot.path}\nSize: ${(snapshot.sizeBytes / 1048576).toFixed(2)} MB\n` +
+        `Restore with: ${snapshot.restoreHint}`;
+      syntaxType = 'bash';
     } catch (err: any) {
       output = `[OmniTerm backup] ${err.message}`;
       status = 'error';
@@ -1127,34 +1114,24 @@ app.post('/api/alerts/mark-read', (req, res) => {
   res.json({ success: true });
 });
 
-// 6. Backups — real tar.gz snapshots under the OmniTerm data directory
+// 6. Backups — real platform-native snapshots under the OmniTerm data directory
 const BACKUP_DIR = process.env.OMNITERM_BACKUP_DIR || path.join(AUDIT_DIR, 'backups');
 
 function listBackups() {
-  try {
-    return fs
-      .readdirSync(BACKUP_DIR)
-      .filter((f) => f.endsWith('.tar.gz'))
-      .map((name) => {
-        const full = path.join(BACKUP_DIR, name);
-        const st = fs.statSync(full);
-        return {
-          id: full,
-          name,
-          path: full,
-          source: 'local tar.gz',
-          schedule: 'manual',
-          lastRun: new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 16),
-          nextRun: null,
-          targetCloud: 'local',
-          status: 'completed' as const,
-          sizeMb: Number((st.size / 1048576).toFixed(2)),
-        };
-      })
-      .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
-  } catch {
-    return [];
-  }
+  return listSnapshots(BACKUP_DIR).map((snapshot) => ({
+    id: snapshot.path,
+    name: snapshot.name,
+    path: snapshot.path,
+    source: `local ${snapshot.format}`,
+    schedule: 'manual',
+    lastRun: snapshot.modifiedAt.toISOString().replace('T', ' ').slice(0, 16),
+    nextRun: null,
+    targetCloud: 'local',
+    status: 'completed' as const,
+    sizeMb: Number((snapshot.sizeBytes / 1048576).toFixed(2)),
+    format: snapshot.format,
+    restoreHint: snapshot.restoreHint,
+  }));
 }
 
 app.get('/api/backups', (req, res) => {
@@ -1246,40 +1223,30 @@ app.delete('/api/backups', (req, res) => {
 
 app.post('/api/backups/run', expensiveWork, (req, res) => {
   const dir = resolveCwd(req.body?.cwd);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const archive = path.join(BACKUP_DIR, `snapshot-${stamp}.tar.gz`);
   try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-    const result = spawnSync(
-      'tar',
-      ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', dir, '.'],
-      { timeout: 300_000 },
-    );
-    if (result.status !== 0) {
-      pushAlert('Backup failed', `tar exited ${result.status} for ${dir}`, 'backup_failed');
-      return res
-        .status(500)
-        .json({ error: (result.stderr || '').toString().trim() || `tar exited ${result.status}` });
-    }
-    const sizeMb = Number((fs.statSync(archive).size / 1048576).toFixed(2));
+    const snapshot = createSnapshot(dir, BACKUP_DIR);
+    const sizeMb = Number((snapshot.sizeBytes / 1048576).toFixed(2));
     appendAuditLog({
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       username: os.userInfo().username,
       role: 'developer',
       action: 'BACKUP_RUN',
-      details: `Snapshot ${archive} (${sizeMb} MB) of ${dir}`,
+      details: `Snapshot ${snapshot.path} (${sizeMb} MB) of ${dir}`,
       ip: '127.0.0.1',
       severity: 'info',
     });
     res.json({
       success: true,
-      path: archive,
+      path: snapshot.path,
       sizeMb,
       source: dir,
-      restore: `tar -xzf "${archive}" -C <target-dir>`,
+      restore: snapshot.restoreHint,
+      format: snapshot.format,
+      restoreHint: snapshot.restoreHint,
     });
   } catch (err: any) {
+    pushAlert('Backup failed', `${err.message} for ${dir}`, 'backup_failed');
     res.status(500).json({ error: err.message });
   }
 });

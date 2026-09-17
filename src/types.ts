@@ -210,4 +210,6 @@ export interface BackupTask {
   targetCloud: 's3' | 'gcs' | 'dropbox' | 'local';
   status: 'idle' | 'running' | 'completed' | 'failed';
   sizeMb: number;
+  format?: 'tar.gz' | 'zip';
+  restoreHint?: string;
 }
