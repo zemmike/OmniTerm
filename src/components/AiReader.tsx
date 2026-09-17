@@ -182,12 +182,7 @@ function ReaderBlockView({
     case 'heading': {
       const size = block.level <= 1 ? 1.35 : block.level === 2 ? 1.2 : 1.08;
       const Tag = `h${Math.min(6, Math.max(1, block.level))}` as
-        | 'h1'
-        | 'h2'
-        | 'h3'
-        | 'h4'
-        | 'h5'
-        | 'h6';
+        'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       return (
         <Tag
           className="mt-4 mb-1.5 font-bold text-[#F2F2F5] first:mt-0"

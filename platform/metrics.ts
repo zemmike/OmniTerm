@@ -41,7 +41,13 @@ export interface HealthSnapshot {
   cpuCores: number;
   loadAverage: { one: number; five: number; fifteen: number };
   cpuModel: string;
-  memoryUsage: { usedMb: number; totalMb: number; freeMb: number; availableMb: number; percent: number };
+  memoryUsage: {
+    usedMb: number;
+    totalMb: number;
+    freeMb: number;
+    availableMb: number;
+    percent: number;
+  };
   diskUsage: { usedGb: number; totalGb: number; percent: number; path: string };
   networkIO: { rxKbps: number; txKbps: number; interface?: string };
   uptimeSeconds: number;
@@ -52,12 +58,26 @@ export interface HealthSnapshot {
   topMemoryProcesses: Array<Record<string, string | number>>;
   memoryByGroup: Array<Record<string, string | number>>;
   swapUsage: null | { totalMb: number; freeMb: number; usedMb: number; percent: number };
-  mounts: Array<{ path: string; device: string; fs: string; usedGb: number; totalGb: number; percent: number }>;
+  mounts: Array<{
+    path: string;
+    device: string;
+    fs: string;
+    usedGb: number;
+    totalGb: number;
+    percent: number;
+  }>;
   diskIO: null | { readKbps: number; writeKbps: number; device: string };
   perCoreCpu: Array<{ core: number; usage: number }>;
   cpuTemperature: number | null;
   capabilities: HealthCapabilities;
-  systemInfo: { os: string; arch: string; hostname: string; kernel: string; nodeVersion: string; distro: string };
+  systemInfo: {
+    os: string;
+    arch: string;
+    hostname: string;
+    kernel: string;
+    nodeVersion: string;
+    distro: string;
+  };
 }
 
 const runtimeDeps: MetricsDeps = {
@@ -157,7 +177,11 @@ function parseMeminfo(raw: string) {
 }
 
 function parsePs(raw: string, totalMb: number) {
-  const rows = raw.trim().split('\n').slice(1).map((row) => row.trim().split(/\s+/));
+  const rows = raw
+    .trim()
+    .split('\n')
+    .slice(1)
+    .map((row) => row.trim().split(/\s+/));
   const processes = rows.flatMap((cols) => {
     if (cols.length < 5) return [];
     const pid = Number(cols[0]);
@@ -178,12 +202,18 @@ function parsePs(raw: string, totalMb: number) {
   }
   return {
     top: processes.slice(0, 5),
-    memory: processes.slice().sort((a, b) => b.memory - a.memory).slice(0, 8),
-    groups: [...groups].map(([name, group]) => ({
-      name,
-      ...group,
-      percentOfRam: totalMb ? Number(((group.rssMb / totalMb) * 100).toFixed(1)) : 0,
-    })).sort((a, b) => b.rssMb - a.rssMb).slice(0, 10),
+    memory: processes
+      .slice()
+      .sort((a, b) => b.memory - a.memory)
+      .slice(0, 8),
+    groups: [...groups]
+      .map(([name, group]) => ({
+        name,
+        ...group,
+        percentOfRam: totalMb ? Number(((group.rssMb / totalMb) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.rssMb - a.rssMb)
+      .slice(0, 10),
   };
 }
 
@@ -192,7 +222,12 @@ function diskSpace(deps: MetricsDeps) {
     const stat = deps.statfs(deps.homedir());
     const totalGb = (stat.blocks * stat.bsize) / 1073741824;
     const usedGb = totalGb - (stat.bavail * stat.bsize) / 1073741824;
-    return { usedGb: Number(usedGb.toFixed(1)), totalGb: Number(totalGb.toFixed(1)), percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0, path: deps.homedir() };
+    return {
+      usedGb: Number(usedGb.toFixed(1)),
+      totalGb: Number(totalGb.toFixed(1)),
+      percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0,
+      path: deps.homedir(),
+    };
   } catch {
     return { usedGb: 0, totalGb: 0, percent: 0, path: deps.homedir() };
   }
@@ -200,11 +235,16 @@ function diskSpace(deps: MetricsDeps) {
 
 async function runPowerShell(deps: MetricsDeps, script: string) {
   const args = ['-NoProfile', '-NonInteractive', '-Command', script];
-  try { return await deps.run('pwsh.exe', args, PROBE_TIMEOUT_MS); }
-  catch { return deps.run('powershell.exe', args, PROBE_TIMEOUT_MS); }
+  try {
+    return await deps.run('pwsh.exe', args, PROBE_TIMEOUT_MS);
+  } catch {
+    return deps.run('powershell.exe', args, PROBE_TIMEOUT_MS);
+  }
 }
 
-export async function collectHealthSnapshot(deps: MetricsDeps = runtimeDeps): Promise<HealthSnapshot> {
+export async function collectHealthSnapshot(
+  deps: MetricsDeps = runtimeDeps,
+): Promise<HealthSnapshot> {
   const before = cpuSample(deps.cpus());
   await deps.sleep(150);
   const afterCpus = deps.cpus();
@@ -225,8 +265,13 @@ export async function collectHealthSnapshot(deps: MetricsDeps = runtimeDeps): Pr
   let processCount = 0;
   let activeConnections = 0;
   const capabilities: HealthCapabilities = {
-    memoryBreakdown: false, processDetails: false, mounts: false, diskIO: false,
-    perCoreCpu: false, cpuTemperature: false, networkRates: false,
+    memoryBreakdown: false,
+    processDetails: false,
+    mounts: false,
+    diskIO: false,
+    perCoreCpu: false,
+    cpuTemperature: false,
+    networkRates: false,
   };
 
   if (deps.platform === 'linux') {
@@ -236,15 +281,26 @@ export async function collectHealthSnapshot(deps: MetricsDeps = runtimeDeps): Pr
       swapUsage = memory.swap;
       availableMb = memory.breakdown.available;
       capabilities.memoryBreakdown = true;
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
     try {
-      const ps = parsePs(await deps.run('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], PROBE_TIMEOUT_MS), totalMb);
+      const ps = parsePs(
+        await deps.run('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], PROBE_TIMEOUT_MS),
+        totalMb,
+      );
       topProcesses = ps.top;
       topMemoryProcesses = ps.memory;
       memoryByGroup = ps.groups;
       capabilities.processDetails = true;
-    } catch { /* unavailable */ }
-    try { processCount = deps.readDir('/proc').filter((name) => /^\d+$/.test(name)).length; } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
+    try {
+      processCount = deps.readDir('/proc').filter((name) => /^\d+$/.test(name)).length;
+    } catch {
+      /* unavailable */
+    }
     try {
       const rows = deps.readFile('/proc/mounts').split('\n').filter(Boolean);
       const allow = /^(ext[234]|xfs|btrfs|zfs|vfat|exfat|f2fs|nfs\d?|nfs4)$/;
@@ -256,18 +312,43 @@ export async function collectHealthSnapshot(deps: MetricsDeps = runtimeDeps): Pr
           const stat = deps.statfs(target);
           const totalGb = (stat.blocks * stat.bsize) / 1073741824;
           const usedGb = totalGb - (stat.bavail * stat.bsize) / 1073741824;
-          return [{ path: target, device, fs: fsType, usedGb: Number(usedGb.toFixed(2)), totalGb: Number(totalGb.toFixed(2)), percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0 }];
-        } catch { return []; }
+          return [
+            {
+              path: target,
+              device,
+              fs: fsType,
+              usedGb: Number(usedGb.toFixed(2)),
+              totalGb: Number(totalGb.toFixed(2)),
+              percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0,
+            },
+          ];
+        } catch {
+          return [];
+        }
       });
       capabilities.mounts = true;
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
     try {
-      const disks = deps.readFile('/proc/diskstats').split('\n').filter(Boolean).map((row) => row.trim().split(/\s+/)).filter((cols) => /^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|nvme\d+n\d+|mmcblk\d+)$/.test(cols[2] || ''));
+      const disks = deps
+        .readFile('/proc/diskstats')
+        .split('\n')
+        .filter(Boolean)
+        .map((row) => row.trim().split(/\s+/))
+        .filter((cols) =>
+          /^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|nvme\d+n\d+|mmcblk\d+)$/.test(cols[2] || ''),
+        );
       if (!disks.length) throw new Error('no whole disks');
-      const device = disks.sort((a, b) => ((Number(b[5]) || 0) + (Number(b[9]) || 0)) - ((Number(a[5]) || 0) + (Number(a[9]) || 0)))[0][2];
+      const device = disks.sort(
+        (a, b) =>
+          (Number(b[5]) || 0) + (Number(b[9]) || 0) - ((Number(a[5]) || 0) + (Number(a[9]) || 0)),
+      )[0][2];
       diskIO = { readKbps: 0, writeKbps: 0, device };
       capabilities.diskIO = true;
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
     try {
       const lines = deps.readFile('/proc/net/dev').split('\n').slice(2);
       const interfaces = lines.flatMap((line) => {
@@ -280,73 +361,196 @@ export async function collectHealthSnapshot(deps: MetricsDeps = runtimeDeps): Pr
       const busiest = interfaces.sort((a, b) => b.rx + b.tx - a.rx - a.tx)[0];
       networkIO = { rxKbps: 0, txKbps: 0, interface: busiest.name };
       capabilities.networkRates = true;
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
     try {
-      for (const zone of deps.readDir('/sys/class/thermal').filter((name) => name.startsWith('thermal_zone'))) {
+      for (const zone of deps
+        .readDir('/sys/class/thermal')
+        .filter((name) => name.startsWith('thermal_zone'))) {
         const value = Number(deps.readFile(`/sys/class/thermal/${zone}/temp`).trim()) / 1000;
-        if (value > 0 && value < 150) { cpuTemperature = Number(value.toFixed(1)); capabilities.cpuTemperature = true; break; }
+        if (value > 0 && value < 150) {
+          cpuTemperature = Number(value.toFixed(1));
+          capabilities.cpuTemperature = true;
+          break;
+        }
       }
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
     try {
       for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
-        activeConnections += deps.readFile(file).trim().split('\n').slice(1).filter((line) => line.trim().split(/\s+/)[3] === '01').length;
+        activeConnections += deps
+          .readFile(file)
+          .trim()
+          .split('\n')
+          .slice(1)
+          .filter((line) => line.trim().split(/\s+/)[3] === '01').length;
       }
-    } catch { /* unavailable */ }
+    } catch {
+      /* unavailable */
+    }
   } else if (deps.platform === 'darwin') {
     try {
-      const ps = parsePs(await deps.run('ps', ['-axo', 'pid,comm,%cpu,%mem,user'], PROBE_TIMEOUT_MS), totalMb);
-      topProcesses = ps.top; topMemoryProcesses = ps.memory; memoryByGroup = ps.groups;
-      processCount = ps.memory.length; capabilities.processDetails = true;
-    } catch { /* unavailable */ }
+      const ps = parsePs(
+        await deps.run('ps', ['-axo', 'pid,comm,%cpu,%mem,user'], PROBE_TIMEOUT_MS),
+        totalMb,
+      );
+      topProcesses = ps.top;
+      topMemoryProcesses = ps.memory;
+      memoryByGroup = ps.groups;
+      processCount = ps.memory.length;
+      capabilities.processDetails = true;
+    } catch {
+      /* unavailable */
+    }
     try {
       const raw = await deps.run('df', ['-kP'], PROBE_TIMEOUT_MS);
-      mounts = raw.trim().split('\n').slice(1).flatMap((line) => {
-        const cols = line.trim().split(/\s+/); if (cols.length < 6) return [];
-        const totalGb = Number(cols[1]) / 1048576; const usedGb = Number(cols[2]) / 1048576;
-        return [{ device: cols[0], fs: '', path: cols.slice(5).join(' '), totalGb: Number(totalGb.toFixed(2)), usedGb: Number(usedGb.toFixed(2)), percent: Number(cols[4].replace('%', '')) || 0 }];
-      });
+      mounts = raw
+        .trim()
+        .split('\n')
+        .slice(1)
+        .flatMap((line) => {
+          const cols = line.trim().split(/\s+/);
+          if (cols.length < 6) return [];
+          const totalGb = Number(cols[1]) / 1048576;
+          const usedGb = Number(cols[2]) / 1048576;
+          return [
+            {
+              device: cols[0],
+              fs: '',
+              path: cols.slice(5).join(' '),
+              totalGb: Number(totalGb.toFixed(2)),
+              usedGb: Number(usedGb.toFixed(2)),
+              percent: Number(cols[4].replace('%', '')) || 0,
+            },
+          ];
+        });
       capabilities.mounts = true;
-    } catch { /* unavailable */ }
-    try { await deps.run('sysctl', ['-n', 'vm.swapusage'], PROBE_TIMEOUT_MS); } catch { /* bounded capability probe */ }
+    } catch {
+      /* unavailable */
+    }
+    try {
+      await deps.run('sysctl', ['-n', 'vm.swapusage'], PROBE_TIMEOUT_MS);
+    } catch {
+      /* bounded capability probe */
+    }
   } else if (deps.platform === 'win32') {
     const [processProbe, mountProbe, diskProbe] = await Promise.allSettled([
-      runPowerShell(deps, 'Get-CimInstance Win32_Process | Select-Object -First 10 ProcessId,Name,WorkingSetSize | ConvertTo-Json -Compress'),
-      runPowerShell(deps, 'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FileSystem,Size,FreeSpace | ConvertTo-Json -Compress'),
-      runPowerShell(deps, 'Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk | Where-Object Name -ne "_Total" | Select-Object -First 1 Name,DiskReadBytesPersec,DiskWriteBytesPersec | ConvertTo-Json -Compress'),
+      runPowerShell(
+        deps,
+        'Get-CimInstance Win32_Process | Select-Object -First 10 ProcessId,Name,WorkingSetSize | ConvertTo-Json -Compress',
+      ),
+      runPowerShell(
+        deps,
+        'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,FileSystem,Size,FreeSpace | ConvertTo-Json -Compress',
+      ),
+      runPowerShell(
+        deps,
+        'Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk | Where-Object Name -ne "_Total" | Select-Object -First 1 Name,DiskReadBytesPersec,DiskWriteBytesPersec | ConvertTo-Json -Compress',
+      ),
     ]);
     if (processProbe.status === 'fulfilled') {
       try {
         const items = ([] as any[]).concat(JSON.parse(processProbe.value));
-        topProcesses = items.map((item) => ({ pid: Number(item.ProcessId), name: String(item.Name || 'unknown'), cpu: 0, memory: Number((Number(item.WorkingSetSize || 0) / 1048576).toFixed(1)), user: '' }));
-        topMemoryProcesses = topProcesses.map((item) => ({ ...item, rssMb: item.memory, percent: totalMb ? Number(((item.memory / totalMb) * 100).toFixed(1)) : 0 }));
-        processCount = items.length; capabilities.processDetails = true;
-      } catch { /* malformed probe output */ }
+        topProcesses = items.map((item) => ({
+          pid: Number(item.ProcessId),
+          name: String(item.Name || 'unknown'),
+          cpu: 0,
+          memory: Number((Number(item.WorkingSetSize || 0) / 1048576).toFixed(1)),
+          user: '',
+        }));
+        topMemoryProcesses = topProcesses.map((item) => ({
+          ...item,
+          rssMb: item.memory,
+          percent: totalMb ? Number(((item.memory / totalMb) * 100).toFixed(1)) : 0,
+        }));
+        processCount = items.length;
+        capabilities.processDetails = true;
+      } catch {
+        /* malformed probe output */
+      }
     }
     if (mountProbe.status === 'fulfilled') {
       try {
-        mounts = ([] as any[]).concat(JSON.parse(mountProbe.value)).map((item) => { const totalGb = Number(item.Size || 0) / 1073741824; const usedGb = totalGb - Number(item.FreeSpace || 0) / 1073741824; return { path: String(item.DeviceID), device: String(item.DeviceID), fs: String(item.FileSystem || ''), totalGb: Number(totalGb.toFixed(2)), usedGb: Number(usedGb.toFixed(2)), percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0 }; });
+        mounts = ([] as any[]).concat(JSON.parse(mountProbe.value)).map((item) => {
+          const totalGb = Number(item.Size || 0) / 1073741824;
+          const usedGb = totalGb - Number(item.FreeSpace || 0) / 1073741824;
+          return {
+            path: String(item.DeviceID),
+            device: String(item.DeviceID),
+            fs: String(item.FileSystem || ''),
+            totalGb: Number(totalGb.toFixed(2)),
+            usedGb: Number(usedGb.toFixed(2)),
+            percent: totalGb ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0,
+          };
+        });
         capabilities.mounts = true;
-      } catch { /* malformed probe output */ }
+      } catch {
+        /* malformed probe output */
+      }
     }
     if (diskProbe.status === 'fulfilled') {
       try {
-        const item = JSON.parse(diskProbe.value); diskIO = { device: String(item.Name || ''), readKbps: Number((Number(item.DiskReadBytesPersec || 0) / 1024).toFixed(1)), writeKbps: Number((Number(item.DiskWriteBytesPersec || 0) / 1024).toFixed(1)) }; capabilities.diskIO = true;
-      } catch { /* malformed probe output */ }
+        const item = JSON.parse(diskProbe.value);
+        diskIO = {
+          device: String(item.Name || ''),
+          readKbps: Number((Number(item.DiskReadBytesPersec || 0) / 1024).toFixed(1)),
+          writeKbps: Number((Number(item.DiskWriteBytesPersec || 0) / 1024).toFixed(1)),
+        };
+        capabilities.diskIO = true;
+      } catch {
+        /* malformed probe output */
+      }
     }
   }
 
-  const perCoreCpu = after.cores.map((core, index) => ({ core: index, usage: percent(before.cores[index] ?? core, core) }));
+  const perCoreCpu = after.cores.map((core, index) => ({
+    core: index,
+    usage: percent(before.cores[index] ?? core, core),
+  }));
   capabilities.perCoreCpu = perCoreCpu.length > 0;
   const usedMb = Math.max(0, totalMb - availableMb);
   const load = deps.loadavg();
   return {
-    status: cpuUsage > 92 ? 'degraded' : 'healthy', cpuUsage, cpuCores: afterCpus.length,
-    loadAverage: { one: Number(load[0].toFixed(2)), five: Number(load[1].toFixed(2)), fifteen: Number(load[2].toFixed(2)) },
+    status: cpuUsage > 92 ? 'degraded' : 'healthy',
+    cpuUsage,
+    cpuCores: afterCpus.length,
+    loadAverage: {
+      one: Number(load[0].toFixed(2)),
+      five: Number(load[1].toFixed(2)),
+      fifteen: Number(load[2].toFixed(2)),
+    },
     cpuModel: (afterCpus[0]?.model || '').trim(),
-    memoryUsage: { usedMb, totalMb, freeMb, availableMb, percent: totalMb ? Math.round((usedMb / totalMb) * 100) : 0 },
-    diskUsage: diskSpace(deps), networkIO, uptimeSeconds: Math.floor(deps.uptime()), processCount,
-    activeConnections, topProcesses, memoryBreakdown, topMemoryProcesses, memoryByGroup, swapUsage,
-    mounts, diskIO, perCoreCpu, cpuTemperature, capabilities,
-    systemInfo: { os: `${deps.type()} ${deps.release()}`, arch: deps.arch(), hostname: deps.hostname(), kernel: deps.release(), nodeVersion: process.version, distro: process.env.OMNITERM_DISTRO || '' },
+    memoryUsage: {
+      usedMb,
+      totalMb,
+      freeMb,
+      availableMb,
+      percent: totalMb ? Math.round((usedMb / totalMb) * 100) : 0,
+    },
+    diskUsage: diskSpace(deps),
+    networkIO,
+    uptimeSeconds: Math.floor(deps.uptime()),
+    processCount,
+    activeConnections,
+    topProcesses,
+    memoryBreakdown,
+    topMemoryProcesses,
+    memoryByGroup,
+    swapUsage,
+    mounts,
+    diskIO,
+    perCoreCpu,
+    cpuTemperature,
+    capabilities,
+    systemInfo: {
+      os: `${deps.type()} ${deps.release()}`,
+      arch: deps.arch(),
+      hostname: deps.hostname(),
+      kernel: deps.release(),
+      nodeVersion: process.version,
+      distro: process.env.OMNITERM_DISTRO || '',
+    },
   };
 }

@@ -22,7 +22,7 @@ Implemented the Task 3 platform contracts and consumers on Windows. The task com
   unknown POSIX shell received `['-i']` instead of the existing `['-l', '-i']` behavior.
 - POSIX compatibility GREEN: same command -> exit 0, 9/9 passed.
 - Focused final: `npm test -- tests/platform-paths.test.ts tests/platform-shell.test.ts
-  tests/api.test.ts tests/history-nav.test.ts tests/file-search.test.ts` -> exit 0,
+tests/api.test.ts tests/history-nav.test.ts tests/file-search.test.ts` -> exit 0,
   5 files and 62 tests passed.
 - Current-platform build/PTY: `npm run build && npm run test:pty` -> exit 0. Vite,
   server, and audit verifier built; Windows PowerShell PTY reported `STAGE-5`, aliases,

@@ -113,7 +113,8 @@ function inlineMarkupAt(
   }
   if (marker === '*' || marker === '_') {
     const end = text.indexOf(marker, index + 1);
-    if (end > index + 1) return { end: end + 1, kind: 'emphasis', value: text.slice(index + 1, end) };
+    if (end > index + 1)
+      return { end: end + 1, kind: 'emphasis', value: text.slice(index + 1, end) };
   }
   return null;
 }
@@ -182,7 +183,10 @@ export function parseReaderText(raw: string): ReaderBlock[] {
   let code: { lang: string; lines: string[] } | null = null;
   let pending: string[] = [];
   const flush = () => {
-    const text = pending.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    const text = pending
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     if (text) blocks.push({ kind: 'paragraph', content: parseInlineText(text) });
     pending = [];
   };
@@ -192,7 +196,11 @@ export function parseReaderText(raw: string): ReaderBlock[] {
     const fence = FENCE.exec(line);
     if (code) {
       if (fence) {
-        blocks.push({ kind: 'code', text: dedent(code.lines.join('\n')).replace(/\s+$/, ''), lang: code.lang });
+        blocks.push({
+          kind: 'code',
+          text: dedent(code.lines.join('\n')).replace(/\s+$/, ''),
+          lang: code.lang,
+        });
         code = null;
       } else {
         code.lines.push(line);
@@ -225,7 +233,11 @@ export function parseReaderText(raw: string): ReaderBlock[] {
     const heading = HEADING.exec(line);
     if (heading) {
       flush();
-      blocks.push({ kind: 'heading', level: heading[1].length, content: parseInlineText(heading[2]) });
+      blocks.push({
+        kind: 'heading',
+        level: heading[1].length,
+        content: parseInlineText(heading[2]),
+      });
       continue;
     }
     const listItem = LIST_ITEM.exec(line);
@@ -272,7 +284,11 @@ export function parseReaderText(raw: string): ReaderBlock[] {
   }
 
   if (code) {
-    blocks.push({ kind: 'code', text: dedent(code.lines.join('\n')).replace(/\s+$/, ''), lang: code.lang });
+    blocks.push({
+      kind: 'code',
+      text: dedent(code.lines.join('\n')).replace(/\s+$/, ''),
+      lang: code.lang,
+    });
   }
   flush();
   return blocks;
@@ -284,7 +300,8 @@ export function looksLikePath(candidate: string): boolean {
   const path = candidate.replace(PATH_SUFFIX, '');
   if (!path) return false;
   if (/^[A-Za-z]:\\[^\\/:*?"<>|\r\n]+(?:\\[^\\/:*?"<>|\r\n]+)*$/.test(path)) return true;
-  if (/^\\\\[^\\/:*?"<>|\r\n]+\\[^\\/:*?"<>|\r\n]+(?:\\[^\\/:*?"<>|\r\n]+)*$/.test(path)) return true;
+  if (/^\\\\[^\\/:*?"<>|\r\n]+\\[^\\/:*?"<>|\r\n]+(?:\\[^\\/:*?"<>|\r\n]+)*$/.test(path))
+    return true;
   if (/^\.{1,2}\//.test(path)) return true;
   if (/^\//.test(path) && /\w/.test(path)) return true;
   const segments = path.split('/');

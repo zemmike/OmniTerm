@@ -64,10 +64,7 @@ describe('AI Reader', () => {
 
   it('renders tables inside a stable horizontal scroll container', () => {
     render(
-      <AiReader
-        text={'| Name | Value |\n| --- | --- |\n| alpha | $x^2$ |'}
-        onClose={() => {}}
-      />,
+      <AiReader text={'| Name | Value |\n| --- | --- |\n| alpha | $x^2$ |'} onClose={() => {}} />,
     );
 
     const container = document.querySelector('.reader-table');
@@ -81,7 +78,9 @@ describe('AI Reader', () => {
     render(
       <div style={{ width: '240px' }}>
         <AiReader
-          text={'A long formula: $\\displaystyle \\sum_{n=1}^{100000} \\frac{n^2 + n + 1}{n^3 + 2n^2 + 3n + 4}$'}
+          text={
+            'A long formula: $\\displaystyle \\sum_{n=1}^{100000} \\frac{n^2 + n + 1}{n^3 + 2n^2 + 3n + 4}$'
+          }
           onClose={() => {}}
         />
       </div>,

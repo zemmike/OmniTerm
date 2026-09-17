@@ -385,7 +385,9 @@ describe('ServerHealthView', () => {
     expect(screen.getByRole('img', { name: /Memory breakdown/ })).toBeTruthy();
     expect(screen.getByText('MEMORY BREAKDOWN')).toBeTruthy();
     expect(screen.getByText('MOUNTED FILESYSTEMS')).toBeTruthy();
-    expect(screen.queryByText(/\/proc\/meminfo|ps --sort=-rss|statfs on \/proc\/mounts/)).toBeNull();
+    expect(
+      screen.queryByText(/\/proc\/meminfo|ps --sort=-rss|statfs on \/proc\/mounts/),
+    ).toBeNull();
     expect(stub.paths()).toContain('/api/health');
 
     await expectNoViolations(container, 'ServerHealthView (live metrics)');

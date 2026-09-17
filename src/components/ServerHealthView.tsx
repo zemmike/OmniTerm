@@ -279,9 +279,7 @@ export const ServerHealthView: React.FC = () => {
         </div>
 
         {!mem ? (
-          <div className="text-xs text-[#88888E]">
-            Unavailable on this platform
-          </div>
+          <div className="text-xs text-[#88888E]">Unavailable on this platform</div>
         ) : (
           <>
             {/* Single stacked bar: used | cache+buffers | free-available */}

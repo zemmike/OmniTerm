@@ -21,7 +21,7 @@ function findWindowsShell() {
     ? {
         stage: "Write-Output ('STAGE-' + (2 + 3))",
         aliases:
-          'Write-Output (\'ALIASES:\' + @(Get-Alias).Count + \' TYPE:\' + (Get-Alias ls).Definition)',
+          "Write-Output ('ALIASES:' + @(Get-Alias).Count + ' TYPE:' + (Get-Alias ls).Definition)",
         sleep: 'Start-Sleep -Seconds 30',
         after: "Write-Output 'AFTER-INTERRUPT'",
       }

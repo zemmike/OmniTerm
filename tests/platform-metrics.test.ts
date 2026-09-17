@@ -21,7 +21,8 @@ function fixture(platform: NodeJS.Platform): MetricsDeps {
       'SwapTotal:      2097152 kB',
       'SwapFree:       1048576 kB',
     ].join('\n'),
-    '/proc/net/dev': 'Inter-| Receive | Transmit\n face |bytes |bytes\neth0: 1000 0 0 0 0 0 0 0 2000',
+    '/proc/net/dev':
+      'Inter-| Receive | Transmit\n face |bytes |bytes\neth0: 1000 0 0 0 0 0 0 0 2000',
     '/proc/net/tcp': 'header\n0: a b 01',
     '/proc/net/tcp6': 'header',
     '/proc/mounts': '/dev/sda1 / ext4 rw 0 0',
@@ -39,7 +40,7 @@ function fixture(platform: NodeJS.Platform): MetricsDeps {
     loadavg: () => [0.5, 0.4, 0.3],
     homedir: () => '/home/test',
     hostname: () => 'fixture',
-    type: () => platform === 'win32' ? 'Windows_NT' : 'Linux',
+    type: () => (platform === 'win32' ? 'Windows_NT' : 'Linux'),
     release: () => '1.0',
     arch: () => 'x64',
     version: () => 'fixture-version',
@@ -59,7 +60,10 @@ function fixture(platform: NodeJS.Platform): MetricsDeps {
       }
       throw new Error(`unexpected ${command}`);
     },
-    now: (() => { let now = 1000; return () => (now += 1000); })(),
+    now: (() => {
+      let now = 1000;
+      return () => (now += 1000);
+    })(),
     sleep: async () => {},
   };
 }
@@ -85,9 +89,15 @@ describe('collectHealthSnapshot', () => {
 
   it('reports failed Windows probes as unavailable without losing common metrics', async () => {
     const deps = fixture('win32');
-    deps.run = async () => { throw new Error('PowerShell unavailable'); };
-    deps.readFile = () => { throw new Error('no procfs'); };
-    deps.readDir = () => { throw new Error('no procfs'); };
+    deps.run = async () => {
+      throw new Error('PowerShell unavailable');
+    };
+    deps.readFile = () => {
+      throw new Error('no procfs');
+    };
+    deps.readDir = () => {
+      throw new Error('no procfs');
+    };
 
     const health = await collectHealthSnapshot(deps);
 

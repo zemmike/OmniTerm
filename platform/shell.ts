@@ -21,17 +21,17 @@ function systemWhich(platform: PlatformName): ExecutableLookup {
       windowsHide: true,
     });
     if (result.status !== 0) return null;
-    return result.stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean) || null;
+    return (
+      result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean) || null
+    );
   };
 }
 
 function shellKind(executable: string, platform: PlatformName): ShellKind {
-  const base = (platform === 'win32' ? path.win32 : path.posix)
-    .basename(executable)
-    .toLowerCase();
+  const base = (platform === 'win32' ? path.win32 : path.posix).basename(executable).toLowerCase();
   if (base.startsWith('bash')) return 'bash';
   if (base.startsWith('zsh')) return 'zsh';
   if (base.startsWith('fish')) return 'fish';
@@ -138,7 +138,10 @@ export function discoverShellProfile(options: ShellDiscoveryOptions): ShellProfi
     if (powershell) {
       const integrationScript = powershellIntegration(options.dataDir);
       return {
-        id: path.win32.basename(powershell).toLowerCase().replace(/\.exe$/, ''),
+        id: path.win32
+          .basename(powershell)
+          .toLowerCase()
+          .replace(/\.exe$/, ''),
         label: path.win32.basename(powershell).toLowerCase().startsWith('pwsh')
           ? 'PowerShell 7'
           : 'Windows PowerShell',

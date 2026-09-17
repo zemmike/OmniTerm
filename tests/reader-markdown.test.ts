@@ -59,19 +59,13 @@ describe('parseReaderText', () => {
         kind: 'list',
         ordered: false,
         start: 1,
-        items: [
-          [{ kind: 'text', value: 'first' }],
-          [{ kind: 'text', value: 'second' }],
-        ],
+        items: [[{ kind: 'text', value: 'first' }], [{ kind: 'text', value: 'second' }]],
       },
       {
         kind: 'list',
         ordered: true,
         start: 1,
-        items: [
-          [{ kind: 'text', value: 'third' }],
-          [{ kind: 'text', value: 'fourth' }],
-        ],
+        items: [[{ kind: 'text', value: 'third' }], [{ kind: 'text', value: 'fourth' }]],
       },
     ]);
   });
@@ -121,7 +115,11 @@ describe('parseReaderText', () => {
     ].join('\n');
     const blocks = parseReaderText(screen);
     expect(kinds(screen)).toEqual(['heading', 'list', 'code']);
-    expect(blocks[0]).toEqual({ kind: 'heading', level: 2, content: [{ kind: 'text', value: 'Plan' }] });
+    expect(blocks[0]).toEqual({
+      kind: 'heading',
+      level: 2,
+      content: [{ kind: 'text', value: 'Plan' }],
+    });
     expect(blocks[2]).toEqual({ kind: 'code', text: 'export const x = 1;', lang: 'ts' });
   });
 
@@ -161,12 +159,8 @@ describe('reader TeX parsing', () => {
   });
 
   it('keeps currency and unmatched display delimiters as paragraph text', () => {
-    expect(parseReaderText('Price is $20 and tax is $2.')).toMatchObject([
-      { kind: 'paragraph' },
-    ]);
-    expect(parseReaderText('$$\\frac{1}{2}')).toMatchObject([
-      { kind: 'paragraph' },
-    ]);
+    expect(parseReaderText('Price is $20 and tax is $2.')).toMatchObject([{ kind: 'paragraph' }]);
+    expect(parseReaderText('$$\\frac{1}{2}')).toMatchObject([{ kind: 'paragraph' }]);
   });
 
   it('parses parenthesized inline TeX', () => {
@@ -191,16 +185,15 @@ describe('reader structural parsing', () => {
       {
         kind: 'list',
         ordered: false,
-        items: [
-          [{ kind: 'text', value: 'one' }],
-          [{ kind: 'text', value: 'two' }],
-        ],
+        items: [[{ kind: 'text', value: 'one' }], [{ kind: 'text', value: 'two' }]],
       },
     ]);
   });
 
   it('recognises a pipe table only with a separator row', () => {
-    expect(parseReaderText('| Name | Value |\n| --- | ---: |\n| CPU | 42% |')[0].kind).toBe('table');
+    expect(parseReaderText('| Name | Value |\n| --- | ---: |\n| CPU | 42% |')[0].kind).toBe(
+      'table',
+    );
   });
 });
 

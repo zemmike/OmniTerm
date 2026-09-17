@@ -9,7 +9,10 @@ import type { ShellProfile } from '../platform/types';
 const tempDirs: string[] = [];
 const windowsPowerShell = (() => {
   if (process.platform !== 'win32') return null;
-  const result = spawnSync('where.exe', ['powershell.exe'], { encoding: 'utf8', windowsHide: true });
+  const result = spawnSync('where.exe', ['powershell.exe'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
   return result.status === 0 ? result.stdout.split(/\r?\n/).find(Boolean)?.trim() || null : null;
 })();
 
