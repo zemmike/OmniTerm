@@ -10,12 +10,14 @@ import {
   Columns2,
   Rows2,
   Terminal as TerminalIcon,
+  BookOpen,
 } from 'lucide-react';
 import TerminalPane, { PaneApi } from './TerminalPane';
 import { TerminalTab } from '../types';
 import { useSettings } from '../settings';
 import { actionForEvent } from '../keys';
 import { normalizeSizes, resizeNeighbours, PANE_KEY_STEP } from '../splitSizes';
+import AiReader from './AiReader';
 import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
 interface Props {
@@ -86,6 +88,27 @@ export default function TerminalView({
     Record<string, { shell: string; pid: number | null; integration?: string }>
   >({});
   const apiRef = useRef<Record<string, PaneApi>>({});
+
+  // ---- AI Reader -----------------------------------------------------------
+  // Off by default and remembered: the terminal stays exactly as it was unless the
+  // user asks for a readable copy of what is on screen. The PTY is never touched.
+  const [readerOpen, setReaderOpen] = useState(() => {
+    try {
+      return localStorage.getItem('omniterm:ai-reader') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [readerText, setReaderText] = useState('');
+
+  const setReader = useCallback((open: boolean) => {
+    setReaderOpen(open);
+    try {
+      localStorage.setItem('omniterm:ai-reader', open ? '1' : '0');
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
   // Element to hand focus back to when the directory chooser closes.
   const chooserReturnRef = useRef<HTMLElement | null>(null);
 
@@ -277,6 +300,18 @@ export default function TerminalView({
     if (!activeTab || !activeLayout) return null;
     return apiRef.current[activeLayout.activeId] || null;
   }, [activeTab, activeLayout]);
+
+  useEffect(() => {
+    if (!readerOpen) return;
+    const activeId = activeLayout?.activeId;
+    const read = () => {
+      const api = activeId ? apiRef.current[activeId] : undefined;
+      if (api) setReaderText(api.readBuffer());
+    };
+    read();
+    const timer = window.setInterval(read, 1200);
+    return () => window.clearInterval(timer);
+  }, [readerOpen, activeLayout?.activeId]);
 
   const registerApi = useCallback((sessionId: string, api: PaneApi | null) => {
     if (api) apiRef.current[sessionId] = api;
@@ -626,6 +661,15 @@ export default function TerminalView({
           >
             <Rows2 aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
+          <button
+            onClick={() => setReader(!readerOpen)}
+            className={`p-1 rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] ${readerOpen ? 'border-[#8AB4F8] text-[#8AB4F8]' : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'}`}
+            title="AI Reader — show this pane's output as formatted text"
+            aria-label="AI Reader"
+            aria-pressed={readerOpen}
+          >
+            <BookOpen aria-hidden="true" className="w-3.5 h-3.5" />
+          </button>
           <span className="text-[10px] text-[#55555E] ml-2 flex items-center gap-1">
             {repo?.isRepo ? (
               <>
@@ -666,7 +710,7 @@ export default function TerminalView({
       </div>
 
       {/* ------------------------------------------------------------- panes */}
-      <div className="flex-1 min-h-0 relative overflow-hidden">
+      <div className={`flex-1 min-h-0 relative overflow-hidden ${readerOpen ? 'sm:pr-[42%]' : ''}`}>
         {tabs.map((tab) => {
           const layout = layouts[tab.id] || layoutFor(tab.id);
           const isCurrent = tab.id === activeTabId;
@@ -785,6 +829,13 @@ export default function TerminalView({
             </div>
           );
         })}
+        {readerOpen && (
+          <AiReader
+            text={readerText}
+            onOpenPath={onOpenFilePath}
+            onClose={() => setReader(false)}
+          />
+        )}
       </div>
 
       {/* ---------------------------------------------------------- status bar */}
