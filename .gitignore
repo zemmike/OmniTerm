@@ -17,3 +17,6 @@ build/*
 
 # test coverage output
 .coverage-child/
+
+# isolated feature worktrees
+.worktrees/
