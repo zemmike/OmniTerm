@@ -57,6 +57,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.12.2] - 2026-09-17
+
+### Fixed
+- **Clicking a path could leave the Files tab on an empty page.** Two defects in the
+  same function. The entry was looked up with a strict path comparison, so a file the
+  API reports under a resolved path - a symlink, a different prefix - was never found
+  in the folder listing. The fallback then filtered the list to the file's name
+  unconditionally, and when the folder does not list that name (hidden files are the
+  everyday case) the filter matched nothing and the page went blank, with no error and
+  no explanation. The folder now stays visible, the entry match falls back to matching
+  by name inside the folder that was listed, and a genuine failure shows the attempted
+  path, the reason, and two ways out: search everywhere for the name, or open the
+  containing folder.
+
+### Tests
+- 256 across 16 files. The new guard in `tests/files-open-target.test.tsx` was run
+  against the unfixed code and fails there with exactly the reported symptom
+  (`Unable to find an element with the text: other.txt`), so a green run means
+  something.
+
 ## [1.12.1] - 2026-09-17
 
 ### Fixed
@@ -616,7 +636,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...HEAD
+[1.12.2]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...v1.11.1

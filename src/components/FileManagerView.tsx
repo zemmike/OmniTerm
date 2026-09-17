@@ -600,6 +600,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   );
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A click that could not be resolved. Kept so the tab can explain itself and offer
+  // the two things that actually help instead of silently showing nothing.
+  const [failedTarget, setFailedTarget] = useState<{ path: string; reason: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [kindFilter, setKindFilter] = useState<FilterId>('all');
@@ -656,6 +659,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
       }
       setError(null);
       setStatus(null);
+      setFailedTarget(null);
       // Paths arrive from terminal output, so they carry whatever punctuation
       // followed them in the sentence.
       const targetPath = normalizeTargetPath(openTarget.path);
@@ -684,7 +688,15 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
         setParent(data.parent);
         setEntries(data.entries || []);
         setNewPath(`${data.path}/new-file.txt`);
-        const entry = (data.entries || []).find((item: Entry) => item.path === targetPath);
+        const granted: Entry[] = data.entries || [];
+        const wantedName = basenameOf(targetPath);
+        // Exact path first, then by name inside the directory that was just listed.
+        // The API returns the path it resolved, so a file reached through a symlink -
+        // or printed with a different prefix - never matched on the string compare and
+        // fell through to the direct read.
+        const entry =
+          granted.find((item: Entry) => item.path === targetPath) ||
+          granted.find((item: Entry) => item.name === wantedName);
         if (entry) {
           if (entry.type === 'directory') {
             await listDir(entry.path);
@@ -702,7 +714,13 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
         // normalisation. Read it directly rather than refusing a path that works.
         const readable = await fetch(`/api/files/read?path=${encodeURIComponent(targetPath)}`);
         if (readable.ok) {
-          setSearch(basenameOf(targetPath));
+          // Only filter when the filter will match something. Filtering to a name the
+          // folder does not list is what left this tab showing an empty list: the file
+          // was open in the editor, but the list looked broken and said nothing.
+          const visible = granted.some((item) =>
+            item.name.toLowerCase().includes(wantedName.toLowerCase()),
+          );
+          setSearch(visible ? wantedName : '');
           await openFile({
             name: basenameOf(targetPath),
             path: targetPath,
@@ -713,7 +731,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
         const why = await readable.json().catch(() => ({}) as { error?: string });
         throw new Error(why.error || `Path not found: ${targetPath}`);
       } catch (err: any) {
-        if (!cancelled) setError(err.message || String(err));
+        if (cancelled) return;
+        const message = err.message || String(err);
+        setError(message);
+        setFailedTarget({ path: targetPath, reason: message });
       }
     };
     void navigate();
@@ -1008,6 +1029,41 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
           aria-label="Directory contents"
           className="flex-1 overflow-y-auto p-2 space-y-1"
         >
+          {failedTarget && (
+            <div
+              role="alert"
+              className="mb-2 rounded border border-[#FFB300]/40 bg-[#FFB300]/10 p-2.5 text-[11px] text-[#E0E0E5]"
+            >
+              <p className="font-bold text-[#FFB300]">
+                Could not open {basenameOf(failedTarget.path)}
+              </p>
+              <p className="mt-0.5 text-[#A9A9B2]">{failedTarget.reason}</p>
+              <p className="mt-0.5 break-all text-[#66666E]">{failedTarget.path}</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScope('everywhere');
+                    setSearch(basenameOf(failedTarget.path));
+                    setFailedTarget(null);
+                  }}
+                  className="rounded border border-[#2A2A2E] bg-[#202024] px-2 py-0.5 text-[10px] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                >
+                  Search everywhere for “{basenameOf(failedTarget.path)}”
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void listDir(dirnameOf(failedTarget.path));
+                    setFailedTarget(null);
+                  }}
+                  className="rounded border border-[#2A2A2E] bg-[#202024] px-2 py-0.5 text-[10px] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                >
+                  Open {dirnameOf(failedTarget.path)}
+                </button>
+              </div>
+            </div>
+          )}
           {deepHits && deepHits.length > 0 && (
             <div role="group" aria-label="Search results in subfolders" className="mb-2 space-y-1">
               <p className="px-1 text-[10px] uppercase tracking-wide text-[#55555E]">
