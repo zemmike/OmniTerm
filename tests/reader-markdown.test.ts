@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ansiToEmphasis,
   looksLikePath,
+  parseInlineText,
   parseReaderText,
   stripAnsi,
   stripTerminalFurniture,
@@ -46,27 +47,41 @@ describe('parseReaderText', () => {
   it('recognises headings by level', () => {
     const blocks = parseReaderText('# One\n## Two\n### Three');
     expect(blocks).toEqual([
-      { kind: 'heading', level: 1, text: 'One' },
-      { kind: 'heading', level: 2, text: 'Two' },
-      { kind: 'heading', level: 3, text: 'Three' },
+      { kind: 'heading', level: 1, content: [{ kind: 'text', value: 'One' }] },
+      { kind: 'heading', level: 2, content: [{ kind: 'text', value: 'Two' }] },
+      { kind: 'heading', level: 3, content: [{ kind: 'text', value: 'Three' }] },
     ]);
   });
 
-  it('recognises bullets and numbered steps, keeping the marker', () => {
+  it('groups unordered and ordered list items', () => {
     expect(parseReaderText('- first\n* second\n1. third\n2) fourth')).toEqual([
-      { kind: 'bullet', marker: '-', text: 'first' },
-      { kind: 'bullet', marker: '*', text: 'second' },
-      { kind: 'bullet', marker: '1.', text: 'third' },
-      { kind: 'bullet', marker: '2)', text: 'fourth' },
+      {
+        kind: 'list',
+        ordered: false,
+        start: 1,
+        items: [
+          [{ kind: 'text', value: 'first' }],
+          [{ kind: 'text', value: 'second' }],
+        ],
+      },
+      {
+        kind: 'list',
+        ordered: true,
+        start: 1,
+        items: [
+          [{ kind: 'text', value: 'third' }],
+          [{ kind: 'text', value: 'fourth' }],
+        ],
+      },
     ]);
   });
 
   it('collects fenced code as one block with its language', () => {
     const blocks = parseReaderText('Text before\n```ts\nconst a = 1;\nconst b = 2;\n```\nAfter');
     expect(blocks).toEqual([
-      { kind: 'text', text: 'Text before' },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'Text before' }] },
       { kind: 'code', text: 'const a = 1;\nconst b = 2;', lang: 'ts' },
-      { kind: 'text', text: 'After' },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'After' }] },
     ]);
   });
 
@@ -78,16 +93,16 @@ describe('parseReaderText', () => {
 
   it('keeps quotes separate from paragraphs', () => {
     expect(parseReaderText('> note this\nplain')).toEqual([
-      { kind: 'quote', text: 'note this' },
-      { kind: 'text', text: 'plain' },
+      { kind: 'quote', content: [{ kind: 'text', value: 'note this' }] },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'plain' }] },
     ]);
   });
 
   it('joins wrapped lines into one paragraph but honours blank lines', () => {
     const blocks = parseReaderText('one line\nwrapped second\n\nnew paragraph');
     expect(blocks).toEqual([
-      { kind: 'text', text: 'one line\nwrapped second' },
-      { kind: 'text', text: 'new paragraph' },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'one line\nwrapped second' }] },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'new paragraph' }] },
     ]);
   });
 
@@ -105,15 +120,87 @@ describe('parseReaderText', () => {
       '╰──────────────────────────────╯',
     ].join('\n');
     const blocks = parseReaderText(screen);
-    expect(kinds(screen)).toEqual(['heading', 'bullet', 'bullet', 'code']);
-    expect(blocks[0]).toEqual({ kind: 'heading', level: 2, text: 'Plan' });
-    expect(blocks[3]).toEqual({ kind: 'code', text: 'export const x = 1;', lang: 'ts' });
+    expect(kinds(screen)).toEqual(['heading', 'list', 'code']);
+    expect(blocks[0]).toEqual({ kind: 'heading', level: 2, content: [{ kind: 'text', value: 'Plan' }] });
+    expect(blocks[2]).toEqual({ kind: 'code', text: 'export const x = 1;', lang: 'ts' });
   });
 
   it('handles empty input without inventing blocks', () => {
     expect(parseReaderText('')).toEqual([]);
     expect(parseReaderText('\n\n   \n')).toEqual([]);
     expect(parseReaderText('\u001b[2J\u001b[H')).toEqual([]);
+  });
+});
+
+describe('reader TeX parsing', () => {
+  it('parses inline TeX delimited by dollars', () => {
+    expect(parseReaderText('Euler: $e^{i\\pi}+1=0$.')).toEqual([
+      {
+        kind: 'paragraph',
+        content: [
+          { kind: 'text', value: 'Euler: ' },
+          { kind: 'math', value: 'e^{i\\pi}+1=0' },
+          { kind: 'text', value: '.' },
+        ],
+      },
+    ]);
+  });
+
+  it('parses whole-line display TeX', () => {
+    expect(parseReaderText('$$\\int_0^1 x^2 dx$$')).toEqual([
+      { kind: 'math', value: '\\int_0^1 x^2 dx', display: true },
+    ]);
+  });
+
+  it('keeps currency and unmatched display delimiters as paragraph text', () => {
+    expect(parseReaderText('Price is $20 and tax is $2.')).toMatchObject([
+      { kind: 'paragraph' },
+    ]);
+    expect(parseReaderText('$$\\frac{1}{2}')).toMatchObject([
+      { kind: 'paragraph' },
+    ]);
+  });
+
+  it('parses parenthesized inline TeX', () => {
+    expect(parseInlineText('Radius \\(r^2\\)')).toEqual([
+      { kind: 'text', value: 'Radius ' },
+      { kind: 'math', value: 'r^2' },
+    ]);
+  });
+});
+
+describe('reader structural parsing', () => {
+  it('groups consecutive unordered list items', () => {
+    expect(parseReaderText('- one\n- two')).toMatchObject([
+      {
+        kind: 'list',
+        ordered: false,
+        items: [
+          [{ kind: 'text', value: 'one' }],
+          [{ kind: 'text', value: 'two' }],
+        ],
+      },
+    ]);
+  });
+
+  it('recognises a pipe table only with a separator row', () => {
+    expect(parseReaderText('| Name | Value |\n| --- | ---: |\n| CPU | 42% |')[0].kind).toBe('table');
+  });
+});
+
+describe('cross-platform reader paths', () => {
+  it('accepts Windows drive and UNC paths', () => {
+    expect(looksLikePath('C:\\work\\src\\App.tsx')).toBe(true);
+    expect(looksLikePath('\\\\server\\share\\notes.md')).toBe(true);
+    expect(looksLikePath('src/App.tsx:14:3')).toBe(true);
+    expect(parseInlineText('See src/App.tsx:14:3')).toEqual([
+      { kind: 'text', value: 'See ' },
+      { kind: 'path', value: 'src/App.tsx:14:3' },
+    ]);
+  });
+
+  it('refuses backslash prose', () => {
+    expect(looksLikePath('yes\\no')).toBe(false);
   });
 });
 
@@ -176,20 +263,30 @@ describe('headings written as bold only', () => {
   it('promotes a whole-line bold line to a heading', () => {
     // There is no `##` in agent output; the bold line is the heading.
     expect(parseReaderText('\u001b[1mFile-link parsing is fixed\u001b[0m')).toEqual([
-      { kind: 'heading', level: 2, text: 'File-link parsing is fixed' },
+      {
+        kind: 'heading',
+        level: 2,
+        content: [{ kind: 'text', value: 'File-link parsing is fixed' }],
+      },
     ]);
   });
 
   it('keeps the level when the bold text itself carries hashes', () => {
     expect(parseReaderText('\u001b[1m### Details\u001b[0m')).toEqual([
-      { kind: 'heading', level: 3, text: 'Details' },
+      { kind: 'heading', level: 3, content: [{ kind: 'text', value: 'Details' }] },
     ]);
   });
 
   it('does not promote bold inside a sentence', () => {
     const blocks = parseReaderText('This changed \u001b[1mthe parser\u001b[0m today');
     expect(blocks).toHaveLength(1);
-    expect(blocks[0].kind).toBe('text');
-    expect(blocks[0]).toMatchObject({ text: 'This changed **the parser** today' });
+    expect(blocks[0]).toEqual({
+      kind: 'paragraph',
+      content: [
+        { kind: 'text', value: 'This changed ' },
+        { kind: 'strong', value: 'the parser' },
+        { kind: 'text', value: ' today' },
+      ],
+    });
   });
 });
