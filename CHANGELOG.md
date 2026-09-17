@@ -57,6 +57,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.12.0] - 2026-09-16
+
+### Added
+- **Files tab: search beyond the folder you are in.** The filter box only knew about
+  the folder on screen, which is useless for the actual question - where is that file?
+  There is now an "Everywhere" scope beside the filter: type two or more characters and
+  it searches subfolders, showing each match with the folder it lives in. Clicking a
+  match opens that folder and selects the file. Matches carry the full path, so a
+  result is useful before you click it.
+- `GET /api/files/search` - bounded by design, because it is reachable from a local UI
+  and must never hang it: at most 200 results, 20,000 entries examined, depth 8, and it
+  does not walk into `node_modules`, `.git`, `.cache`, virtualenvs, build output or
+  coverage directories. A truncated search **says so** rather than implying it
+  finished, and it sits behind the same per-launch token as every other route (verified
+  returning 401 without one).
+- `fileSearch.ts` - the walker, as a separately testable module like `limits.ts`.
+
+### Tests
+- 249 across 14 files (up from 239), including 10 cases for the search: matches in
+  subdirectories, case-insensitivity, that skipped directories are genuinely not
+  walked, the result and visited caps reporting truncation, the depth cap, an empty
+  query, a missing directory, and directories being marked as directories.
+
 ## [1.11.1] - 2026-09-16
 
 ### Fixed
@@ -581,7 +604,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...v1.10.0

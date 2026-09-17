@@ -9,6 +9,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
+import { searchDirectory } from './fileSearch';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
 import {
   attachTerminalSocket,
@@ -1440,6 +1441,22 @@ app.get('/api/files', (req, res) => {
   try {
     const dir = String(req.query.path || req.query.dir || DEFAULT_CWD);
     res.json(listDirectory(dir));
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Find a file by name anywhere under a directory. Bounded by fileSearch.ts (result,
+// visited-entry and depth caps) because this is reachable from a local UI and must
+// never be able to hang it.
+app.get('/api/files/search', (req, res) => {
+  try {
+    const root = path.resolve(String(req.query.path || os.homedir()));
+    const query = String(req.query.q || '').trim();
+    if (query.length < 2) {
+      return res.status(400).json({ error: 'Search for at least 2 characters.' });
+    }
+    res.json(searchDirectory(root, query));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

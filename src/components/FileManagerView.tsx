@@ -31,6 +31,7 @@ import {
   Code2,
   RefreshCw,
   HardDrive,
+  FolderSearch,
 } from 'lucide-react';
 interface Entry {
   id: string;
@@ -485,6 +486,58 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   const [readOnly, setReadOnly] = useState(false);
   const [search, setSearch] = useState('');
 
+  // The filter above only knows what is on screen. "Everywhere" asks the server to
+  // walk subfolders, which is the question people actually have: where is that file?
+  const [scope, setScope] = useState<'folder' | 'everywhere'>('folder');
+  const [deepHits, setDeepHits] = useState<Array<{
+    name: string;
+    path: string;
+    isDirectory: boolean;
+    size: number;
+  }> | null>(null);
+  const [deepBusy, setDeepBusy] = useState(false);
+  const [deepNote, setDeepNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = search.trim();
+    if (scope !== 'everywhere' || q.length < 2) {
+      setDeepHits(null);
+      setDeepNote(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setDeepBusy(true);
+      try {
+        const res = await fetch(`/api/files/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setDeepHits(null);
+          setDeepNote(data.error || 'Search failed.');
+          return;
+        }
+        const hits = data.results || [];
+        setDeepHits(hits);
+        setDeepNote(
+          data.truncated
+            ? `Showing the first ${hits.length} matches — there are more.`
+            : hits.length === 0
+              ? 'Nothing found in subfolders.'
+              : null,
+        );
+      } catch {
+        if (!cancelled) setDeepNote('Search failed.');
+      } finally {
+        if (!cancelled) setDeepBusy(false);
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [search, scope]);
+
   // The file list is the one panel whose useful width depends on the project, so
   // it is resizable and the width is remembered.
   const [listWidth, setListWidth] = useState(() => {
@@ -878,6 +931,28 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
             />
           </div>
 
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setScope(scope === 'folder' ? 'everywhere' : 'folder')}
+              aria-pressed={scope === 'everywhere'}
+              title="Filter the folder you are in, or search every subfolder under your home directory"
+              className={`px-2 py-0.5 rounded border text-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41] inline-flex items-center gap-1 ${
+                scope === 'everywhere'
+                  ? 'bg-[#00FF41]/15 border-[#00FF41]/50 text-[#00FF41] font-bold'
+                  : 'bg-[#202024] border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
+              }`}
+            >
+              <FolderSearch aria-hidden="true" className="w-3 h-3" />
+              {scope === 'folder' ? 'This folder' : 'Everywhere'}
+            </button>
+            {deepBusy && <span className="text-[10px] text-[#55555E]">Searching…</span>}
+            {!deepBusy && deepHits && deepHits.length > 0 && (
+              <span className="text-[10px] text-[#88888E]">{deepHits.length} match(es)</span>
+            )}
+            {deepNote && <span className="text-[10px] text-[#FFB300]">{deepNote}</span>}
+          </div>
+
           {/* Filter chips — classified with the same helper as the rows */}
           <div
             role="group"
@@ -933,6 +1008,47 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
           aria-label="Directory contents"
           className="flex-1 overflow-y-auto p-2 space-y-1"
         >
+          {deepHits && deepHits.length > 0 && (
+            <div role="group" aria-label="Search results in subfolders" className="mb-2 space-y-1">
+              <p className="px-1 text-[10px] uppercase tracking-wide text-[#55555E]">
+                Found in subfolders
+              </p>
+              {deepHits.map((hit) => (
+                <div
+                  key={hit.path}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${hit.isDirectory ? 'Open directory' : 'Open file'} ${hit.name}`}
+                  onClick={() => {
+                    if (hit.isDirectory) void listDir(hit.path);
+                    else {
+                      void listDir(dirnameOf(hit.path));
+                      setSearch(basenameOf(hit.path));
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      if (hit.isDirectory) void listDir(hit.path);
+                      else {
+                        void listDir(dirnameOf(hit.path));
+                        setSearch(basenameOf(hit.path));
+                      }
+                    }
+                  }}
+                  className="p-2 rounded border border-[#2A2A2E]/60 bg-[#161618] hover:bg-[#202024] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                >
+                  <div className="truncate text-[#E0E0E5] flex items-center gap-1.5">
+                    <FolderSearch aria-hidden="true" className="w-3 h-3 text-[#22D3EE] shrink-0" />
+                    {hit.name}
+                  </div>
+                  <div className="truncate text-[10px] text-[#55555E] pl-4.5">
+                    {dirnameOf(hit.path)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {filtered.map(({ entry, style }) => {
             const isSelected = selected?.path === entry.path;
             return (
