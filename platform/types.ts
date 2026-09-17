@@ -8,6 +8,7 @@ export interface ShellProfile {
   executable: string;
   args: string[];
   commandArgs(command: string): string[];
+  commandWindowsVerbatimArguments?: boolean;
   kind: ShellKind;
   integration: string;
   historyFiles: string[];

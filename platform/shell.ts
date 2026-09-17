@@ -63,7 +63,7 @@ if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) {
   $script:OmniTermPreviousHistoryHandler = (Get-PSReadLineOption).AddToHistoryHandler
   Set-PSReadLineOption -AddToHistoryHandler {
     param($line)
-    [Console]::Write("\`e]133;C\`a")
+    [Console]::Write(('{0}]133;C{1}' -f [char]27, [char]7))
     if ($script:OmniTermPreviousHistoryHandler) {
       return & $script:OmniTermPreviousHistoryHandler $line
     }
@@ -73,7 +73,7 @@ if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) {
 function global:prompt {
   $omniTermSucceeded = $?
   $omniTermNativeExit = $global:LASTEXITCODE
-  $omniTermExit = if ($omniTermSucceeded) { 0 } elseif ($omniTermNativeExit -is [int]) { $omniTermNativeExit } else { 1 }
+  $omniTermExit = if ($omniTermSucceeded) { 0 } elseif ($omniTermNativeExit -is [int] -and $omniTermNativeExit -ne 0) { $omniTermNativeExit } else { 1 }
   $omniTermHistory = Get-History -Count 1 -ErrorAction SilentlyContinue
   $omniTermCommand = if ($omniTermHistory) { [string]$omniTermHistory.CommandLine } else { '' }
   $omniTermBytes = [Text.Encoding]::UTF8.GetBytes($omniTermCommand)
@@ -82,9 +82,9 @@ function global:prompt {
   if ($omniTermCwd -match '^[A-Za-z]:') { $omniTermCwd = "/$omniTermCwd" }
   $omniTermEscapedCwd = (($omniTermCwd -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
   $omniTermHostName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'localhost' }
-  [Console]::Write("\`e]133;D;$omniTermExit;$omniTermBase64\`a")
-  [Console]::Write("\`e]7;file://$omniTermHostName$omniTermEscapedCwd\`a")
-  [Console]::Write("\`e]133;A\`a")
+  [Console]::Write(('{0}]133;D;{1};{2}{3}' -f [char]27, $omniTermExit, $omniTermBase64, [char]7))
+  [Console]::Write(('{0}]7;file://{1}{2}{3}' -f [char]27, $omniTermHostName, $omniTermEscapedCwd, [char]7))
+  [Console]::Write(('{0}]133;A{1}' -f [char]27, [char]7))
   if ($script:OmniTermOriginalPrompt) { return & $script:OmniTermOriginalPrompt }
   return "PS $($executionContext.SessionState.Path.CurrentLocation)> "
 }
@@ -160,7 +160,8 @@ export function discoverShellProfile(options: ShellDiscoveryOptions): ShellProfi
       label: 'Command Prompt',
       executable: commandPrompt,
       args: ['/d'],
-      commandArgs: (command) => ['/d', '/s', '/c', command],
+      commandArgs: (command) => ['/d', '/s', '/c', `"${command}"`],
+      commandWindowsVerbatimArguments: true,
       kind: 'cmd',
       integration: 'none',
       historyFiles: [],

@@ -74,6 +74,7 @@
     "files": [
       "dist/**/*",
       "electron-main.cjs",
+      "platform/electron-data-dir.cjs",
       "preload.cjs",
       "build/icon.png",
       "package.json"

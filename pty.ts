@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { resolveDataDir } from './platform/paths';
+import { decodeFileUriPath, resolveDataDir } from './platform/paths';
 import { discoverShellProfile } from './platform/shell';
 import type { ShellProfile } from './platform/types';
 
@@ -378,8 +378,8 @@ function handleChunk(s: Session, chunk: string) {
         });
       }
     } else if (code === '7') {
-      const m = payload.match(/file:\/\/[^/]*(\/.*)$/);
-      if (m) s.cwd = decodeURIComponent(m[1]);
+      const cwd = decodeFileUriPath(payload, process.platform);
+      if (cwd) s.cwd = cwd;
     }
     return '';
   });

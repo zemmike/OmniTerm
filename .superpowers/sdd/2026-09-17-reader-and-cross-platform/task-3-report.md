@@ -77,3 +77,17 @@ Implemented the Task 3 platform contracts and consumers on Windows. The task com
 - Vite reports the existing JavaScript chunk-size warning. The generated-profile probe
   also logged a non-fatal ConPTY `AttachConsole failed` stack during teardown after all OSC
   evidence had already passed.
+
+## Review Fix Round
+
+- Electron now preserves explicit `OMNITERM_DATA_DIR`; Linux keeps an existing legacy
+  `~/.local/share/omniterm`, otherwise Electron `userData` is used.
+- Windows PowerShell 5.1 markers use real ESC/BEL characters. Failed cmdlets no longer
+  report stale exit code `0` from `$LASTEXITCODE`.
+- OSC 7 paths decode Windows drive-letter and UNC locations into native paths.
+- cmd one-shot execution uses verbatim arguments plus outer `/s /c` quoting, including
+  executable paths containing spaces.
+- Focused suite: 6 files, 70 tests passed.
+- `npm run typecheck`, `npm run build`, and `npm run test:pty` passed.
+- Full suite: 296 passed, 2 failed. Both are the existing Windows portability gaps already
+  deferred: Bash-based SSH metrics and POSIX audit mode-bit assertion.

@@ -633,6 +633,7 @@ function runShellCommand(command: string, cwd: string) {
       cwd,
       env: { ...process.env, TERM: 'xterm-256color', OMNITERM: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsVerbatimArguments: SHELL_PROFILE.commandWindowsVerbatimArguments,
     });
 
     let output = '';

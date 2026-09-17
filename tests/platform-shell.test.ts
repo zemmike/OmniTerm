@@ -1,13 +1,52 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { discoverShellProfile, type ExecutableLookup } from '../platform/shell';
+import type { ShellProfile } from '../platform/types';
 
 const tempDirs: string[] = [];
+const windowsPowerShell = (() => {
+  if (process.platform !== 'win32') return null;
+  const result = spawnSync('where.exe', ['powershell.exe'], { encoding: 'utf8', windowsHide: true });
+  return result.status === 0 ? result.stdout.split(/\r?\n/).find(Boolean)?.trim() || null : null;
+})();
 
 function fakeWhich(available: string[]): ExecutableLookup {
   return (executable) => (available.includes(executable) ? executable : null);
+}
+
+function generatedPowerShellProfile(): ShellProfile {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniterm-shell-'));
+  tempDirs.push(dataDir);
+  return discoverShellProfile({
+    platform: 'win32',
+    dataDir,
+    which: (executable) => (executable === 'powershell.exe' ? windowsPowerShell : null),
+  });
+}
+
+function runWindowsPowerShellPrompt(profile: ShellProfile, beforePrompt = '') {
+  const scriptPath = profile.args.at(-1)!;
+  const quotedScript = scriptPath.replace(/'/g, "''");
+  const result = spawnSync(
+    windowsPowerShell!,
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      [`. '${quotedScript}'`, beforePrompt, 'prompt'].filter(Boolean).join('; '),
+    ],
+    { encoding: 'buffer', timeout: 15_000, windowsHide: true },
+  );
+  const output = result.stdout.includes(0)
+    ? result.stdout.toString('utf16le')
+    : result.stdout.toString('utf8');
+  return { ...result, output };
 }
 
 afterEach(() => {
@@ -77,7 +116,7 @@ describe('discoverShellProfile', () => {
       '-Command',
       'Write-Output ok',
     ]);
-    expect(cmd.commandArgs('echo ok')).toEqual(['/d', '/s', '/c', 'echo ok']);
+    expect(cmd.commandArgs('echo ok')).toEqual(['/d', '/s', '/c', '"echo ok"']);
     expect(bash.commandArgs('printf ok')).toEqual(['-lc', 'printf ok']);
   });
 
@@ -141,4 +180,50 @@ describe('discoverShellProfile', () => {
     expect(script).toContain(']133;C');
     expect(script).toContain(']133;D;');
   });
+
+  it.runIf(Boolean(windowsPowerShell))('emits real ESC bytes in Windows PowerShell 5.1', () => {
+    const result = runWindowsPowerShellPrompt(generatedPowerShellProfile());
+
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('\u001b]133;D;');
+  });
+
+  it.runIf(Boolean(windowsPowerShell))(
+    'reports a nonzero status when a PowerShell cmdlet fails after LASTEXITCODE was zero',
+    () => {
+      const result = runWindowsPowerShellPrompt(
+        generatedPowerShellProfile(),
+        "$global:LASTEXITCODE = 0; Get-Item 'Z:\\omniterm-missing' -ErrorAction SilentlyContinue",
+      );
+      const marker = result.output.match(/\u001b\]133;D;(\d+);/);
+
+      expect(result.status).toBe(0);
+      expect(marker?.[1]).toBeDefined();
+      expect(marker?.[1]).not.toBe('0');
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'runs a quoted cmd executable path containing spaces',
+    () => {
+      const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniterm cmd '));
+      tempDirs.push(dataDir);
+      const scriptPath = path.join(dataDir, 'quoted tool.cmd');
+      fs.writeFileSync(scriptPath, '@echo off\r\necho CMD-QUOTED-OK:%1\r\n');
+      const profile = discoverShellProfile({
+        platform: 'win32',
+        which: (executable) => (executable === 'cmd.exe' ? 'cmd.exe' : null),
+      });
+
+      const command = `"${scriptPath}" value`;
+      const result = spawnSync(profile.executable, profile.commandArgs(command), {
+        encoding: 'utf8',
+        windowsHide: true,
+        windowsVerbatimArguments: profile.commandWindowsVerbatimArguments,
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain('CMD-QUOTED-OK:value');
+    },
+  );
 });

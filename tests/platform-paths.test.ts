@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDataDir } from '../platform/paths';
+import { decodeFileUriPath, resolveDataDir } from '../platform/paths';
 
 describe('resolveDataDir', () => {
   it('uses the exact Linux fallback when no XDG directory is configured', () => {
@@ -50,6 +50,23 @@ describe('resolveDataDir', () => {
   it('falls back beneath the Windows home when APPDATA is unavailable', () => {
     expect(resolveDataDir({ platform: 'win32', home: 'C:\\Users\\m', env: {} })).toBe(
       'C:\\Users\\m\\AppData\\Roaming\\OmniTerm',
+    );
+  });
+});
+
+describe('decodeFileUriPath', () => {
+  it('normalizes a Windows drive-letter file URI', () => {
+    expect(decodeFileUriPath('file://DESKTOP/C:/Users/m/My%20Files', 'win32')).toBe(
+      'C:\\Users\\m\\My Files',
+    );
+  });
+
+  it('normalizes a Windows UNC file URI', () => {
+    expect(decodeFileUriPath('file://server/share/team%20docs', 'win32')).toBe(
+      '\\\\server\\share\\team docs',
+    );
+    expect(decodeFileUriPath('file://DESKTOP//server/share/team%20docs', 'win32')).toBe(
+      '\\\\server\\share\\team docs',
     );
   });
 });
