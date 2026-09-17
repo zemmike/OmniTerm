@@ -57,6 +57,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.11.0] - 2026-09-16
+
+### Added
+- **AI Reader** - an optional side panel that presents the focused pane's terminal
+  output as formatted text: headings, bullets and numbered steps, quotes, fenced and
+  inline code, code blocks dedented of their container's margin, and clickable file
+  paths that open in the Files tab. Off by default, toggled from the terminal toolbar,
+  remembered between launches, with reader text size, Copy, and Following/Paused that
+  stops following the moment you scroll up. This is aimed at coding agents (Claude
+  Code, Codex, Herdr) whose markdown is rendered for a fixed-width screen and then
+  wrapped in box borders.
+- The panel only **observes** the pane: it reads the rendered buffer through a new
+  read-only `PaneApi.readBuffer()` and never writes to the PTY, so a full-screen agent
+  cannot be disturbed by the panel being open.
+
+### Implementation
+- `src/readerMarkdown.ts` (new, pure): `stripAnsi`, `stripTerminalFurniture`,
+  `dedent`, `parseReaderText`, `looksLikePath`.
+- `src/components/AiReader.tsx` (new): the panel, rendering every string as a React
+  child - no `dangerouslySetInnerHTML` anywhere.
+- `src/components/TerminalPane.tsx`: `PaneApi` gains `readBuffer()`.
+- `src/components/TerminalView.tsx`: toolbar toggle, the panel, and a 1.2s poll of the
+  focused pane while it is open.
+
+### Tests
+- 228 across 13 files, including 16 new parser cases: ANSI and OSC stripping, box
+  drawing (rounded corners included), spinner frames, headings by level, bullets and
+  numbered steps, fenced code with its language, an unterminated fence (a response
+  still streaming), quotes, wrapped paragraphs, and a realistic agent screen asserted
+  block by block, plus path recognition and its negatives.
+
+### Known gaps
+- The panel was not exercised in a running window on the build machine; the parser,
+  the build and the suite are what is verified.
+- No axe test for the new panel yet, and no search inside the reader.
+- No transcript adapters for specific agents (the structured-data path).
+
 ## [1.10.0] - 2026-09-14
 
 ### Added
@@ -532,7 +569,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...v1.10.0
 [1.9.3]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...v1.9.3
 [1.9.2]: https://github.com/zemmike/OmniTerm/compare/v1.9.1...v1.9.2
