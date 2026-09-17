@@ -99,6 +99,11 @@ describe.skipIf(!serverBuilt)(
         expect(typeof body.cwd).toBe('string');
         expect(typeof body.user).toBe('string');
         expect(body.user.length).toBeGreaterThan(0);
+        expect(typeof body.shell).toBe('string');
+        expect(body.shell.length).toBeGreaterThan(0);
+        expect(['bash', 'zsh', 'fish', 'powershell', 'cmd', 'plain']).toContain(body.shellKind);
+        expect(typeof body.shellIntegration).toBe('string');
+        expect(body.shellIntegration.length).toBeGreaterThan(0);
 
         // Hermeticity: the server must see the temp HOME, not the real one.
         expect(body.home).toBe(srv.homeDir);

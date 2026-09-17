@@ -32,7 +32,9 @@ afterEach(() => {
 describe('searchDirectory', () => {
   it('finds matches in subdirectories, not just the top level', () => {
     const found = searchDirectory(root, 'app');
-    const paths = found.results.map((hit) => path.relative(root, hit.path)).sort();
+    const paths = found.results
+      .map((hit) => path.relative(root, hit.path).split(path.sep).join('/'))
+      .sort();
     expect(paths).toEqual([
       'app.ts',
       'docs/APPENDIX.md',

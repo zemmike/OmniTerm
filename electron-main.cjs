@@ -151,6 +151,7 @@ function startBackendServer() {
       OMNITERM_TOKEN: TOKEN,
       OMNITERM_VERSION: VERSION,
       OMNITERM_CWD: os.homedir(),
+      OMNITERM_DATA_DIR: app.getPath('userData'),
       OMNITERM_DISTRO: process.env.OMNITERM_DISTRO || '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

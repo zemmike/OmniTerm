@@ -11,6 +11,8 @@ const PORT = Number(process.env.PORT) || 3000;
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import { searchDirectory } from './fileSearch';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
+import { resolveDataDir } from './platform/paths';
+import { discoverShellProfile } from './platform/shell';
 import {
   attachTerminalSocket,
   onPtyCommand,
@@ -138,8 +140,11 @@ app.use((req, res, next) => {
 // ------------------- PERSISTENT COMMAND AUDIT TRAIL ------------------- //
 // Every command OmniTerm runs is appended to a JSONL file, so the log tab and
 // the /audit export describe what really happened on this machine.
-const AUDIT_DIR =
-  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const AUDIT_DIR = resolveDataDir({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+});
 const AUDIT_FILE = path.join(AUDIT_DIR, 'activity.jsonl');
 
 type AuditEntry = {
@@ -553,8 +558,13 @@ function securityPosture() {
 
 // ------------------- REAL EXECUTION ENGINE ------------------- //
 
-const SHELL =
-  process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/bash';
+const SHELL_PROFILE = discoverShellProfile({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+  dataDir: AUDIT_DIR,
+});
+const SHELL = SHELL_PROFILE.executable;
 
 // Commands that need a real TTY (full-screen / prompt driven). We run one
 // command per request over pipes, so these would just hang until the timeout.
@@ -619,7 +629,7 @@ function runShellCommand(command: string, cwd: string) {
     cwd: string;
     exitCode: number | null;
   }>((resolve) => {
-    const child = spawn(SHELL, ['-lc', command], {
+    const child = spawn(SHELL, SHELL_PROFILE.commandArgs(command), {
       cwd,
       env: { ...process.env, TERM: 'xterm-256color', OMNITERM: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1238,6 +1248,7 @@ app.get('/api/health', async (req, res) => {
 
 // 1b. Real environment info (drives the initial working directory / preset)
 app.get('/api/env', async (req, res) => {
+  const terminal = ptyStatus();
   res.json({
     platform: process.platform,
     home: os.homedir(),
@@ -1251,6 +1262,8 @@ app.get('/api/env', async (req, res) => {
     })(),
     hostname: os.hostname(),
     shell: SHELL,
+    shellKind: SHELL_PROFILE.kind,
+    shellIntegration: terminal.integration,
     version: appVersion(),
   });
 });
@@ -1873,7 +1886,7 @@ async function startServer() {
       : path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.use((req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile('index.html', { root: distPath });
     });
   }
 

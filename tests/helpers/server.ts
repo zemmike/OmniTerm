@@ -105,8 +105,7 @@ function buildChildEnv(input: {
     OMNITERM_DATA_DIR: input.dataDir,
     PORT: String(input.port),
     HOME: input.homeDir,
-    // Deterministic shell: the server runs `$SHELL -lc <command>`.
-    SHELL: '/bin/bash',
+    USERPROFILE: input.homeDir,
     ...(input.overrides || {}),
   };
 }
