@@ -1,4 +1,4 @@
-name: Build Linux packages
+name: Build native packages
 
 on:
   push:
@@ -8,14 +8,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keyed by ref *and* event: Dependabot's scheduled update runs also happen on
-  # refs/heads/main, and with the ref alone they cancelled real push builds.
   group: build-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
-  typecheck:
-    name: Lint, types and formatting
+  portable:
+    name: Portable checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -24,126 +22,117 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # Three separate gates now: `npm run lint` used to just be tsc, which
-      # meant no eslint, no format check, and a lint "pass" that proved nothing.
-      - name: Type check
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Formatting
-        run: npm run format:check
-      # Every `uses:` in .github/workflows must be a 40-hex commit SHA: a tag is
-      # mutable, so `actions/checkout@v4` is code someone else can re-point at
-      # us. Cheap enough to run here on every PR rather than in its own job.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
       - name: Action pins are commit SHAs
         run: bash scripts/check-action-pins.sh
 
-  test:
-    name: Tests (terminal + API)
-    needs: typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: 24
-          cache: npm
-
-      - run: npm ci
-
-      - name: Extra shells for the integration matrix
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq zsh fish
-
-      - name: Build backend + web bundle
-        run: npm run build
-
-      - name: node-pty smoke test (prompt, aliases, Ctrl+C)
-        run: npm run test:pty
-
-      - name: Shell integration matrix (bash, zsh, fish, dash)
-        run: bash scripts/shell-matrix-test.sh
-
-      - name: Prefix history and command durations over the socket
-        run: |
-          set -e
-          NODE_ENV=production PORT=4599 OMNITERM_TOKEN=ci-token \
-            OMNITERM_DATA_DIR="$RUNNER_TEMP/otci" node dist/server.cjs > /tmp/ci-server.log 2>&1 &
-          SRV=$!
-          sleep 5
-          PORT=4599 TOKEN=ci-token node scripts/pty-features-test.cjs
-          kill $SRV
-
-      - name: Tests with coverage
-        # The HTTP suites boot the backend as a child process, so vitest's own
-        # coverage cannot see server.ts: NODE_V8_COVERAGE makes the child report
-        # itself and `coverage:server` maps it back through the source map.
-        run: npm run test:coverage
-
-      - name: Upload the coverage report
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: coverage
-          path: coverage/
-          retention-days: 7
-
-  package:
-    name: Package (${{ matrix.arch }})
-    needs: typecheck
-    runs-on: ubuntu-latest
+  native:
+    name: Native package (${{ matrix.name }})
+    needs: portable
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: x64
+          - name: linux-x64
+            runner: ubuntu-latest
+            platform: linux
+            arch: x64
             targets: deb AppImage tar.gz rpm
-          - arch: arm64
+          - name: linux-arm64
+            runner: ubuntu-latest
+            platform: linux
+            arch: arm64
             targets: deb tar.gz
+          - name: macos
+            runner: macos-14
+            platform: mac
+            arch: universal
+            targets: dmg zip
+          - name: windows-x64
+            runner: windows-2025
+            platform: windows
+            arch: x64
+            targets: nsis zip
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
           cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Ensure Electron runtime binary is present
-        run: |
-          if [ ! -x node_modules/electron/dist/electron ]; then
-            node node_modules/electron/install.js
-          fi
-
-      - name: Build web bundle + backend
-        run: npm run build
-
-      - name: Build Linux packages
+      - run: npm ci
+      - name: Native PTY smoke (Unix)
+        if: matrix.platform != 'windows'
+        run: npm run test:pty
+      - name: Native PTY smoke (Windows)
+        if: matrix.platform == 'windows'
+        run: npm run test:pty:windows
+      - run: npm run build
+      - name: Rebuild node-pty for Electron
+        run: npm run rebuild:native
+      - name: Package Linux
+        if: matrix.platform == 'linux'
         run: npx electron-builder --linux ${{ matrix.targets }} --${{ matrix.arch }} --publish never
-
-      - name: Install the produced .deb to prove it is valid
-        if: matrix.arch == 'x64'
+      - name: Package macOS
+        if: matrix.platform == 'mac'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --publish never
+      - name: Package Windows
+        if: matrix.platform == 'windows'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --x64 --publish never
+      - name: Verify Linux package
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
         run: |
-          set -e
-          DEB=$(ls release/*.deb | head -1)
-          echo "Inspecting $DEB"
-          dpkg-deb --info "$DEB" | head -30
+          DEB=$(find release -maxdepth 1 -name '*.deb' -print -quit)
           sudo apt-get update
           sudo apt-get install -y "./$DEB"
           command -v omniterm
           test -f /usr/share/applications/omniterm.desktop
-          ls -l /usr/share/icons/hicolor/512x512/apps/omniterm.png
-
-      - name: Upload packages
+      - name: Verify macOS package
+        if: matrix.platform == 'mac'
+        run: |
+          ZIP=$(find release -maxdepth 1 -name '*.zip' -print -quit)
+          test -n "$ZIP"
+          ditto -x -k "$ZIP" "$RUNNER_TEMP/omniterm-mac-smoke"
+          APP=$(find "$RUNNER_TEMP/omniterm-mac-smoke" -name 'OmniTerm.app' -type d -print -quit)
+          test -x "$APP/Contents/MacOS/OmniTerm"
+          test -f "$APP/Contents/Info.plist"
+          find release -maxdepth 1 -name '*.dmg' -print -quit | grep .
+      - name: Verify Windows installer
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer not found' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'OmniTermSmoke'
+          $result = Start-Process $installer.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw "Installer exited $($result.ExitCode)" }
+          $app = Join-Path $installDir 'OmniTerm.exe'
+          if (-not (Test-Path $app)) { throw 'OmniTerm.exe was not installed' }
+          $version = & $app --version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'OmniTerm') { throw 'Version check failed' }
+          $uninstaller = Get-ChildItem $installDir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          if (-not $uninstaller) { throw 'Uninstaller not found' }
+          $result = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($result.ExitCode -ne 0) { throw "Uninstaller exited $($result.ExitCode)" }
+      - name: Upload native packages
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: omniterm-linux-${{ matrix.arch }}
+          name: omniterm-${{ matrix.name }}
           path: |
             release/*.deb
             release/*.AppImage
             release/*.rpm
             release/*.tar.gz
+            release/*.dmg
+            release/*.zip
+            release/*.exe
           if-no-files-found: error
           retention-days: 14

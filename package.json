@@ -43,10 +43,13 @@
     "dist:appimage": "npm run build && electron-builder --linux AppImage",
     "dist:rpm": "npm run build && electron-builder --linux rpm",
     "dist:tar": "npm run build && electron-builder --linux tar.gz",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
     "preview": "vite preview",
     "clean": "rm -rf dist release server.js",
     "lint": "eslint .",
     "test:pty": "node scripts/pty-smoke.cjs",
+    "test:pty:windows": "node scripts/pty-smoke-windows.cjs",
     "test:pty-socket": "node scripts/pty-socket-test.cjs",
     "test:pty-matrix": "bash scripts/shell-matrix-test.sh",
     "test": "vitest run",
@@ -108,6 +111,45 @@
           "Type": "Application"
         }
       }
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}",
+      "icon": "build/icon.png"
     },
     "deb": {
       "depends": [
