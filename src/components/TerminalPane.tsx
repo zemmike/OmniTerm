@@ -14,6 +14,7 @@ import { TerminalSettings } from '../settings';
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { terminalFileLinks } from '../fileLinks';
 import { createPreOpenMessageQueue } from '../socketQueue';
+import { applyTerminalSettings } from '../terminalOptions';
 
 export type { XtermTheme };
 
@@ -711,23 +712,13 @@ export default function TerminalPane({
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = terminalTheme(settings);
-    term.options.fontFamily = settings.fontFamily;
-    term.options.fontSize = settings.fontSize;
-    term.options.lineHeight = settings.lineHeight;
-    term.options.cursorStyle = settings.cursorStyle;
-    term.options.cursorBlink = settings.cursorBlink;
-    term.options.scrollback = settings.scrollback;
-
-    // Refit *after* the font options, never before. xterm derives its column count
-    // from the measured cell width, so fitting first measured the old font: a bigger
-    // font left the pane with dead space on the right and a smaller one overflowed.
-    // This is the visible cause of a terminal that only uses part of its width.
-    try {
-      fitRef.current?.fit();
-    } catch {
-      /* container not laid out yet */
-    }
+    applyTerminalSettings(term.options, settings, () => {
+      try {
+        fitRef.current?.fit();
+      } catch {
+        /* container not laid out yet */
+      }
+    });
 
     // The renderer switches live, so the difference is measurable without
     // reopening the app.

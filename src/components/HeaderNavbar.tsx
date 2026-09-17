@@ -10,15 +10,13 @@ import {
   Monitor,
   SlidersHorizontal,
 } from 'lucide-react';
-import { UserRole, SystemAlert } from '../types';
+import { SystemAlert } from '../types';
 import { TERMINAL_THEMES } from '../lib/themeUtils';
+import { useSettings } from '../settings';
 
 interface HeaderNavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  setUserRole: (role: UserRole) => void;
-  currentTheme: string;
-  setCurrentTheme: (theme: string) => void;
   alerts: SystemAlert[];
   markAlertsAsRead: () => void;
 }
@@ -26,11 +24,10 @@ interface HeaderNavbarProps {
 export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   activeTab,
   setActiveTab,
-  currentTheme,
-  setCurrentTheme,
   alerts,
   markAlertsAsRead,
 }) => {
+  const [settings, updateSettings] = useSettings();
   const [showAlertsMenu, setShowAlertsMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
@@ -153,13 +150,13 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
                   <button
                     key={key}
                     role="menuitem"
-                    aria-current={currentTheme === key ? 'true' : undefined}
+                    aria-current={settings.theme === key ? 'true' : undefined}
                     onClick={() => {
-                      setCurrentTheme(key);
+                      updateSettings({ theme: key });
                       setShowThemeMenu(false);
                     }}
                     className={`w-full text-left px-3 py-1.5 text-[11px] hover:bg-[#202024] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#00FF41] ${
-                      currentTheme === key ? 'text-[#00FF41] font-bold' : 'text-[#88888E]'
+                      settings.theme === key ? 'text-[#00FF41] font-bold' : 'text-[#88888E]'
                     }`}
                   >
                     {t.name}

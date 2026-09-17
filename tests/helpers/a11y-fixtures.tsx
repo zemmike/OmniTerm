@@ -37,7 +37,6 @@ export const A11Y_ALERTS: SystemAlert[] = [
 
 export interface AppShellFixtureProps {
   activeTab?: string;
-  currentTheme?: string;
   alerts?: SystemAlert[];
   onTabChange?: (tab: string) => void;
 }
@@ -48,7 +47,6 @@ export interface AppShellFixtureProps {
  */
 export const AppShellFixture: React.FC<AppShellFixtureProps> = ({
   activeTab = 'health',
-  currentTheme = 'matrix',
   alerts = A11Y_ALERTS,
   onTabChange,
 }) => (
@@ -56,9 +54,6 @@ export const AppShellFixture: React.FC<AppShellFixtureProps> = ({
     <HeaderNavbar
       activeTab={activeTab}
       setActiveTab={onTabChange ?? (() => undefined)}
-      setUserRole={() => undefined}
-      currentTheme={currentTheme}
-      setCurrentTheme={() => undefined}
       alerts={alerts}
       markAlertsAsRead={() => undefined}
     />
