@@ -141,6 +141,15 @@ export interface PerCoreCpu {
 }
 
 export interface ServerHealth {
+  capabilities: {
+    memoryBreakdown: boolean;
+    processDetails: boolean;
+    mounts: boolean;
+    diskIO: boolean;
+    perCoreCpu: boolean;
+    cpuTemperature: boolean;
+    networkRates: boolean;
+  };
   cpuModel?: string;
   networkInterface?: string;
   cpuUsage: number;
@@ -180,7 +189,7 @@ export interface ServerHealth {
   memoryByGroup?: MemoryGroupItem[];
   swapUsage?: SwapUsage | null;
   mounts?: MountUsage[];
-  diskIO?: DiskIO;
+  diskIO?: DiskIO | null;
   perCoreCpu?: PerCoreCpu[];
   cpuTemperature?: number | null;
   systemInfo: {

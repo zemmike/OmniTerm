@@ -81,6 +81,15 @@ describe.skipIf(!serverBuilt)(
         expect(body.memoryUsage.totalMb).toBeGreaterThan(0);
 
         expect(body.diskUsage).toBeDefined();
+        expect(body.capabilities).toEqual({
+          memoryBreakdown: expect.any(Boolean),
+          processDetails: expect.any(Boolean),
+          mounts: expect.any(Boolean),
+          diskIO: expect.any(Boolean),
+          perCoreCpu: expect.any(Boolean),
+          cpuTemperature: expect.any(Boolean),
+          networkRates: expect.any(Boolean),
+        });
         expect(typeof body.uptimeSeconds).toBe('number');
         expect(body.uptimeSeconds).toBeGreaterThan(0);
       });

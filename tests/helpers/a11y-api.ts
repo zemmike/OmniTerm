@@ -21,6 +21,15 @@ const NOW = '2026-09-11 00:04';
 
 const HEALTH = {
   status: 'healthy',
+  capabilities: {
+    memoryBreakdown: true,
+    processDetails: true,
+    mounts: true,
+    diskIO: true,
+    perCoreCpu: true,
+    cpuTemperature: true,
+    networkRates: true,
+  },
   cpuUsage: 37,
   cpuCores: 8,
   loadAverage: { one: 0.62, five: 0.51, fifteen: 0.44 },
