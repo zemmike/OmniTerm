@@ -506,31 +506,35 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
       return;
     }
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setDeepBusy(true);
-      try {
-        const res = await fetch(`/api/files/search?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setDeepHits(null);
-          setDeepNote(data.error || 'Search failed.');
-          return;
+    // Not an async callback: eslint's no-misused-promises rejects that, and CI runs
+    // lint before packaging, so this blocked every release build.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setDeepBusy(true);
+        try {
+          const res = await fetch(`/api/files/search?q=${encodeURIComponent(q)}`);
+          const data = await res.json();
+          if (cancelled) return;
+          if (!res.ok) {
+            setDeepHits(null);
+            setDeepNote(data.error || 'Search failed.');
+            return;
+          }
+          const hits = data.results || [];
+          setDeepHits(hits);
+          setDeepNote(
+            data.truncated
+              ? `Showing the first ${hits.length} matches — there are more.`
+              : hits.length === 0
+                ? 'Nothing found in subfolders.'
+                : null,
+          );
+        } catch {
+          if (!cancelled) setDeepNote('Search failed.');
+        } finally {
+          if (!cancelled) setDeepBusy(false);
         }
-        const hits = data.results || [];
-        setDeepHits(hits);
-        setDeepNote(
-          data.truncated
-            ? `Showing the first ${hits.length} matches — there are more.`
-            : hits.length === 0
-              ? 'Nothing found in subfolders.'
-              : null,
-        );
-      } catch {
-        if (!cancelled) setDeepNote('Search failed.');
-      } finally {
-        if (!cancelled) setDeepBusy(false);
-      }
+      })();
     }, 350);
     return () => {
       cancelled = true;

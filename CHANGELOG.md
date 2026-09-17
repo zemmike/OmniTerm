@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.12.3] - 2026-09-17
+
+### Fixed
+- **Releases from v1.12.0 onwards contained no packages.** An async callback passed to
+  `setTimeout` in the Files-tab search tripped `@typescript-eslint/no-misused-promises`.
+  Lint runs before packaging in the build workflow, so the Lint step failed, the Package
+  jobs were skipped, and the Release job still reported success - three releases with
+  nothing to install. The callback is wrapped so it returns void. Lint is now checked by
+  exit code and not by eye.
+
 ## [1.12.2] - 2026-09-17
 
 ### Fixed
@@ -636,7 +646,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.3...HEAD
+[1.12.3]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...v1.12.0
