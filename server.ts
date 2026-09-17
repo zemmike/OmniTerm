@@ -11,6 +11,10 @@ const PORT = Number(process.env.PORT) || 3000;
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import { searchDirectory } from './fileSearch';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
+import { resolveDataDir } from './platform/paths';
+import { discoverShellProfile } from './platform/shell';
+import { collectHealthSnapshot } from './platform/metrics';
+import { createSnapshot, listSnapshots } from './platform/archive';
 import {
   attachTerminalSocket,
   onPtyCommand,
@@ -138,8 +142,11 @@ app.use((req, res, next) => {
 // ------------------- PERSISTENT COMMAND AUDIT TRAIL ------------------- //
 // Every command OmniTerm runs is appended to a JSONL file, so the log tab and
 // the /audit export describe what really happened on this machine.
-const AUDIT_DIR =
-  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
+const AUDIT_DIR = resolveDataDir({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+});
 const AUDIT_FILE = path.join(AUDIT_DIR, 'activity.jsonl');
 
 type AuditEntry = {
@@ -374,6 +381,27 @@ function runQuick(cmd: string, args: string[], cwd?: string) {
   }
 }
 
+function inspectSshMaterial(home = os.homedir()) {
+  const sshDir = path.join(home, '.ssh');
+  try {
+    const sshKeys = fs
+      .readdirSync(sshDir, { withFileTypes: true })
+      .filter(
+        (entry) => entry.isFile() && entry.name.startsWith('id_') && !entry.name.endsWith('.pub'),
+      ).length;
+    const authorizedPath = path.join(sshDir, 'authorized_keys');
+    const authorizedKeys = fs.existsSync(authorizedPath)
+      ? fs
+          .readFileSync(authorizedPath, 'utf8')
+          .split(/\r?\n/)
+          .filter((line) => line.length > 0).length
+      : 0;
+    return { sshKeys, authorizedKeys };
+  } catch {
+    return { sshKeys: 0, authorizedKeys: 0 };
+  }
+}
+
 function repoStatus(dir?: string) {
   const cwd = resolveCwd(dir);
   const inside = runQuick('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'], cwd);
@@ -519,14 +547,7 @@ function securityPosture() {
     '-lc',
     'getent group sudo wheel 2>/dev/null | cut -d: -f1,4',
   ]).out;
-  const sshKeys = runQuick('bash', [
-    '-lc',
-    'find ~/.ssh -maxdepth 1 -name "id_*" ! -name "*.pub" 2>/dev/null | wc -l',
-  ]);
-  const authorized = runQuick('bash', [
-    '-lc',
-    'test -f ~/.ssh/authorized_keys && wc -l < ~/.ssh/authorized_keys || echo 0',
-  ]);
+  const sshMaterial = inspectSshMaterial();
   const sshd = runQuick('bash', [
     '-lc',
     'systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo inactive',
@@ -540,8 +561,8 @@ function securityPosture() {
     firewall: ufw.out.split('\n')[0] || 'unknown',
     apparmor: apparmor.out.trim() || 'unknown',
     sudoGroups: sudoers.trim() || '-',
-    sshKeys: Number(sshKeys.out) || 0,
-    authorizedKeys: Number(authorized.out) || 0,
+    sshKeys: sshMaterial.sshKeys,
+    authorizedKeys: sshMaterial.authorizedKeys,
     sshService: sshd.out.trim() || 'inactive',
     worldWritableEtcFiles: Number(worldWritable.out) || 0,
     listening: listening,
@@ -553,8 +574,13 @@ function securityPosture() {
 
 // ------------------- REAL EXECUTION ENGINE ------------------- //
 
-const SHELL =
-  process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : '/bin/bash';
+const SHELL_PROFILE = discoverShellProfile({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+  dataDir: AUDIT_DIR,
+});
+const SHELL = SHELL_PROFILE.executable;
 
 // Commands that need a real TTY (full-screen / prompt driven). We run one
 // command per request over pipes, so these would just hang until the timeout.
@@ -619,10 +645,11 @@ function runShellCommand(command: string, cwd: string) {
     cwd: string;
     exitCode: number | null;
   }>((resolve) => {
-    const child = spawn(SHELL, ['-lc', command], {
+    const child = spawn(SHELL, SHELL_PROFILE.commandArgs(command), {
       cwd,
       env: { ...process.env, TERM: 'xterm-256color', OMNITERM: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsVerbatimArguments: SHELL_PROFILE.commandWindowsVerbatimArguments,
     });
 
     let output = '';
@@ -693,551 +720,14 @@ function runShellCommand(command: string, cwd: string) {
 
 // ------------------- API ENDPOINTS ------------------- //
 
-// ------------------- REAL SYSTEM METRICS HELPERS ------------------- //
-function cpuSnapshot() {
-  let idle = 0;
-  let total = 0;
-  for (const cpu of os.cpus()) {
-    const t = cpu.times;
-    idle += t.idle;
-    total += t.idle + t.user + t.nice + t.sys + t.irq;
-  }
-  return { idle, total };
-}
-
-let prevNet: { rx: number; tx: number; at: number } | null = null;
-function networkRates() {
-  try {
-    const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
-    let rx = 0;
-    let tx = 0;
-    let busiest = '';
-    let busiestBytes = -1;
-    for (const line of lines) {
-      const [ifaceRaw, rest] = line.split(':');
-      const iface = (ifaceRaw || '').trim();
-      if (!rest || iface === 'lo') continue;
-      const cols = rest.trim().split(/\s+/);
-      const ifaceRx = Number(cols[0]) || 0;
-      const ifaceTx = Number(cols[8]) || 0;
-      rx += ifaceRx;
-      tx += ifaceTx;
-      // Report the interface actually carrying the traffic, not a guess.
-      if (ifaceRx + ifaceTx > busiestBytes) {
-        busiestBytes = ifaceRx + ifaceTx;
-        busiest = iface;
-      }
-    }
-    const now = Date.now();
-    const prev = prevNet;
-    prevNet = { rx, tx, at: now };
-    if (!prev || now === prev.at) return { rxKbps: 0, txKbps: 0, interface: busiest };
-    const seconds = (now - prev.at) / 1000;
-    return {
-      rxKbps: Math.max(0, Math.round(((rx - prev.rx) * 8) / 1000 / seconds)),
-      txKbps: Math.max(0, Math.round(((tx - prev.tx) * 8) / 1000 / seconds)),
-      interface: busiest,
-    };
-  } catch {
-    return { rxKbps: 0, txKbps: 0, interface: '' };
-  }
-}
-
-function memAvailableMb(): number | null {
-  try {
-    const info = fs.readFileSync('/proc/meminfo', 'utf8');
-    const m = info.match(/^MemAvailable:\s+(\d+) kB/m);
-    return m ? Math.round(Number(m[1]) / 1024) : null;
-  } catch {
-    return null;
-  }
-}
-
-function diskUsage() {
-  try {
-    const st: any = (fs as any).statfsSync ? (fs as any).statfsSync(os.homedir()) : null;
-    if (st) {
-      const total = (st.blocks * st.bsize) / 1073741824;
-      const free = (st.bavail * st.bsize) / 1073741824;
-      const used = total - free;
-      return {
-        usedGb: Number(used.toFixed(1)),
-        totalGb: Number(total.toFixed(1)),
-        percent: Number(((used / total) * 100).toFixed(1)),
-        // The path the figures were measured on, so the UI can label it truthfully.
-        path: os.homedir(),
-      };
-    }
-  } catch {
-    /* fall through */
-  }
-  return { usedGb: 0, totalGb: 0, percent: 0, path: os.homedir() };
-}
-
-function activeConnectionCount() {
-  let count = 0;
-  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
-    try {
-      const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
-      for (const line of lines.slice(1)) {
-        // Fields: 0 sl, 1 local, 2 remote, 3 state … so the state is index 3,
-        // and 01 means ESTABLISHED. (Reading index 6 counted the wrong column.)
-        const cols = line.trim().split(/\s+/);
-        if (cols[3] === '01') count += 1;
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  return count;
-}
-
-function processCount() {
-  try {
-    return fs.readdirSync('/proc').filter((d) => /^\d+$/.test(d)).length;
-  } catch {
-    return 0;
-  }
-}
-
-function topProcesses() {
-  try {
-    const out =
-      spawnSync('ps', ['-eo', 'pid,comm,%cpu,%mem,user', '--sort=-%cpu'], {
-        encoding: 'utf8',
-        timeout: 4000,
-      }).stdout || '';
-    return (
-      out
-        .trim()
-        .split('\n')
-        .slice(1)
-        // The sampler itself is always near the top of its own snapshot (ps can
-        // briefly show high CPU), and that is not a fact about the machine.
-        .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
-        .slice(0, 5)
-        .map((row) => {
-          // `comm` can contain spaces ("npm run build"), which shifts a
-          // positional parse and puts a number in the user column. Parse the
-          // fixed columns from the left and the numeric ones from the right.
-          const cols = row.trim().split(/\s+/);
-          if (cols.length < 5)
-            return { pid: 0, name: 'unknown', cpu: 0, memory: 0, user: 'unknown' };
-          const pid = Number(cols[0]) || 0;
-          const user = cols[cols.length - 1] || 'unknown';
-          const mem = Number(cols[cols.length - 2]) || 0;
-          const cpu = Number(cols[cols.length - 3]) || 0;
-          return {
-            pid,
-            name: cols.slice(1, cols.length - 3).join(' ') || 'unknown',
-            cpu,
-            memory: Number(((mem / 100) * (os.totalmem() / 1048576)).toFixed(1)),
-            user,
-          };
-        })
-        .filter((proc) => proc.pid > 0)
-    );
-  } catch {
-    return [];
-  }
-}
-
-// ------------------- DEEP RESOURCE BREAKDOWN HELPERS ------------------- //
-// Everything below reads the raw kernel counters directly (/proc, ps, statfs).
-// When a source cannot be read we return null / an empty list — never a
-// plausible-looking number, because a made-up figure is worse than a blank.
-
-/** Raw /proc/meminfo as a name -> kB map (keys keep the trailing "(...)" form). */
-function readMeminfo(): Record<string, number> | null {
-  try {
-    const raw = fs.readFileSync('/proc/meminfo', 'utf8');
-    const out: Record<string, number> = {};
-    for (const line of raw.split('\n')) {
-      const m = line.match(/^([A-Za-z()_]+):\s+(\d+)\s*kB/);
-      if (m) out[m[1]] = Number(m[2]);
-    }
-    return out;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Full memory picture in MB. Note the distinction the UI must keep straight:
- * `available` (MemAvailable) is what free/top mean by free — it already counts
- * reclaimable page cache — while `usedPercent` is computed from it so the
- * headline number is not skewed by cache on a long-running box.
- */
-function memoryBreakdown() {
-  const info = readMeminfo();
-  if (!info) return null;
-  const mb = (key: string) => Number(((info[key] ?? 0) / 1024).toFixed(1));
-  const total = mb('MemTotal');
-  const available = typeof info.MemAvailable === 'number' ? mb('MemAvailable') : mb('MemFree');
-  const swapTotal = mb('SwapTotal');
-  const swapFree = mb('SwapFree');
-  return {
-    total,
-    free: mb('MemFree'),
-    available,
-    buffers: mb('Buffers'),
-    cached: mb('Cached'),
-    shared: mb('Shmem'),
-    slab: mb('Slab'),
-    dirty: mb('Dirty'),
-    swapTotal,
-    swapFree,
-    usedPercent: total > 0 ? Number((((total - available) / total) * 100).toFixed(1)) : 0,
-    swapPercent:
-      swapTotal > 0 ? Number((((swapTotal - swapFree) / swapTotal) * 100).toFixed(1)) : 0,
-  };
-}
-
-type PsMemRow = {
-  pid: number;
-  name: string;
-  rssKb: number;
-  percent: number;
-  cpu: number;
-  user: string;
-};
-
-/**
- * Every process, sorted by resident set size. Parsed from both ends of the row
- * (pid first, owner last) so a `comm` value containing spaces cannot shift the
- * numeric columns. The sampler itself is dropped, exactly like topProcesses:
- * ps briefly shows high CPU/RSS for its own snapshot and that is not a fact
- * about the machine.
- */
-function psMemoryRows(): PsMemRow[] {
-  try {
-    const out =
-      spawnSync('ps', ['-eo', 'pid,comm,rss,%mem,%cpu,user', '--sort=-rss'], {
-        encoding: 'utf8',
-        timeout: 4000,
-      }).stdout || '';
-    return out
-      .trim()
-      .split('\n')
-      .slice(1)
-      .filter((row) => !/^\s*\d+\s+(ps|awk|sort|head|cut|tr|sed)\s/.test(row))
-      .map((row) => {
-        const cols = row.trim().split(/\s+/);
-        if (cols.length < 6) return null;
-        const pid = Number(cols[0]) || 0;
-        const user = cols[cols.length - 1];
-        const cpu = Number(cols[cols.length - 2]) || 0;
-        const percent = Number(cols[cols.length - 3]) || 0;
-        const rssKb = Number(cols[cols.length - 4]) || 0;
-        const name = cols.slice(1, cols.length - 4).join(' ') || 'unknown';
-        return { pid, name, rssKb, percent, cpu, user };
-      })
-      .filter((p): p is PsMemRow => !!p && p.pid > 0);
-  } catch {
-    return [];
-  }
-}
-
-function topMemoryProcesses(rows: PsMemRow[]) {
-  return rows.slice(0, 8).map((r) => {
-    const rssMb = Number((r.rssKb / 1024).toFixed(1));
-    return {
-      pid: r.pid,
-      name: r.name,
-      cpu: r.cpu,
-      memory: rssMb,
-      user: r.user,
-      rssMb,
-      percent: r.percent,
-    };
-  });
-}
-
-/** Why 79% is used when no single process looks big: 20 chrome processes. */
-function memoryByGroup(rows: PsMemRow[], totalRamMb: number) {
-  const groups = new Map<string, { processes: number; rssKb: number }>();
-  for (const r of rows) {
-    const g = groups.get(r.name) || { processes: 0, rssKb: 0 };
-    g.processes += 1;
-    g.rssKb += r.rssKb;
-    groups.set(r.name, g);
-  }
-  return [...groups.entries()]
-    .map(([name, g]) => {
-      const rssMb = Number((g.rssKb / 1024).toFixed(1));
-      return {
-        name,
-        processes: g.processes,
-        rssMb,
-        percentOfRam: totalRamMb > 0 ? Number(((rssMb / totalRamMb) * 100).toFixed(1)) : 0,
-      };
-    })
-    .sort((a, b) => b.rssMb - a.rssMb)
-    .slice(0, 10);
-}
-
-function swapUsage() {
-  const info = readMeminfo();
-  if (!info) return null;
-  const totalMb = Number(((info.SwapTotal ?? 0) / 1024).toFixed(1));
-  const freeMb = Number(((info.SwapFree ?? 0) / 1024).toFixed(1));
-  const usedMb = Number((totalMb - freeMb).toFixed(1));
-  return {
-    totalMb,
-    freeMb,
-    usedMb,
-    percent: totalMb > 0 ? Number(((usedMb / totalMb) * 100).toFixed(1)) : 0,
-  };
-}
-
-// Physical, device-backed filesystems only. Pseudo-filesystems, container
-// overlays and snap squashfs loops say nothing about disk headroom, and
-// listing them would just bury the rows that matter.
-const MOUNT_FS_ALLOW = /^(ext[234]|xfs|btrfs|zfs|vfat|exfat|f2fs|nfs\d?|nfs4)$/;
-
-function mountedFilesystems() {
-  try {
-    const lines = fs.readFileSync('/proc/mounts', 'utf8').split('\n').filter(Boolean);
-    const seen = new Set<string>();
-    const mounts: Array<{
-      path: string;
-      device: string;
-      fs: string;
-      usedGb: number;
-      totalGb: number;
-      percent: number;
-    }> = [];
-    for (const line of lines) {
-      const parts = line.split(' ');
-      const device = parts[0] || '';
-      const mp = (parts[1] || '').replace(/\\040/g, ' ');
-      const fsType = parts[2] || '';
-      if (!device || !mp || !fsType || !MOUNT_FS_ALLOW.test(fsType)) continue;
-      if (seen.has(device)) continue;
-      try {
-        const st: any = (fs as any).statfsSync(mp);
-        if (!st || !st.bsize || !st.blocks) continue;
-        const totalGb = (st.blocks * st.bsize) / 1073741824;
-        const freeGb = (st.bavail * st.bsize) / 1073741824;
-        const usedGb = totalGb - freeGb;
-        seen.add(device);
-        mounts.push({
-          path: mp,
-          device,
-          fs: fsType,
-          usedGb: Number(usedGb.toFixed(2)),
-          totalGb: Number(totalGb.toFixed(2)),
-          percent: totalGb > 0 ? Number(((usedGb / totalGb) * 100).toFixed(1)) : 0,
-        });
-      } catch {
-        /* mount point vanished or is not statfs-able — skip it, do not guess */
-      }
-    }
-    return mounts.sort((a, b) => b.totalGb - a.totalGb);
-  } catch {
-    return [];
-  }
-}
-
-// Whole block devices only (vda, sda, nvme0n1, mmcblk0) — never their
-// partitions, whose counters are already summed into the parent.
-const DISK_WHOLE_RE = /^(sd[a-z]+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|nvme\d+n\d+|mmcblk\d+)$/;
-
-function diskstatsPerDevice(): Record<string, { read: number; write: number }> {
-  try {
-    const lines = fs.readFileSync('/proc/diskstats', 'utf8').split('\n').filter(Boolean);
-    const per: Record<string, { read: number; write: number }> = {};
-    for (const line of lines) {
-      const c = line.trim().split(/\s+/);
-      const name = c[2];
-      if (!name || !DISK_WHOLE_RE.test(name)) continue;
-      // Fields: 5 = sectors read, 9 = sectors written (0-based after the name).
-      per[name] = { read: (Number(c[5]) || 0) * 512, write: (Number(c[9]) || 0) * 512 };
-    }
-    return per;
-  } catch {
-    return {};
-  }
-}
-
-let prevDisk: { per: Record<string, { read: number; write: number }>; at: number } | null = null;
-function diskIORates() {
-  const per = diskstatsPerDevice();
-  const now = Date.now();
-  const prev = prevDisk;
-  const prevPer = prev?.per || {};
-  let readBytes = 0;
-  let writeBytes = 0;
-  let busiest = '';
-  let busiestDelta = -1;
-  let busiestCumulative = '';
-  let busiestCumulativeBytes = -1;
-  for (const [name, s] of Object.entries(per)) {
-    const p = prevPer[name] || { read: s.read, write: s.write };
-    const dr = Math.max(0, s.read - p.read);
-    const dw = Math.max(0, s.write - p.write);
-    readBytes += dr;
-    writeBytes += dw;
-    if (dr + dw > busiestDelta) {
-      busiestDelta = dr + dw;
-      busiest = name;
-    }
-    if (s.read + s.write > busiestCumulativeBytes) {
-      busiestCumulativeBytes = s.read + s.write;
-      busiestCumulative = name;
-    }
-  }
-  prevDisk = { per, at: now };
-  // Before the second sample there are no deltas, so fall back to the busiest
-  // disk overall rather than claiming an arbitrary device.
-  const device = busiestDelta > 0 ? busiest : busiestCumulative;
-  if (!prev || !prev.at) return { readKbps: 0, writeKbps: 0, device };
-  const seconds = (now - prev.at) / 1000;
-  if (!seconds) return { readKbps: 0, writeKbps: 0, device };
-  return {
-    readKbps: Math.max(0, Math.round(readBytes / 1024 / seconds)),
-    writeKbps: Math.max(0, Math.round(writeBytes / 1024 / seconds)),
-    device,
-  };
-}
-
-/** Two /proc/stat readouts; the handler reuses its existing 150 ms window. */
-function procStatCpu() {
-  const aggregate = { idle: 0, total: 0 };
-  const cores: Array<{ core: number; idle: number; total: number }> = [];
-  try {
-    for (const line of fs.readFileSync('/proc/stat', 'utf8').split('\n')) {
-      const m = line.match(/^cpu(\d*)\s+(.*)$/);
-      if (!m) break;
-      const f = m[2].trim().split(/\s+/).map(Number);
-      const idle = (f[3] || 0) + (f[4] || 0); // idle + iowait
-      const total = f.slice(0, 8).reduce((a, b) => a + (b || 0), 0);
-      if (m[1] === '') {
-        aggregate.idle = idle;
-        aggregate.total = total;
-      } else {
-        cores.push({ core: Number(m[1]), idle, total });
-      }
-    }
-  } catch {
-    /* leave the arrays empty; the caller reports no data */
-  }
-  return { aggregate, cores };
-}
-
-function perCoreUsage(
-  before: ReturnType<typeof procStatCpu>,
-  after: ReturnType<typeof procStatCpu>,
-) {
-  return after.cores
-    .map((c) => {
-      const b = before.cores.find((x) => x.core === c.core);
-      if (!b) return null;
-      const idleDelta = c.idle - b.idle;
-      const totalDelta = c.total - b.total || 1;
-      return {
-        core: c.core,
-        usage: Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100))),
-      };
-    })
-    .filter((c): c is { core: number; usage: number } => !!c)
-    .sort((a, b) => a.core - b.core);
-}
-
-/**
- * First readable thermal zone, in Celsius. Reports null when the machine has no
- * thermal subsystem or the value is outside a plausible range — the UI then
- * hides the reading instead of printing a nonsense temperature.
- */
-function cpuTemperature(): number | null {
-  try {
-    const zones = fs.readdirSync('/sys/class/thermal').filter((d) => d.startsWith('thermal_zone'));
-    for (const zone of zones) {
-      try {
-        const raw = fs.readFileSync(`/sys/class/thermal/${zone}/temp`, 'utf8').trim();
-        const milli = Number(raw);
-        if (!Number.isFinite(milli)) continue;
-        const celsius = milli / 1000;
-        if (celsius > 0 && celsius < 150) return Number(celsius.toFixed(1));
-      } catch {
-        /* unreadable zone — try the next one */
-      }
-    }
-  } catch {
-    /* no /sys/class/thermal on this machine */
-  }
-  return null;
-}
-
-// 1. Server Health Metrics Endpoint (real host metrics)
-app.get('/api/health', async (req, res) => {
-  const before = cpuSnapshot();
-  const statBefore = procStatCpu();
-  await new Promise((r) => setTimeout(r, 150));
-  const after = cpuSnapshot();
-  const statAfter = procStatCpu();
-
-  const idleDelta = after.idle - before.idle;
-  const totalDelta = after.total - before.total || 1;
-  const cpuUsage = Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
-
-  const totalMb = Math.round(os.totalmem() / 1048576);
-  const freeMb = Math.round(os.freemem() / 1048576);
-  // os.freemem() is MemFree only: it ignores reclaimable page cache and so
-  // overstates "used" on any long-running Linux box. MemAvailable is the figure
-  // free/top mean, so that is what we report.
-  const availableMb = memAvailableMb() ?? freeMb;
-  const usedMb = totalMb - availableMb;
-  const load = os.loadavg();
-
-  // One ps pass feeds both the per-process table and the by-program rollup.
-  const memRows = psMemoryRows();
-
-  res.json({
-    status: cpuUsage > 92 ? 'degraded' : 'healthy',
-    cpuUsage,
-    cpuCores: os.cpus().length,
-    loadAverage: {
-      one: Number(load[0].toFixed(2)),
-      five: Number(load[1].toFixed(2)),
-      fifteen: Number(load[2].toFixed(2)),
-    },
-    memoryUsage: {
-      usedMb,
-      totalMb,
-      freeMb,
-      availableMb,
-      percent: Math.round((usedMb / totalMb) * 100),
-    },
-    diskUsage: diskUsage(),
-    networkIO: networkRates(),
-    uptimeSeconds: Math.floor(os.uptime()),
-    processCount: processCount(),
-    activeConnections: activeConnectionCount(),
-    topProcesses: topProcesses(),
-    // ---- Deep resource breakdown (all read from /proc, ps and statfs) ----
-    memoryBreakdown: memoryBreakdown(),
-    topMemoryProcesses: topMemoryProcesses(memRows),
-    memoryByGroup: memoryByGroup(memRows, totalMb),
-    swapUsage: swapUsage(),
-    mounts: mountedFilesystems(),
-    diskIO: diskIORates(),
-    perCoreCpu: perCoreUsage(statBefore, statAfter),
-    cpuTemperature: cpuTemperature(),
-    cpuModel: (os.cpus()[0]?.model || '').trim(),
-    systemInfo: {
-      os: `${os.type()} ${os.release()}`,
-      arch: os.arch(),
-      hostname: os.hostname(),
-      kernel: os.release(),
-      nodeVersion: process.version,
-      distro: process.env.OMNITERM_DISTRO || '',
-    },
-  });
+// 1. Server Health Metrics Endpoint
+app.get('/api/health', async (_req, res) => {
+  res.json(await collectHealthSnapshot());
 });
 
 // 1b. Real environment info (drives the initial working directory / preset)
 app.get('/api/env', async (req, res) => {
+  const terminal = ptyStatus();
   res.json({
     platform: process.platform,
     home: os.homedir(),
@@ -1251,6 +741,8 @@ app.get('/api/env', async (req, res) => {
     })(),
     hostname: os.hostname(),
     shell: SHELL,
+    shellKind: SHELL_PROFILE.kind,
+    shellIntegration: terminal.integration,
     version: appVersion(),
   });
 });
@@ -1363,27 +855,13 @@ app.post('/api/terminal/execute', expensiveWork, async (req, res) => {
       `(vim, top, ssh); this one-shot API runs commands without a TTY.`;
     syntaxType = 'bash';
   } else if (bin === 'backup') {
-    const destDir = BACKUP_DIR;
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const archive = path.join(destDir, `snapshot-${stamp}.tar.gz`);
     try {
-      fs.mkdirSync(destDir, { recursive: true });
-      const result = spawnSync(
-        'tar',
-        ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', nextCwd, '.'],
-        { timeout: 120_000 },
-      );
-      if (result.status !== 0) {
-        output = `[OmniTerm backup] tar failed: ${(result.stderr || '').toString().trim() || `exit ${result.status}`}`;
-        status = 'error';
-      } else {
-        const sizeMb = fs.statSync(archive).size / 1048576;
-        output =
-          `[OmniTerm backup] Snapshot of ${nextCwd}\n` +
-          `Archive: ${archive}\nSize: ${sizeMb.toFixed(2)} MB\n` +
-          `Restore with: tar -xzf "${archive}" -C <target-dir>`;
-        syntaxType = 'bash';
-      }
+      const snapshot = createSnapshot(nextCwd, BACKUP_DIR);
+      output =
+        `[OmniTerm backup] Snapshot of ${nextCwd}\n` +
+        `Archive: ${snapshot.path}\nSize: ${(snapshot.sizeBytes / 1048576).toFixed(2)} MB\n` +
+        `Restore with: ${snapshot.restoreHint}`;
+      syntaxType = 'bash';
     } catch (err: any) {
       output = `[OmniTerm backup] ${err.message}`;
       status = 'error';
@@ -1650,34 +1128,24 @@ app.post('/api/alerts/mark-read', (req, res) => {
   res.json({ success: true });
 });
 
-// 6. Backups — real tar.gz snapshots under the OmniTerm data directory
+// 6. Backups — real platform-native snapshots under the OmniTerm data directory
 const BACKUP_DIR = process.env.OMNITERM_BACKUP_DIR || path.join(AUDIT_DIR, 'backups');
 
 function listBackups() {
-  try {
-    return fs
-      .readdirSync(BACKUP_DIR)
-      .filter((f) => f.endsWith('.tar.gz'))
-      .map((name) => {
-        const full = path.join(BACKUP_DIR, name);
-        const st = fs.statSync(full);
-        return {
-          id: full,
-          name,
-          path: full,
-          source: 'local tar.gz',
-          schedule: 'manual',
-          lastRun: new Date(st.mtimeMs).toISOString().replace('T', ' ').slice(0, 16),
-          nextRun: null,
-          targetCloud: 'local',
-          status: 'completed' as const,
-          sizeMb: Number((st.size / 1048576).toFixed(2)),
-        };
-      })
-      .sort((a, b) => (a.lastRun < b.lastRun ? 1 : -1));
-  } catch {
-    return [];
-  }
+  return listSnapshots(BACKUP_DIR).map((snapshot) => ({
+    id: snapshot.path,
+    name: snapshot.name,
+    path: snapshot.path,
+    source: `local ${snapshot.format}`,
+    schedule: 'manual',
+    lastRun: snapshot.modifiedAt.toISOString().replace('T', ' ').slice(0, 16),
+    nextRun: null,
+    targetCloud: 'local',
+    status: 'completed' as const,
+    sizeMb: Number((snapshot.sizeBytes / 1048576).toFixed(2)),
+    format: snapshot.format,
+    restoreHint: snapshot.restoreHint,
+  }));
 }
 
 app.get('/api/backups', (req, res) => {
@@ -1769,40 +1237,30 @@ app.delete('/api/backups', (req, res) => {
 
 app.post('/api/backups/run', expensiveWork, (req, res) => {
   const dir = resolveCwd(req.body?.cwd);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const archive = path.join(BACKUP_DIR, `snapshot-${stamp}.tar.gz`);
   try {
-    fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
-    const result = spawnSync(
-      'tar',
-      ['-czf', archive, '--exclude=node_modules', '--exclude=.git', '-C', dir, '.'],
-      { timeout: 300_000 },
-    );
-    if (result.status !== 0) {
-      pushAlert('Backup failed', `tar exited ${result.status} for ${dir}`, 'backup_failed');
-      return res
-        .status(500)
-        .json({ error: (result.stderr || '').toString().trim() || `tar exited ${result.status}` });
-    }
-    const sizeMb = Number((fs.statSync(archive).size / 1048576).toFixed(2));
+    const snapshot = createSnapshot(dir, BACKUP_DIR);
+    const sizeMb = Number((snapshot.sizeBytes / 1048576).toFixed(2));
     appendAuditLog({
       id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       timestamp: new Date().toISOString(),
       username: os.userInfo().username,
       role: 'developer',
       action: 'BACKUP_RUN',
-      details: `Snapshot ${archive} (${sizeMb} MB) of ${dir}`,
+      details: `Snapshot ${snapshot.path} (${sizeMb} MB) of ${dir}`,
       ip: '127.0.0.1',
       severity: 'info',
     });
     res.json({
       success: true,
-      path: archive,
+      path: snapshot.path,
       sizeMb,
       source: dir,
-      restore: `tar -xzf "${archive}" -C <target-dir>`,
+      restore: snapshot.restoreHint,
+      format: snapshot.format,
+      restoreHint: snapshot.restoreHint,
     });
   } catch (err: any) {
+    pushAlert('Backup failed', `${err.message} for ${dir}`, 'backup_failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -1873,7 +1331,7 @@ async function startServer() {
       : path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.use((req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile('index.html', { root: distPath });
     });
   }
 

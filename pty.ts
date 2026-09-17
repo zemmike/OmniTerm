@@ -18,6 +18,21 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { decodeFileUriPath, resolveDataDir } from './platform/paths';
+import { discoverShellProfile } from './platform/shell';
+import type { ShellProfile } from './platform/types';
+
+const DATA_DIR = resolveDataDir({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+});
+const DISCOVERED_SHELL = discoverShellProfile({
+  platform: process.platform,
+  home: os.homedir(),
+  env: process.env,
+  dataDir: DATA_DIR,
+});
 
 // ---------------------------------------------------------------- native lib
 let ptyLib: any = null;
@@ -38,19 +53,17 @@ function loadPty(): any {
 
 export function ptyStatus() {
   loadPty();
-  const shell = process.env.SHELL || '/bin/bash';
+  const launch = buildShellLaunch(DISCOVERED_SHELL);
   return {
     available: !!ptyLib,
     error: ptyLoadError,
-    shell,
-    integration: buildShellLaunch(shell).integration,
+    shell: launch.executable,
+    shellKind: launch.kind,
+    integration: launch.integration,
   };
 }
 
 // ---------------------------------------------------------------- integration
-const DATA_DIR =
-  process.env.OMNITERM_DATA_DIR || path.join(os.homedir(), '.local', 'share', 'omniterm');
-
 /** Bash rc that loads the user's real config and adds OmniTerm's OSC hooks. */
 function bashIntegrationRc(): string {
   const rcPath = path.join(DATA_DIR, 'shell-integration.bash');
@@ -79,16 +92,6 @@ PROMPT_COMMAND="__omniterm_osc\${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
   } catch {
     return '';
   }
-}
-
-export type ShellKind = 'bash' | 'zsh' | 'fish' | 'plain';
-
-export function shellKind(shell: string): ShellKind {
-  const base = path.basename(shell || '').toLowerCase();
-  if (base.startsWith('bash')) return 'bash';
-  if (base.startsWith('zsh')) return 'zsh';
-  if (base.startsWith('fish')) return 'fish';
-  return 'plain';
 }
 
 /** Hook appended to the generated zsh rc files. */
@@ -193,24 +196,23 @@ function fishSupportsInit(shell: string): boolean {
   return fishInitOk;
 }
 
-export interface ShellLaunch {
-  kind: ShellKind;
-  args: string[];
-  env: Record<string, string>;
-  /** Describes how (or whether) this session reports commands and exit codes. */
-  integration: string;
-}
-
-export function buildShellLaunch(shell: string): ShellLaunch {
-  const kind = shellKind(shell);
+export function buildShellLaunch(profile: ShellProfile): ShellProfile {
+  const kind = profile.kind;
   if (kind === 'bash') {
     const rc = bashIntegrationRc();
-    if (rc) return { kind, args: ['--rcfile', rc, '-i'], env: {}, integration: 'bash osc133' };
+    if (rc) {
+      return {
+        ...profile,
+        args: ['--rcfile', rc, '-i'],
+        env: {},
+        integration: 'bash osc133',
+      };
+    }
   } else if (kind === 'zsh') {
     const dir = zshIntegrationDir();
     if (dir) {
       return {
-        kind,
+        ...profile,
         args: ['-l', '-i'],
         env: {
           ZDOTDIR: dir,
@@ -223,20 +225,16 @@ export function buildShellLaunch(shell: string): ShellLaunch {
       };
     }
   } else if (kind === 'fish') {
-    if (fishSupportsInit(shell)) {
+    if (fishSupportsInit(profile.executable)) {
       return {
-        kind,
+        ...profile,
         args: ['-l', '-i', `--init-command=${FISH_INIT}`],
         env: {},
         integration: 'fish osc133',
       };
     }
   }
-  // POSIX sh (dash, ash, busybox) has no -l flag, so it gets a plain
-  // interactive shell; it has no prompt hooks either way.
-  const base = path.basename(shell || '').toLowerCase();
-  const posixBasic = /^(dash|ash|busybox|sh)$/.test(base);
-  return { kind: 'plain', args: posixBasic ? ['-i'] : ['-l', '-i'], env: {}, integration: 'none' };
+  return profile;
 }
 
 // ------------------------------------------------------------------ sessions
@@ -380,8 +378,8 @@ function handleChunk(s: Session, chunk: string) {
         });
       }
     } else if (code === '7') {
-      const m = payload.match(/file:\/\/[^/]*(\/.*)$/);
-      if (m) s.cwd = decodeURIComponent(m[1]);
+      const cwd = decodeFileUriPath(payload, process.platform);
+      if (cwd) s.cwd = cwd;
     }
     return '';
   });
@@ -410,15 +408,8 @@ function broadcast(s: Session, payload: unknown) {
  * ': <start>:<duration>;', fish writes '- cmd: <command>'.
  */
 export function shellHistory(prefix: string, limit: number): string[] {
-  const shell = path.basename(process.env.SHELL || 'bash');
-  const candidates = shell.startsWith('zsh')
-    ? [
-        path.join(os.homedir(), '.zsh_history'),
-        path.join(process.env.ZDOTDIR || os.homedir(), '.zsh_history'),
-      ]
-    : shell.startsWith('fish')
-      ? [path.join(os.homedir(), '.local', 'share', 'fish', 'fish_history')]
-      : [path.join(os.homedir(), '.bash_history')];
+  const { kind, historyFiles: candidates } = DISCOVERED_SHELL;
+  if (candidates.length === 0) return [];
 
   const out: string[] = [];
   for (const file of candidates) {
@@ -438,11 +429,11 @@ export function shellHistory(prefix: string, limit: number): string[] {
     for (let i = lines.length - 1; i >= 0; i -= 1) {
       let cmd = lines[i];
       if (!cmd) continue;
-      if (shell.startsWith('fish')) {
+      if (kind === 'fish') {
         const m = cmd.match(/^- cmd:\s?(.*)$/);
         if (!m) continue;
         cmd = m[1].replace(/\\n/g, ' ').trim();
-      } else if (shell.startsWith('zsh')) {
+      } else if (kind === 'zsh') {
         const m = cmd.match(/^: \d+:\d+;(.*)$/);
         cmd = m ? m[1] : cmd;
       }
@@ -498,8 +489,8 @@ function spawnSession(
   const pty = loadPty();
   if (!pty) throw new Error(`node-pty unavailable: ${ptyLoadError}`);
 
-  const shell = process.env.SHELL || '/bin/bash';
-  const launch = buildShellLaunch(shell);
+  const launch = buildShellLaunch(DISCOVERED_SHELL);
+  const shell = launch.executable;
   const cwd = opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : os.homedir();
   const cols = Math.max(20, Math.min(500, opts.cols || 100));
   const rows = Math.max(5, Math.min(300, opts.rows || 30));

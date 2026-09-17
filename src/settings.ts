@@ -46,6 +46,14 @@ export const FONT_STACKS: { label: string; value: string }[] = [
     label: 'System monospace',
     value: 'ui-monospace, SFMono-Regular, "DejaVu Sans Mono", Menlo, Consolas, monospace',
   },
+  {
+    label: 'Cascadia Mono',
+    value: '"Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace',
+  },
+  {
+    label: 'SF Mono',
+    value: 'SFMono-Regular, "SF Mono", Menlo, Monaco, ui-monospace, monospace',
+  },
   { label: 'DejaVu Sans Mono', value: '"DejaVu Sans Mono", ui-monospace, monospace' },
   { label: 'Liberation Mono', value: '"Liberation Mono", ui-monospace, monospace' },
   { label: 'Noto Sans Mono', value: '"Noto Sans Mono", ui-monospace, monospace' },

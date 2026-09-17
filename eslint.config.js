@@ -117,15 +117,23 @@ export default tseslint.config(
     },
   },
 
-  // Electron main/preload and helper scripts are CommonJS.
+  // Electron main/preload, platform bridges, and helper scripts are CommonJS.
   {
-    files: ['electron-main.cjs', 'preload.cjs', 'scripts/**/*.cjs'],
+    files: ['electron-main.cjs', 'preload.cjs', 'platform/**/*.cjs', 'scripts/**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: { ...globals.node, ...globals.commonjs },
     },
     rules: {
       '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+
+  // This native regression test asserts on the literal ESC byte emitted by PowerShell.
+  {
+    files: ['tests/platform-shell.test.ts'],
+    rules: {
+      'no-control-regex': 'off',
     },
   },
 );

@@ -13,6 +13,7 @@ best-effort) lives in the [README](../README.md#supported-platforms).
 - [The API answers `401 unauthorized`](#the-api-answers-401-unauthorized)
 - [Wayland rendering is wrong or the window is invisible](#wayland-rendering-is-wrong-or-the-window-is-invisible)
 - [Where your data lives, and how to reset it](#where-your-data-lives-and-how-to-reset-it)
+- [macOS and Windows](#macos-and-windows)
 - [Collecting diagnostics for a bug report](#collecting-diagnostics-for-a-bug-report)
 
 ---
@@ -290,6 +291,17 @@ When you report a Wayland problem, please say whether the flag changed anything
 
 ## Where your data lives, and how to reset it
 
+Default application data and log locations are:
+
+| Platform | Location |
+| --- | --- |
+| Linux | `~/.local/share/omniterm` when that legacy directory exists; otherwise Electron's `~/.config/OmniTerm` user-data directory |
+| macOS | `~/Library/Application Support/OmniTerm` |
+| Windows | `%APPDATA%\OmniTerm` |
+
+`OMNITERM_DATA_DIR` overrides the application data directory on every platform.
+The desktop startup log is `omniterm.log` inside Electron's user-data directory.
+
 **Application data** — audit trail, snapshots, and the generated shell
 integration:
 
@@ -342,6 +354,38 @@ app's site data to drop all of them at once.
 **To remove absolutely everything:** uninstall with `sudo apt remove omniterm`,
 then delete the two directories above. The package does not ship a purge hook
 that touches your data, on purpose.
+
+---
+
+## macOS and Windows
+
+### Unsigned preview warning
+
+Preview packages are not yet code-signed. Gatekeeper or SmartScreen may warn
+when you open one. Verify the release's `SHA256SUMS`, then use the warning's
+per-app **Open** or **Run anyway** action if you trust the package. Do not disable
+Gatekeeper, SmartScreen, or antivirus protection globally.
+
+### Windows terminal or shell does not open
+
+OmniTerm requires Windows 10 version 1809 or newer for ConPTY. It searches for
+`pwsh.exe`, then `powershell.exe`, then `cmd.exe`. Check the selected shell with:
+
+```powershell
+Get-Command pwsh.exe,powershell.exe,cmd.exe -ErrorAction SilentlyContinue
+```
+
+If `node-pty` reports an ABI mismatch in a source checkout, run `npm ci` followed
+by `npm run rebuild:native`. Git Bash and WSL shell discovery are not supported
+in this release.
+
+### macOS shell or permissions problem
+
+OmniTerm uses `$SHELL`, falling back to `/bin/zsh`. From Terminal, confirm the
+configured executable exists with `echo "$SHELL"` and `test -x "$SHELL"`.
+macOS may separately request permission when the app accesses protected folders
+such as Desktop, Documents, or Downloads. Grant only the folder access needed
+for the operation, or choose a different directory.
 
 ---
 

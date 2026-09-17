@@ -104,8 +104,7 @@ export const ServerHealthView: React.FC = () => {
           <p className="text-xs text-[#88888E]">
             Read live from{' '}
             <span className="font-mono text-[#00FF41]">{health.systemInfo.hostname}</span> — the
-            machine OmniTerm is running on ({health.systemInfo.os} · {health.systemInfo.arch}) — via
-            /proc, statfs and ps.
+            machine OmniTerm is running on ({health.systemInfo.os} · {health.systemInfo.arch}).
           </p>
         </div>
 
@@ -267,12 +266,12 @@ export const ServerHealthView: React.FC = () => {
         </div>
       </div>
 
-      {/* Memory Breakdown — stacked bar + raw /proc/meminfo values */}
+      {/* Memory breakdown */}
       <div className={`${CARD} p-4 space-y-3`}>
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
             <MemoryStick aria-hidden="true" className="w-4 h-4 text-[#3B82F6]" />
-            <span>MEMORY BREAKDOWN (/proc/meminfo)</span>
+            <span>MEMORY BREAKDOWN</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">
             {mem ? `${mem.usedPercent}% of RAM in use (total − available)` : 'unavailable'}
@@ -281,7 +280,7 @@ export const ServerHealthView: React.FC = () => {
 
         {!mem ? (
           <div className="text-xs text-[#88888E]">
-            Memory detail is unavailable — could not read /proc/meminfo.
+            Unavailable on this platform
           </div>
         ) : (
           <>
@@ -388,11 +387,11 @@ export const ServerHealthView: React.FC = () => {
               <MemoryStick aria-hidden="true" className="w-4 h-4 text-[#3B82F6]" />
               <span>WHAT IS USING YOUR RAM — TOP PROCESSES BY RSS</span>
             </span>
-            <span className="text-[11px] text-[#55555E] font-mono">ps --sort=-rss</span>
+            <span className="text-[11px] text-[#55555E] font-mono">Memory breakdown</span>
           </div>
 
           {memProcs.length === 0 ? (
-            <div className="text-xs text-[#88888E]">Process memory data is unavailable.</div>
+            <div className="text-xs text-[#88888E]">Unavailable on this platform</div>
           ) : (
             <div className="overflow-x-auto">
               <table
@@ -477,13 +476,17 @@ export const ServerHealthView: React.FC = () => {
         <div className="flex items-center justify-between border-b border-[#2A2A2E] pb-2">
           <span className="font-bold text-[#E0E0E5] text-xs flex items-center gap-2">
             <HardDrive aria-hidden="true" className="w-4 h-4 text-[#BB86FC]" />
-            <span>MOUNTED FILESYSTEMS (statfs on /proc/mounts)</span>
+            <span>MOUNTED FILESYSTEMS</span>
           </span>
           <span className="text-[11px] text-[#55555E] font-mono">device-backed only</span>
         </div>
 
         {mounts.length === 0 ? (
-          <div className="text-xs text-[#88888E]">No device-backed filesystems detected.</div>
+          <div className="text-xs text-[#88888E]">
+            {health.capabilities.mounts
+              ? 'No device-backed filesystems detected.'
+              : 'Unavailable on this platform'}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table
@@ -560,7 +563,7 @@ export const ServerHealthView: React.FC = () => {
           </div>
 
           {!diskIO ? (
-            <div className="text-xs text-[#88888E]">Disk I/O counters are unavailable.</div>
+            <div className="text-xs text-[#88888E]">Unavailable on this platform</div>
           ) : (
             <div className="flex items-center justify-around text-xs font-mono pt-1">
               <div className="text-[#00FF41] text-center">
@@ -582,11 +585,11 @@ export const ServerHealthView: React.FC = () => {
               <Cpu aria-hidden="true" className="w-4 h-4 text-[#00FF41]" />
               <span>PER-CORE CPU ({health.cpuCores} cores)</span>
             </span>
-            <span className="text-[11px] text-[#55555E] font-mono">/proc/stat · 150ms</span>
+            <span className="text-[11px] text-[#55555E] font-mono">150 ms sample</span>
           </div>
 
           {perCore.length === 0 ? (
-            <div className="text-xs text-[#88888E]">Per-core CPU data is unavailable.</div>
+            <div className="text-xs text-[#88888E]">Unavailable on this platform</div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
               {perCore.map((c) => (

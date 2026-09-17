@@ -17,15 +17,10 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('tab') || 'terminal',
   );
   const [settings] = useSettings();
-  const [currentTheme, setCurrentTheme] = useState<string>(settings.theme);
   // Publish the theme to CSS variables so chrome and terminal agree.
   useEffect(() => {
     applyUiTheme(settings);
   }, [settings]);
-  // The header selector writes through to the same store the Settings tab uses.
-  useEffect(() => {
-    if (settings.theme !== currentTheme) setCurrentTheme(settings.theme);
-  }, [settings.theme, currentTheme]);
   // Real footer figures: host memory from /api/health and the measured
   // round-trip time of that very request.
   const [mem, setMem] = useState<{ usedMb: number; totalMb: number; percent: number } | null>(null);
@@ -91,6 +86,19 @@ export default function App() {
   // Alerts come from the host; there are none until something real happens.
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/alerts')
+      .then((response) => (response.ok ? response.json() : []))
+      .then((next: SystemAlert[]) => {
+        if (!cancelled && Array.isArray(next)) setAlerts(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Adopt the real host environment on startup: real home directory, real
   // platform preset and a shell banner that reflects this machine.
   useEffect(() => {
@@ -118,6 +126,7 @@ export default function App() {
 
   const markAlertsAsRead = () => {
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
+    void fetch('/api/alerts/mark-read', { method: 'POST' }).catch(() => undefined);
   };
 
   return (
@@ -126,8 +135,6 @@ export default function App() {
       <HeaderNavbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        currentTheme={currentTheme}
-        setCurrentTheme={setCurrentTheme}
         alerts={alerts}
         markAlertsAsRead={markAlertsAsRead}
       />
@@ -147,7 +154,7 @@ export default function App() {
               setTabs={setTabs}
               activeTabId={activeTabId}
               setActiveTabId={setActiveTabId}
-              currentTheme={currentTheme}
+              currentTheme={settings.theme}
               onOpenSettings={() => setActiveTab('settings')}
               home={home}
               onOpenFilePath={(path) => {

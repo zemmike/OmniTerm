@@ -76,6 +76,7 @@ function buildChildEnv(input: {
   overrides?: Record<string, string>;
 }): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+  const windowsHome = path.win32.parse(input.homeDir);
 
   // Never leak the host's OmniTerm configuration into the test server.
   for (const key of Object.keys(env)) {
@@ -105,8 +106,13 @@ function buildChildEnv(input: {
     OMNITERM_DATA_DIR: input.dataDir,
     PORT: String(input.port),
     HOME: input.homeDir,
-    // Deterministic shell: the server runs `$SHELL -lc <command>`.
-    SHELL: '/bin/bash',
+    USERPROFILE: input.homeDir,
+    ...(process.platform === 'win32'
+      ? {
+          HOMEDRIVE: windowsHome.root.replace(/[\\/]$/, ''),
+          HOMEPATH: input.homeDir.slice(windowsHome.root.length - 1),
+        }
+      : {}),
     ...(input.overrides || {}),
   };
 }

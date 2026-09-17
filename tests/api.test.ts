@@ -81,6 +81,15 @@ describe.skipIf(!serverBuilt)(
         expect(body.memoryUsage.totalMb).toBeGreaterThan(0);
 
         expect(body.diskUsage).toBeDefined();
+        expect(body.capabilities).toEqual({
+          memoryBreakdown: expect.any(Boolean),
+          processDetails: expect.any(Boolean),
+          mounts: expect.any(Boolean),
+          diskIO: expect.any(Boolean),
+          perCoreCpu: expect.any(Boolean),
+          cpuTemperature: expect.any(Boolean),
+          networkRates: expect.any(Boolean),
+        });
         expect(typeof body.uptimeSeconds).toBe('number');
         expect(body.uptimeSeconds).toBeGreaterThan(0);
       });
@@ -99,6 +108,11 @@ describe.skipIf(!serverBuilt)(
         expect(typeof body.cwd).toBe('string');
         expect(typeof body.user).toBe('string');
         expect(body.user.length).toBeGreaterThan(0);
+        expect(typeof body.shell).toBe('string');
+        expect(body.shell.length).toBeGreaterThan(0);
+        expect(['bash', 'zsh', 'fish', 'powershell', 'cmd', 'plain']).toContain(body.shellKind);
+        expect(typeof body.shellIntegration).toBe('string');
+        expect(body.shellIntegration.length).toBeGreaterThan(0);
 
         // Hermeticity: the server must see the temp HOME, not the real one.
         expect(body.home).toBe(srv.homeDir);
@@ -321,8 +335,11 @@ describe.skipIf(!serverBuilt)(
         expect(body.success).toBe(true);
         expect(typeof body.path).toBe('string');
         expect(body.source).toBe(fixtureDir);
+        expect(body.format).toBe(process.platform === 'win32' ? 'zip' : 'tar.gz');
+        expect(typeof body.restoreHint).toBe('string');
+        expect(body.restore).toBe(body.restoreHint);
 
-        // A real tar.gz exists on disk and is non-empty.
+        // A real platform-native archive exists on disk and is non-empty.
         expect(existsSync(body.path)).toBe(true);
         const st = statSync(body.path);
         expect(st.size).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Copy, X, ZoomIn, ZoomOut } from 'lucide-react';
-import { looksLikePath, parseReaderText, type ReaderBlock } from '../readerMarkdown';
+import katex from 'katex';
+import { parseReaderText, type InlineToken, type ReaderBlock } from '../readerMarkdown';
 import { normalizeTargetPath } from '../fileTarget';
 
 interface Props {
@@ -145,20 +146,24 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
             "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
         }}
       >
-        {blocks.length === 0 ? (
-          <p className="text-[#66666E]">
-            Nothing to read yet. This shows the focused pane&apos;s output as it arrives.
-          </p>
-        ) : (
-          blocks.map((block, index) => (
-            <ReaderBlockView key={index} block={block} scale={scale} onOpenPath={onOpenPath} />
-          ))
-        )}
-        {copied && (
-          <p role="status" className="pt-2 text-[11px] text-[#00C853]">
-            Copied the pane text.
-          </p>
-        )}
+        <div className="reader-prose">
+          {blocks.length === 0 ? (
+            <p className="text-[#66666E]">
+              Nothing to read yet. This shows the focused pane&apos;s output as it arrives.
+            </p>
+          ) : (
+            blocks.map((block, index) => (
+              <React.Fragment key={index}>
+                <ReaderBlockView block={block} scale={scale} onOpenPath={onOpenPath} />
+              </React.Fragment>
+            ))
+          )}
+          {copied && (
+            <p role="status" className="pt-2 text-[11px] text-[#00C853]">
+              Copied the pane text.
+            </p>
+          )}
+        </div>
       </div>
     </aside>
   );
@@ -168,122 +173,175 @@ function ReaderBlockView({
   block,
   scale,
   onOpenPath,
-  key: _key,
 }: {
   block: ReaderBlock;
   scale: number;
   onOpenPath?: (path: string) => void;
-  // React 19 passes `key` through as a normal prop, so it has to be accepted here.
-  // It is destructured (and ignored) purely so it is not spread onto the DOM node.
-  key?: React.Key;
 }) {
   switch (block.kind) {
     case 'heading': {
       const size = block.level <= 1 ? 1.35 : block.level === 2 ? 1.2 : 1.08;
-      const Tag = (block.level === 1 ? 'h2' : block.level === 2 ? 'h3' : 'h4') as
-        'h2' | 'h3' | 'h4';
+      const Tag = `h${Math.min(6, Math.max(1, block.level))}` as
+        | 'h1'
+        | 'h2'
+        | 'h3'
+        | 'h4'
+        | 'h5'
+        | 'h6';
       return (
         <Tag
           className="mt-4 mb-1.5 font-bold text-[#F2F2F5] first:mt-0"
           style={{ fontSize: `${size}em` }}
         >
-          {block.text}
+          <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
         </Tag>
       );
     }
-    case 'bullet':
+    case 'paragraph':
       return (
-        <div className="flex gap-2 py-0.5">
-          <span aria-hidden="true" className="shrink-0 text-[#8AB4F8]">
-            {block.marker === '-' || block.marker === '*' || block.marker === '•'
-              ? '•'
-              : block.marker}
-          </span>
-          <span className="text-[#DCDCE2]">
-            <InlineText text={block.text} onOpenPath={onOpenPath} />
-          </span>
-        </div>
+        <p className="my-1.5 whitespace-pre-wrap text-[#DCDCE2]">
+          <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
+        </p>
       );
     case 'quote':
       return (
         <blockquote className="my-2 border-l-2 border-[#3A3A42] pl-3 text-[#A9A9B2]">
-          <InlineText text={block.text} onOpenPath={onOpenPath} />
+          <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
         </blockquote>
       );
+    case 'list': {
+      const List = block.ordered ? 'ol' : 'ul';
+      return (
+        <List
+          className={`my-2 space-y-1 pl-6 text-[#DCDCE2] ${block.ordered ? 'list-decimal' : 'list-disc'}`}
+          start={block.ordered ? block.start : undefined}
+        >
+          {block.items.map((item, index) => (
+            <li key={index} className="pl-1 marker:text-[#8AB4F8]">
+              <InlineTokens tokens={item} onOpenPath={onOpenPath} />
+            </li>
+          ))}
+        </List>
+      );
+    }
     case 'code':
       return (
-        <pre className="my-2 overflow-x-auto rounded border border-[#232329] bg-[#111114] p-2.5">
+        <pre className="reader-code my-2 rounded border border-[#232329] bg-[#111114] p-2.5">
           <code
             className="whitespace-pre text-[#D7E1C9]"
+            data-language={block.lang || undefined}
             style={{ fontSize: `${Math.max(10, 12 * scale)}px`, lineHeight: 1.5 }}
           >
             {block.text}
           </code>
         </pre>
       );
-    default:
+    case 'table':
       return (
-        <p className="my-1.5 whitespace-pre-wrap text-[#DCDCE2]">
-          <InlineText text={block.text} onOpenPath={onOpenPath} />
-        </p>
+        <div className="reader-table my-3 rounded border border-[#2A2A2E]">
+          <table>
+            <thead className="bg-[#17171B] text-left text-[#F2F2F5]">
+              <tr>
+                {block.headers.map((header, index) => (
+                  <th key={index} scope="col">
+                    <InlineTokens tokens={header} onOpenPath={onOpenPath} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="text-[#DCDCE2]">
+              {block.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex}>
+                      <InlineTokens tokens={cell} onOpenPath={onOpenPath} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
+    case 'math':
+      return <MathToken value={block.value} displayMode />;
   }
 }
 
-/** Inline `code` and clickable paths, without ever injecting HTML. */
-function InlineText({ text, onOpenPath }: { text: string; onOpenPath?: (path: string) => void }) {
-  const parts = useMemo(() => {
-    const out: Array<{ kind: 'text' | 'code' | 'path' | 'emphasis'; value: string }> = [];
-    const pattern =
-      /(\*\*[^*]+\*\*|__[^_]+__)|(`[^`]+`)|([\w./+-]*\/[\w./+-]*|\b[\w.-]+\.[a-z]{1,5}\b)/g;
-    let last = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      if (match.index > last) out.push({ kind: 'text', value: text.slice(last, match.index) });
-      const token = match[0];
-      if (token.startsWith('**') || token.startsWith('__')) {
-        out.push({ kind: 'emphasis', value: token.slice(2, -2) });
-      } else if (token.startsWith('`')) out.push({ kind: 'code', value: token.slice(1, -1) });
-      else if (looksLikePath(token)) out.push({ kind: 'path', value: token });
-      else out.push({ kind: 'text', value: token });
-      last = match.index + token.length;
-    }
-    if (last < text.length) out.push({ kind: 'text', value: text.slice(last) });
-    return out;
-  }, [text]);
-
+function InlineTokens({
+  tokens,
+  onOpenPath,
+}: {
+  tokens: InlineToken[];
+  onOpenPath?: (path: string) => void;
+}) {
   return (
     <>
-      {parts.map((part, index) => {
-        if (part.kind === 'emphasis') {
-          return (
-            <strong key={index} className="font-semibold text-[#F2F2F5]">
-              {part.value}
-            </strong>
-          );
-        }
-        if (part.kind === 'code') {
-          return (
-            <code key={index} className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">
-              {part.value}
-            </code>
-          );
-        }
-        if (part.kind === 'path' && onOpenPath) {
-          return (
-            <button
-              key={index}
-              type="button"
-              onClick={() => onOpenPath(normalizeTargetPath(part.value))}
-              title={`Open ${part.value} in the Files tab`}
-              className="rounded text-left text-[#8AB4F8] underline decoration-dotted underline-offset-2 hover:text-[#AECBFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
-            >
-              {part.value}
-            </button>
-          );
-        }
-        return <React.Fragment key={index}>{part.value}</React.Fragment>;
-      })}
+      {tokens.map((token, index) => (
+        <React.Fragment key={index}>
+          <InlineTokenView token={token} onOpenPath={onOpenPath} />
+        </React.Fragment>
+      ))}
     </>
+  );
+}
+
+function InlineTokenView({
+  token,
+  onOpenPath,
+}: {
+  token: InlineToken;
+  onOpenPath?: (path: string) => void;
+}) {
+  switch (token.kind) {
+    case 'text':
+      return token.value;
+    case 'strong':
+      return <strong className="font-semibold text-[#F2F2F5]">{token.value}</strong>;
+    case 'emphasis':
+      return <em>{token.value}</em>;
+    case 'code':
+      return <code className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">{token.value}</code>;
+    case 'path':
+      if (!onOpenPath) return token.value;
+      return (
+        <button
+          type="button"
+          onClick={() => onOpenPath(normalizeTargetPath(token.value))}
+          title={`Open ${token.value} in the Files tab`}
+          className="rounded text-left text-[#8AB4F8] underline decoration-dotted underline-offset-2 hover:text-[#AECBFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+        >
+          {token.value}
+        </button>
+      );
+    case 'math':
+      return <MathToken value={token.value} displayMode={false} />;
+  }
+}
+
+function MathToken({ value, displayMode }: { value: string; displayMode: boolean }) {
+  let html: string;
+  try {
+    html = katex.renderToString(value, {
+      displayMode,
+      throwOnError: false,
+      strict: 'warn',
+      trust: false,
+      output: 'htmlAndMathml',
+    });
+  } catch {
+    return (
+      <code className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">
+        {displayMode ? `$$${value}$$` : `$${value}$`}
+      </code>
+    );
+  }
+
+  const Tag = displayMode ? 'div' : 'span';
+  return (
+    <Tag
+      className={`reader-math ${displayMode ? 'reader-math-display' : 'reader-math-inline'}`}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }

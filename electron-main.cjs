@@ -16,6 +16,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { resolveElectronDataDir } = require('./platform/electron-data-dir.cjs');
 
 // Fixed token when explicitly provided (kiosk / scripted setups), random otherwise.
 const TOKEN = (process.env.OMNITERM_TOKEN || '').trim() || crypto.randomBytes(32).toString('hex');
@@ -139,6 +140,14 @@ function startBackendServer() {
     );
   }
 
+  const dataDir = resolveElectronDataDir({
+    platform: process.platform,
+    home: os.homedir(),
+    userData: app.getPath('userData'),
+    env: process.env,
+    existsSync: fs.existsSync,
+  });
+
   serverProcess = spawn(process.execPath, [serverScript], {
     cwd: app.getPath('userData'),
     env: {
@@ -151,6 +160,7 @@ function startBackendServer() {
       OMNITERM_TOKEN: TOKEN,
       OMNITERM_VERSION: VERSION,
       OMNITERM_CWD: os.homedir(),
+      OMNITERM_DATA_DIR: dataDir,
       OMNITERM_DISTRO: process.env.OMNITERM_DISTRO || '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

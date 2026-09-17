@@ -4,6 +4,10 @@ Measured, not asserted. Every number below came from `npm run bench`
 (`scripts/bench.sh`) on the machine named at the bottom, and the rule for this
 document is that the numbers get published even when they look bad.
 
+These are Linux measurements only. They do not predict startup, memory use, PTY
+throughput, or rendering performance on macOS or Windows; native measurements
+for those platforms have not yet been collected.
+
 ## Results
 
 | Metric | Median | Worst | Runs | What it actually measures |

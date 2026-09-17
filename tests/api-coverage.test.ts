@@ -374,21 +374,27 @@ describe.skipIf(!serverBuilt)(
 
     // -------------------------------------------------------- backups ------
     describe('POST /api/backups/run', () => {
-      it('writes a real, non-empty gzip archive and lists it, then cleans up', async () => {
+      it('writes a real platform-native archive and lists it, then cleans up', async () => {
         const res = await postJson(srv, '/api/backups/run', { cwd: fixtureDir });
         expect(res.status).toBe(200);
         const body = await res.json();
 
         expect(body.success).toBe(true);
         expect(body.source).toBe(fixtureDir);
+        const expectedFormat = process.platform === 'win32' ? 'zip' : 'tar.gz';
+        expect(body.format).toBe(expectedFormat);
         expect(typeof body.path).toBe('string');
         expect(body.path.startsWith(srv.dataDir)).toBe(true);
+        expect(body.path.endsWith(`.${expectedFormat}`)).toBe(true);
 
         expect(existsSync(body.path)).toBe(true);
         const bytes = readFileSync(body.path);
         expect(bytes.length).toBeGreaterThan(0);
-        // Real gzip magic.
-        expect(bytes.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+        const magic =
+          expectedFormat === 'zip'
+            ? { actual: bytes.subarray(0, 4), expected: Buffer.from([0x50, 0x4b, 0x03, 0x04]) }
+            : { actual: bytes.subarray(0, 2), expected: Buffer.from([0x1f, 0x8b]) };
+        expect(magic.actual).toEqual(magic.expected);
         expect(statSync(body.path).size).toBe(bytes.length);
 
         const list = await (await api(srv, '/api/backups')).json();
