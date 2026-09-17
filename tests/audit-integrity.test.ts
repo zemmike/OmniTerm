@@ -20,6 +20,8 @@
  */
 import { spawnSync } from 'node:child_process';
 import {
+  accessSync,
+  constants,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -525,7 +527,7 @@ describe.skipIf(!serverBuilt)(
       await srv?.stop();
     });
 
-    it('the trail the server writes verifies, keeps real exit codes, and stays 0600', async () => {
+    it('the trail the server writes verifies, keeps real exit codes, and is protected', async () => {
       for (const command of ['echo chain-check-a', 'echo chain-check-b', 'exit 3']) {
         const res = await postJson(srv, '/api/terminal/execute', { command });
         expect(res.status).toBe(200);
@@ -552,8 +554,15 @@ describe.skipIf(!serverBuilt)(
       const failed = rows.find((row) => row.command === 'exit 3');
       expect(failed?.exitCode).toBe(3); // auditing still records reality
 
-      // The audit file is still owner-only.
-      expect(statSync(srv.auditFile).mode & 0o777).toBe(0o600);
+      const auditStat = statSync(srv.auditFile);
+      expect(auditStat.isFile()).toBe(true);
+      if (process.platform === 'win32') {
+        // Windows does not expose ACLs through POSIX mode bits. Verify the
+        // server account can continue reading and appending to the protected file.
+        expect(() => accessSync(srv.auditFile, constants.R_OK | constants.W_OK)).not.toThrow();
+      } else {
+        expect(auditStat.mode & 0o777).toBe(0o600);
+      }
 
       // The API surfaces the chained entries too, hashes included.
       const logs = (await (await api(srv, '/api/activity-logs')).json()) as {

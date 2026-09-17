@@ -381,6 +381,27 @@ function runQuick(cmd: string, args: string[], cwd?: string) {
   }
 }
 
+function inspectSshMaterial(home = os.homedir()) {
+  const sshDir = path.join(home, '.ssh');
+  try {
+    const sshKeys = fs
+      .readdirSync(sshDir, { withFileTypes: true })
+      .filter(
+        (entry) => entry.isFile() && entry.name.startsWith('id_') && !entry.name.endsWith('.pub'),
+      ).length;
+    const authorizedPath = path.join(sshDir, 'authorized_keys');
+    const authorizedKeys = fs.existsSync(authorizedPath)
+      ? fs
+          .readFileSync(authorizedPath, 'utf8')
+          .split(/\r?\n/)
+          .filter((line) => line.length > 0).length
+      : 0;
+    return { sshKeys, authorizedKeys };
+  } catch {
+    return { sshKeys: 0, authorizedKeys: 0 };
+  }
+}
+
 function repoStatus(dir?: string) {
   const cwd = resolveCwd(dir);
   const inside = runQuick('git', ['-C', cwd, 'rev-parse', '--is-inside-work-tree'], cwd);
@@ -526,14 +547,7 @@ function securityPosture() {
     '-lc',
     'getent group sudo wheel 2>/dev/null | cut -d: -f1,4',
   ]).out;
-  const sshKeys = runQuick('bash', [
-    '-lc',
-    'find ~/.ssh -maxdepth 1 -name "id_*" ! -name "*.pub" 2>/dev/null | wc -l',
-  ]);
-  const authorized = runQuick('bash', [
-    '-lc',
-    'test -f ~/.ssh/authorized_keys && wc -l < ~/.ssh/authorized_keys || echo 0',
-  ]);
+  const sshMaterial = inspectSshMaterial();
   const sshd = runQuick('bash', [
     '-lc',
     'systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo inactive',
@@ -547,8 +561,8 @@ function securityPosture() {
     firewall: ufw.out.split('\n')[0] || 'unknown',
     apparmor: apparmor.out.trim() || 'unknown',
     sudoGroups: sudoers.trim() || '-',
-    sshKeys: Number(sshKeys.out) || 0,
-    authorizedKeys: Number(authorized.out) || 0,
+    sshKeys: sshMaterial.sshKeys,
+    authorizedKeys: sshMaterial.authorizedKeys,
     sshService: sshd.out.trim() || 'inactive',
     worldWritableEtcFiles: Number(worldWritable.out) || 0,
     listening: listening,
