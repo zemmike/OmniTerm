@@ -17,6 +17,7 @@ import { TerminalTab } from '../types';
 import { useSettings } from '../settings';
 import { actionForEvent } from '../keys';
 import { normalizeSizes, resizeNeighbours, PANE_KEY_STEP } from '../splitSizes';
+import { resolveTargetPath } from '../fileTarget';
 import AiReader from './AiReader';
 import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
@@ -312,6 +313,19 @@ export default function TerminalView({
     const timer = window.setInterval(read, 1200);
     return () => window.clearInterval(timer);
   }, [readerOpen, activeLayout?.activeId]);
+
+  // A clicked path arrives exactly as the terminal printed it: often relative
+  // (src/app.ts) and often carrying a line number (src/app.ts:42). Resolve it here,
+  // where the pane's working directory is known, so the Files tab only ever receives
+  // an absolute path it can open.
+  const openResolvedPath = useCallback(
+    (raw: string) => {
+      if (!onOpenFilePath) return;
+      const resolved = resolveTargetPath(raw, { base: activeCwd, home });
+      onOpenFilePath(resolved);
+    },
+    [activeCwd, home, onOpenFilePath],
+  );
 
   const registerApi = useCallback((sessionId: string, api: PaneApi | null) => {
     if (api) apiRef.current[sessionId] = api;
@@ -785,7 +799,7 @@ export default function TerminalView({
                             active={isCurrent && isActive}
                             settings={settings}
                             home={home}
-                            onOpenFilePath={onOpenFilePath}
+                            onOpenFilePath={openResolvedPath}
                             registerApi={registerApi}
                             onFocusPane={() => focusPane(tab.id, pane.sessionId)}
                             onAction={(actionId, sessionId) =>
@@ -832,7 +846,7 @@ export default function TerminalView({
         {readerOpen && (
           <AiReader
             text={readerText}
-            onOpenPath={onOpenFilePath}
+            onOpenPath={openResolvedPath}
             onClose={() => setReader(false)}
           />
         )}

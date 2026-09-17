@@ -49,3 +49,42 @@ export function clampListWidth(width: number): number {
   if (!Number.isFinite(width)) return LIST_PANEL_DEFAULT;
   return Math.max(LIST_PANEL_MIN, Math.min(LIST_PANEL_MAX, Math.round(width)));
 }
+
+/**
+ * Strip a line/column suffix that came along with the path.
+ *
+ * Agents and compilers print `src/app.ts:42` and `src/app.ts:42:7`, and some print
+ * `src/app.ts(42,7)`. The suffix is useful information but it is not part of the
+ * filename, and leaving it on is why those clicks could not be resolved.
+ */
+export function stripLineSuffix(path: string): string {
+  return path.replace(/:(\d+)(:\d+)?$/, '').replace(/\((\d+)(,\d+)?\)$/, '');
+}
+
+/** Expand a leading `~`, which shells and agents print but the API cannot resolve. */
+export function expandTilde(path: string, home?: string): string {
+  if (!path.startsWith('~') || !home) return path;
+  if (path === '~') return home;
+  if (path.startsWith('~/')) return `${home.replace(/\/+$/, '')}${path.slice(1)}`;
+  return path;
+}
+
+/**
+ * Turn whatever a terminal printed into a path the API can open.
+ *
+ * The order matters: sentence punctuation first (a trailing `:` from prose must not
+ * survive), then the line suffix, then `~`, then the relative-to-absolute step. A
+ * relative path is the shape agents most often print and the reason clicks failed -
+ * it was being sent to a local API that only understands absolute paths.
+ */
+export function resolveTargetPath(
+  raw: string,
+  options: { base?: string; home?: string } = {},
+): string {
+  let value = stripLineSuffix(normalizeTargetPath(raw));
+  value = expandTilde(value, options.home);
+  if (!value || value.startsWith('/')) return value;
+  const base = (options.base || '').replace(/\/+$/, '');
+  if (!base) return value;
+  return `${base}/${value.replace(/^\.\//, '')}`;
+}
