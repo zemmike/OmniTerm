@@ -25,8 +25,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
-      - run: npm test
+      # Build before testing: one API test asserts that a non-API path serves the SPA
+      # shell, and that shell is served out of dist/. With no dist/ it correctly
+      # returns 404, so running the suite first made CI fail on a missing build while
+      # the same suite passed locally, where dist/ already existed.
       - run: npm run build
+      - run: npm test
       - name: Action pins are commit SHAs
         run: bash scripts/check-action-pins.sh
 
