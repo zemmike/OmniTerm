@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.11.1] - 2026-09-16
+
+### Fixed
+- **Clicking a file path failed for the two shapes agents print most.** A path from
+  the terminal was used verbatim and the local API only opens absolute paths, so
+  relative paths (`src/app.ts`) and line-suffixed paths (`src/app.ts:42`) could never
+  resolve. Paths are now resolved where the pane's working directory is known:
+  normalise, strip the `:line`/`:col` suffix, expand `~`, then make absolute. Applies
+  to terminal links and to the AI Reader panel. Trade-off, asserted in a test: a
+  filename genuinely ending in `:digits` is misread, which is the reasonable price for
+  making every `file:line` click work.
+
 ## [1.11.0] - 2026-09-16
 
 ### Added
@@ -569,7 +581,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/zemmike/OmniTerm/compare/v1.9.3...v1.10.0
 [1.9.3]: https://github.com/zemmike/OmniTerm/compare/v1.9.2...v1.9.3
