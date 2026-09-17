@@ -136,7 +136,14 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
         role="region"
         aria-label="Reader content"
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
-        style={{ fontSize: `${13 * scale}px`, lineHeight: 1.65 }}
+        style={{
+          fontSize: `${13 * scale}px`,
+          lineHeight: 1.7,
+          // Sans-serif prose against the terminal's monospace is most of what makes
+          // this readable at a glance; code keeps monospace below.
+          fontFamily:
+            "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+        }}
       >
         {blocks.length === 0 ? (
           <p className="text-[#66666E]">
@@ -226,14 +233,17 @@ function ReaderBlockView({
 /** Inline `code` and clickable paths, without ever injecting HTML. */
 function InlineText({ text, onOpenPath }: { text: string; onOpenPath?: (path: string) => void }) {
   const parts = useMemo(() => {
-    const out: Array<{ kind: 'text' | 'code' | 'path'; value: string }> = [];
-    const pattern = /(`[^`]+`)|([\w./+-]*\/[\w./+-]*|\b[\w.-]+\.[a-z]{1,5}\b)/g;
+    const out: Array<{ kind: 'text' | 'code' | 'path' | 'emphasis'; value: string }> = [];
+    const pattern =
+      /(\*\*[^*]+\*\*|__[^_]+__)|(`[^`]+`)|([\w./+-]*\/[\w./+-]*|\b[\w.-]+\.[a-z]{1,5}\b)/g;
     let last = 0;
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
       if (match.index > last) out.push({ kind: 'text', value: text.slice(last, match.index) });
       const token = match[0];
-      if (token.startsWith('`')) out.push({ kind: 'code', value: token.slice(1, -1) });
+      if (token.startsWith('**') || token.startsWith('__')) {
+        out.push({ kind: 'emphasis', value: token.slice(2, -2) });
+      } else if (token.startsWith('`')) out.push({ kind: 'code', value: token.slice(1, -1) });
       else if (looksLikePath(token)) out.push({ kind: 'path', value: token });
       else out.push({ kind: 'text', value: token });
       last = match.index + token.length;
@@ -245,6 +255,13 @@ function InlineText({ text, onOpenPath }: { text: string; onOpenPath?: (path: st
   return (
     <>
       {parts.map((part, index) => {
+        if (part.kind === 'emphasis') {
+          return (
+            <strong key={index} className="font-semibold text-[#F2F2F5]">
+              {part.value}
+            </strong>
+          );
+        }
         if (part.kind === 'code') {
           return (
             <code key={index} className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">

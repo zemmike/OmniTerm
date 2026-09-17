@@ -42,6 +42,22 @@ export function dedent(text: string): string {
     .trim();
 }
 
+/**
+ * Turn bold/italic/underline into markers before the escapes are stripped.
+ *
+ * This is the difference between a reader that looks like the terminal and one that
+ * looks like the response. Coding agents style their headings with SGR bold rather
+ * than markdown, so stripping the escapes first threw the structure away and every
+ * heading arrived as an ordinary line - which is exactly what made the panel look
+ * like the terminal it was supposed to replace.
+ */
+export function ansiToEmphasis(text: string): string {
+  return text
+    .replace(/\u001b\[1m([^\u001b]*)\u001b\[(?:0|22)m/g, '**$1**')
+    .replace(/\u001b\[3m([^\u001b]*)\u001b\[(?:0|23)m/g, '*$1*')
+    .replace(/\u001b\[4m([^\u001b]*)\u001b\[(?:0|24)m/g, '__$1__');
+}
+
 /** Cursor movement, colours, OSC titles: anything that is not content. */
 export function stripAnsi(text: string): string {
   return (
@@ -87,7 +103,7 @@ const FENCE = /^\s*```\s*([\w+-]*)\s*$/;
  * having to reconstruct anything.
  */
 export function parseReaderText(raw: string): ReaderBlock[] {
-  const cleaned = stripTerminalFurniture(stripAnsi(raw || ''));
+  const cleaned = stripTerminalFurniture(stripAnsi(ansiToEmphasis(raw || '')));
   const blocks: ReaderBlock[] = [];
   const lines = cleaned.split('\n');
 
@@ -123,6 +139,20 @@ export function parseReaderText(raw: string): ReaderBlock[] {
     if (fence) {
       flush();
       code = { lang: fence[1] || '', lines: [] };
+      continue;
+    }
+
+    // Whole-line emphasis is how a TUI agent writes a heading: there is no `##`.
+    const boldLine = /^\s*\*\*([^*]{2,80})\*\*\s*:?\s*$/.exec(line);
+    if (boldLine) {
+      flush();
+      const inner = boldLine[1].trim();
+      const hashes = /^(#{1,6})\s*/.exec(inner);
+      blocks.push({
+        kind: 'heading',
+        level: hashes ? Math.min(6, hashes[1].length) : 2,
+        text: inner.replace(/^#{1,6}\s*/, ''),
+      });
       continue;
     }
 

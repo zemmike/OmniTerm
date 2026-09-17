@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ansiToEmphasis,
   looksLikePath,
   parseReaderText,
   stripAnsi,
@@ -153,5 +154,42 @@ describe('looksLikePath', () => {
 
   it('refuses a token containing a space', () => {
     expect(looksLikePath('/home/my folder/app.ts')).toBe(false);
+  });
+});
+
+describe('ansiToEmphasis', () => {
+  it('keeps bold, italic and underline as markers', () => {
+    // Agents style their headings with SGR rather than markdown. Stripping the
+    // escapes first is what made the reader look exactly like the terminal.
+    expect(ansiToEmphasis('\u001b[1mHeading\u001b[0m')).toBe('**Heading**');
+    expect(ansiToEmphasis('\u001b[3mshrug\u001b[23m')).toBe('*shrug*');
+    expect(ansiToEmphasis('\u001b[4mlink\u001b[24m')).toBe('__link__');
+  });
+
+  it('leaves colour and ordinary text alone', () => {
+    expect(ansiToEmphasis('\u001b[31mred\u001b[0m')).toBe('\u001b[31mred\u001b[0m');
+    expect(ansiToEmphasis('plain text')).toBe('plain text');
+  });
+});
+
+describe('headings written as bold only', () => {
+  it('promotes a whole-line bold line to a heading', () => {
+    // There is no `##` in agent output; the bold line is the heading.
+    expect(parseReaderText('\u001b[1mFile-link parsing is fixed\u001b[0m')).toEqual([
+      { kind: 'heading', level: 2, text: 'File-link parsing is fixed' },
+    ]);
+  });
+
+  it('keeps the level when the bold text itself carries hashes', () => {
+    expect(parseReaderText('\u001b[1m### Details\u001b[0m')).toEqual([
+      { kind: 'heading', level: 3, text: 'Details' },
+    ]);
+  });
+
+  it('does not promote bold inside a sentence', () => {
+    const blocks = parseReaderText('This changed \u001b[1mthe parser\u001b[0m today');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe('text');
+    expect(blocks[0]).toMatchObject({ text: 'This changed **the parser** today' });
   });
 });

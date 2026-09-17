@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.12.1] - 2026-09-17
+
+### Fixed
+- **The AI Reader looked like the terminal it was meant to replace.** Agents style
+  their headings with SGR bold rather than markdown, and the reader stripped the
+  escapes before classifying anything, so every heading arrived as an ordinary line
+  and the panel was a monospace copy of the terminal. Bold/italic/underline are now
+  converted to markers *before* the escapes are dropped, a whole-line bold line
+  becomes a heading (keeping its level when the text itself carries `#`s), emphasis
+  renders as real emphasis, and prose is set in a sans-serif face while code stays
+  monospace. Bold inside a sentence stays part of that sentence.
+
 ## [1.12.0] - 2026-09-16
 
 ### Added
@@ -604,7 +616,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...HEAD
+[1.12.1]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/zemmike/OmniTerm/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/zemmike/OmniTerm/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/zemmike/OmniTerm/compare/v1.10.0...v1.11.0
