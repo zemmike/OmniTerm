@@ -218,6 +218,22 @@ describe('cross-platform reader paths', () => {
   it('refuses backslash prose', () => {
     expect(looksLikePath('yes\\no')).toBe(false);
   });
+
+  it('tokenises paths after ordinary punctuation', () => {
+    expect(parseInlineText('(docs/readme.md)')).toEqual([
+      { kind: 'text', value: '(' },
+      { kind: 'path', value: 'docs/readme.md' },
+      { kind: 'text', value: ')' },
+    ]);
+    expect(parseInlineText('"src/App.tsx"')).toEqual([
+      { kind: 'text', value: '"' },
+      { kind: 'path', value: 'src/App.tsx' },
+      { kind: 'text', value: '"' },
+    ]);
+    expect(parseInlineText('see:src/App.tsx')).toEqual([
+      { kind: 'path', value: 'see:src/App.tsx' },
+    ]);
+  });
 });
 
 describe('looksLikePath', () => {
