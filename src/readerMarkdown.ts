@@ -119,9 +119,13 @@ function inlineMarkupAt(
 }
 
 function pathAt(text: string, index: number): { end: number; value: string } | null {
+  if (index > 0 && !/\s/.test(text[index - 1])) return null;
   if (!/[A-Za-z0-9./\\]/.test(text[index])) return null;
   const match = /^\S+/.exec(text.slice(index));
   if (!match) return null;
+  for (let offset = 0; offset < match[0].length; offset += 1) {
+    if (inlineMathAt(match[0], offset)) return null;
+  }
   const value = match[0].replace(/[),.;!?\]]+$/, '');
   if (!value || !looksLikePath(value)) return null;
   return { end: index + value.length, value };
@@ -200,7 +204,7 @@ export function parseReaderText(raw: string): ReaderBlock[] {
       continue;
     }
     const displayMath = DISPLAY_MATH.exec(line);
-    if (displayMath) {
+    if (displayMath && texSignal(displayMath[1])) {
       flush();
       blocks.push({ kind: 'math', value: displayMath[1].trim(), display: true });
       continue;

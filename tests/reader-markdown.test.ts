@@ -152,6 +152,14 @@ describe('reader TeX parsing', () => {
     ]);
   });
 
+  it('requires a TeX signal in display math', () => {
+    for (const source of ['$$hello$$', '$$20$$', '$$$$']) {
+      expect(parseReaderText(source)).toEqual([
+        { kind: 'paragraph', content: [{ kind: 'text', value: source }] },
+      ]);
+    }
+  });
+
   it('keeps currency and unmatched display delimiters as paragraph text', () => {
     expect(parseReaderText('Price is $20 and tax is $2.')).toMatchObject([
       { kind: 'paragraph' },
@@ -165,6 +173,14 @@ describe('reader TeX parsing', () => {
     expect(parseInlineText('Radius \\(r^2\\)')).toEqual([
       { kind: 'text', value: 'Radius ' },
       { kind: 'math', value: 'r^2' },
+    ]);
+  });
+
+  it('recognises inline TeX before path-like text', () => {
+    expect(parseInlineText('docs/$x^2$/notes.md')).toEqual([
+      { kind: 'text', value: 'docs/' },
+      { kind: 'math', value: 'x^2' },
+      { kind: 'text', value: '/notes.md' },
     ]);
   });
 });
