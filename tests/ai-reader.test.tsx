@@ -1,15 +1,22 @@
 /** @vitest-environment jsdom */
 
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import AiReader from '../src/components/AiReader';
 
+const readerStyles = readFileSync('src/index.css', 'utf8');
+
 describe('AI Reader', () => {
   let writeText: ReturnType<typeof vi.fn>;
+  let stylesheet: HTMLStyleElement;
 
   beforeEach(() => {
     writeText = vi.fn(async () => undefined);
+    stylesheet = document.createElement('style');
+    stylesheet.textContent = readerStyles;
+    document.head.append(stylesheet);
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText },
@@ -18,6 +25,7 @@ describe('AI Reader', () => {
 
   afterEach(() => {
     cleanup();
+    stylesheet.remove();
     vi.restoreAllMocks();
   });
 
@@ -67,6 +75,23 @@ describe('AI Reader', () => {
     expect(container?.querySelector('table')).toBe(screen.getByRole('table'));
     expect(screen.getByRole('columnheader', { name: 'Name' })).toBeTruthy();
     expect(within(screen.getByRole('table')).getByText('alpha')).toBeTruthy();
+  });
+
+  it('contains long inline math inside a narrow reader', () => {
+    render(
+      <div style={{ width: '240px' }}>
+        <AiReader
+          text={'A long formula: $\\displaystyle \\sum_{n=1}^{100000} \\frac{n^2 + n + 1}{n^3 + 2n^2 + 3n + 4}$'}
+          onClose={() => {}}
+        />
+      </div>,
+    );
+
+    const inlineMath = document.querySelector<HTMLElement>('.reader-math-inline');
+    expect(inlineMath).not.toBeNull();
+    expect(getComputedStyle(inlineMath!).maxWidth).toBe('100%');
+    expect(getComputedStyle(inlineMath!).overflowX).toBe('auto');
+    expect(getComputedStyle(inlineMath!).overflowY).toBe('hidden');
   });
 
   it('copies the original pane text rather than rendered output', async () => {

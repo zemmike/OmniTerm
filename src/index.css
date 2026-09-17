@@ -93,5 +93,8 @@ body,
 
 .reader-math-inline {
   display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
   vertical-align: middle;
 }
