@@ -20,3 +20,6 @@ build/*
 
 # isolated feature worktrees
 .worktrees/
+
+# agent scaffolding, not part of the product
+.superpowers/
