@@ -79,18 +79,19 @@ async function main() {
   );
 
   let output = '';
-  const terminal = pty.spawn(profile.executable, profile.args, {
-    name: 'xterm-256color',
-    cols: 100,
-    rows: 30,
-    cwd: os.homedir(),
-    env: { ...process.env, TERM: 'xterm-256color' },
-  });
-  terminal.onData((data) => {
-    output += data;
-  });
-
+  let terminal = null;
   try {
+    terminal = pty.spawn(profile.executable, profile.args, {
+      name: 'xterm-256color',
+      cols: 100,
+      rows: 30,
+      cwd: os.homedir(),
+      env: { ...process.env, TERM: 'xterm-256color' },
+    });
+    terminal.onData((data) => {
+      output += data;
+    });
+
     await waitFor(() => output, profile.prompt, 15_000, 'the initial prompt');
     terminal.write(`${profile.marker}\r`);
     await waitFor(() => output, /OMNITERM_PTY_OK/, 10_000, 'the marker command');
@@ -113,7 +114,7 @@ async function main() {
     process.exitCode = 1;
   } finally {
     try {
-      terminal.kill();
+      terminal?.kill();
     } catch {
       /* already gone */
     }

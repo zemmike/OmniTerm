@@ -69,18 +69,22 @@ async function main() {
         };
 
   let buf = '';
-  const p = pty.spawn(shell, args, {
-    name: 'xterm-256color',
-    cols: 100,
-    rows: 30,
-    cwd: os.homedir(),
-    env: { ...process.env, TERM: 'xterm-256color' },
-  });
-  p.onData((d) => {
-    buf += d;
-  });
-
+  let p = null;
   try {
+    // Spawn inside the guard: a shell that cannot be started is exactly the failure
+    // this script exists to report, and outside the try it escaped without an
+    // annotation (the only trace being a stack trace in a log nobody can read).
+    p = pty.spawn(shell, args, {
+      name: 'xterm-256color',
+      cols: 100,
+      rows: 30,
+      cwd: os.homedir(),
+      env: { ...process.env, TERM: 'xterm-256color' },
+    });
+    p.onData((d) => {
+      buf += d;
+    });
+
     await sleep(windows ? 1200 : 600);
     p.write(`${commands.stage}\r`);
     await sleep(windows ? 1200 : 800);
@@ -128,11 +132,14 @@ async function main() {
     process.exitCode = 1;
   } finally {
     try {
-      p.kill();
+      p?.kill();
     } catch {
       /* already gone */
     }
   }
 }
 
-void main();
+main().catch((error) => {
+  announce('error', `PTY smoke crashed on ${process.platform}: ${(error && error.stack) || error}`);
+  process.exitCode = 1;
+});
