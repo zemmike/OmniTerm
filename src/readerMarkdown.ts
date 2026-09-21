@@ -176,10 +176,12 @@ function isTableSeparator(line: string, columns: number): boolean {
 }
 
 /** Classify cleaned terminal text into blocks suitable for reader rendering. */
-export function parseReaderText(raw: string): ReaderBlock[] {
-  const cleaned = stripTerminalFurniture(stripAnsi(ansiToEmphasis(raw || '')));
+export function parseReaderText(raw: string, options: ReaderFilterOptions = {}): ReaderBlock[] {
+  const source = options.lastReply ? lastReplyOnly(raw || '').text : raw || '';
+  const cleaned = stripTerminalFurniture(stripAnsi(ansiToEmphasis(source)));
+  const withoutNoise = options.hideNoise ? stripNoiseLines(cleaned) : cleaned;
   const blocks: ReaderBlock[] = [];
-  const lines = cleaned.split('\n');
+  const lines = withoutNoise.split('\n');
   let code: { lang: string; lines: string[] } | null = null;
   let pending: string[] = [];
   const flush = () => {
@@ -307,4 +309,95 @@ export function looksLikePath(candidate: string): boolean {
   const segments = path.split('/');
   if (segments.length === 1) return FILE_EXTENSION.test(path);
   return FILE_EXTENSION.test(segments[segments.length - 1]) || segments.length >= 3;
+}
+
+/**
+ * Lines that are terminal furniture rather than content.
+ *
+ * A coding agent's screen is mostly status: spinners, elapsed times, token counts,
+ * progress bars, "esc to interrupt", tool-call chatter. Reading a reply means not
+ * reading those, which is the whole reason the reader exists.
+ *
+ * Deliberately conservative: it drops a line only when the whole line is noise, so a
+ * sentence that happens to mention tokens or a file path survives.
+ */
+export function isNoiseLine(line: string): boolean {
+  const value = line.trim();
+  if (!value) return false;
+
+  // A rule or separator on its own.
+  if (/^[\s\u2500\u2501\u2550_=~*\-.]{4,}$/.test(value)) return true;
+
+  // Status wording. The spinner glyph itself has already been removed by
+  // stripTerminalFurniture, so this matches the words, not the glyph - and only on a
+  // short line, so a sentence that happens to say "token" or "took 21s" survives.
+  const bare = value.replace(
+    /^[\u2801-\u28ff\u273b\u2722\u2733\u2736\u273d\u00b7\u2219\u25cb\u25cf\u25d0-\u25d3]+\s*/,
+    '',
+  );
+  if (bare.length <= 70) {
+    if (
+      /^(?:working|thinking|running|reading|searching|writing|editing|analyzing|computing|planning|waiting)\b/i.test(
+        bare,
+      )
+    ) {
+      return true;
+    }
+    if (/\besc\b.*\b(interrupt|cancel)\b/i.test(bare)) return true;
+    if (/\u2026\s*$/.test(bare)) return true;
+    if (/\(\s*\d+m?\s*\d*s\b.*(?:token|context)/i.test(bare)) return true;
+  }
+
+  // Progress and context meters.
+  if (/^\d{1,3}%\s*[\|\[]?/.test(value) && value.length < 40) return true;
+  if (/[\u2588\u2591\u2592\u2593]{4,}/.test(value) && !/[a-z]{4,}/i.test(value)) return true;
+  if (/^\s*(?:token usage|context left|remaining)\b.*\d/i.test(value)) return true;
+
+  // Tool activity: either the agent's own tool glyph, or call syntax like `Read( ... )`.
+  // A bulleted sentence ("- Read the file first") must not match, which is why the
+  // plain bullet case requires the parenthesis.
+  if (/^[\u25c9\u23fa\u23f5\u276f]\s*\S/.test(value)) return true;
+  if (
+    /^[-*>$]\s*(?:read|write|edit|bash|grep|glob|ls|sed|cat|npm|git|search|fetch|webfetch|tool)\s*\(/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Drop noise lines, keeping the surrounding blank-line structure intact. */
+export function stripNoiseLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !isNoiseLine(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+// A prompt ends with a marker character; `user@host:~/project$` has no space
+// before the `$`, which is why the marker itself is the only anchor.
+// A prompt is a short line ending in a marker, optionally preceded by a host/path-ish
+// prefix: `user@host:~/project$`, `project ❯`, or the marker on its own. The prefix
+// matters - matching a bare trailing `$` swallowed text like `Malformed: $\frac{$`,
+// which the reader must show.
+const PROMPT_LINE = /^[\w.@:~/-]{0,60}\s*(?:\u276f|\u276e|\u203a|\u00bb|\u279c|>|\$|#)\s*$/;
+
+export function lastReplyOnly(raw: string): { text: string; found: boolean } {
+  const lines = (raw || '').split('\n');
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i].trim();
+    if (line.length > 0 && line.length <= 80 && PROMPT_LINE.test(line)) {
+      return { text: lines.slice(i + 1).join('\n'), found: true };
+    }
+  }
+  return { text: raw || '', found: false };
+}
+
+export interface ReaderFilterOptions {
+  /** Drop status/tool chatter. Off by default so the parser stays predictable. */
+  hideNoise?: boolean;
+  /** Keep only what follows the last prompt. */
+  lastReply?: boolean;
 }

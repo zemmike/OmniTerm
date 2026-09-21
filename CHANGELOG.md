@@ -57,6 +57,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.14.0] - 2026-09-21
+
+### Added
+- **AI Reader filters.** "Last reply" keeps only what follows the last prompt in the pane,
+  and "No noise" drops the status furniture - spinners, elapsed times, token counts,
+  progress bars and tool chatter. Both are on by default and can be switched off
+  independently. When a pane has no prompt marker to cut at, the reader says so instead of
+  pretending a filter did something.
+- **Reader typography.** Sans-serif prose at a readable measure (~70ch), a larger 14px
+  base, a clearer heading hierarchy, spaced lists, bordered tables and monospace code
+  throughout. The serif experiment is reverted: it read worse at these sizes.
+
+### Fixed
+- **Switching theme blacked out half the terminal text.** A colour change no longer
+  refits (which was corrupting the grid) but it does repaint, which is what was missing.
+- **The reader's noise filter could never match a status line**, because it ran after the
+  spinner glyph had already been stripped; it now matches the wording, and only on short
+  lines so a sentence mentioning tokens survives.
+- **A trailing `$` was treated as a prompt marker**, which swallowed text such as
+  `Malformed: $\frac{$`. A prompt line now has to look like one.
+- Reader zoom produced font sizes with seventeen decimals.
+
+### Tests
+- 343 across 26 files (up from 333), including 14 new cases for the noise classifier,
+  last-reply trimming and the parser's filter options.
+
 ## [1.13.0] - 2026-09-21
 
 ### Added
@@ -684,7 +710,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/zemmike/OmniTerm/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/zemmike/OmniTerm/compare/v1.12.3...v1.13.0
 [1.12.3]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...v1.12.2

@@ -742,7 +742,10 @@ export default function TerminalPane({
       webglRef.current = null;
       console.debug('[renderer] dom (webgl disabled in settings)');
     }
-    // Deliberately no refit here: a colour change leaves the grid alone.
+    // No refit here: a colour change leaves the grid alone. It does need a repaint
+    // though - the renderer keeps the old palette on screen otherwise, which shows up
+    // as half the text going black after a theme switch.
+    term.refresh(0, term.rows - 1);
   }, [settings, fontKey, safeFit]);
 
   useEffect(() => {

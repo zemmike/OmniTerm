@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Copy, X, ZoomIn, ZoomOut } from 'lucide-react';
 import katex from 'katex';
-import { parseReaderText, type InlineToken, type ReaderBlock } from '../readerMarkdown';
+import {
+  lastReplyOnly,
+  parseReaderText,
+  type InlineToken,
+  type ReaderBlock,
+} from '../readerMarkdown';
 import { normalizeTargetPath } from '../fileTarget';
 
 interface ClipboardBridge {
@@ -33,7 +38,18 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
   const [copyFailed, setCopyFailed] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  const blocks = useMemo(() => parseReaderText(text), [text]);
+  // Filters, because a terminal pane is mostly status: the useful part of an agent's
+  // screen is the reply, not the spinners, timers and tool chatter around it.
+  const [lastReplyFilter, setLastReplyFilter] = useState(true);
+  const [hideNoise, setHideNoise] = useState(true);
+  const blocks = useMemo(
+    () => parseReaderText(text, { hideNoise, lastReply: lastReplyFilter }),
+    [text, hideNoise, lastReplyFilter],
+  );
+  const replyCut = useMemo(
+    () => (lastReplyFilter ? lastReplyOnly(text) : null),
+    [text, lastReplyFilter],
+  );
 
   // Follow the newest output, unless the user has scrolled up to read something.
   useEffect(() => {
@@ -161,16 +177,54 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
         aria-label="Reader content"
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
         style={{
-          fontSize: `${13 * scale}px`,
-          lineHeight: 1.7,
-          // Sans-serif prose against the terminal's monospace is most of what makes
-          // this readable at a glance; code keeps monospace below.
+          // Rounded, because 14 * 1.15 is 16.099999999999998 in binary floating point
+          // and a font size with seventeen decimals is not a font size.
+          fontSize: `${Math.round(14 * scale * 100) / 100}px`,
+          lineHeight: 1.75,
+          // A comfortable measure: full-width terminal lines are the main reason agent
+          // output is tiring to read.
+          maxWidth: '70ch',
+          // Sans for prose. The serif experiment read worse at the sizes this panel
+          // uses; code stays monospace through .reader-code.
           fontFamily:
-            // Reader-style serif for prose, code stays monospace below: the point of
-            // this panel is that it does not look like the terminal it came from.
-            "'Source Serif 4', 'Source Serif Pro', Charter, 'Bitstream Charter', Georgia, 'Liberation Serif', 'DejaVu Serif', 'Times New Roman', serif",
+            "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         }}
       >
+        <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-[#1E1E22] bg-[#111114] px-2 py-1">
+          <span className="text-[10px] tracking-wide text-[#55555E] uppercase">Show</span>
+          <button
+            type="button"
+            onClick={() => setLastReplyFilter((value) => !value)}
+            aria-pressed={lastReplyFilter}
+            title="Only what follows the last prompt, not the whole session"
+            className={`rounded border px-1.5 py-0.5 text-[10px] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] focus-visible:outline-none ${
+              lastReplyFilter
+                ? 'border-[#8AB4F8] text-[#8AB4F8]'
+                : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
+            }`}
+          >
+            Last reply
+          </button>
+          <button
+            type="button"
+            onClick={() => setHideNoise((value) => !value)}
+            aria-pressed={hideNoise}
+            title="Hide spinners, timers, token counts, progress bars and tool chatter"
+            className={`rounded border px-1.5 py-0.5 text-[10px] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] focus-visible:outline-none ${
+              hideNoise
+                ? 'border-[#8AB4F8] text-[#8AB4F8]'
+                : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
+            }`}
+          >
+            No noise
+          </button>
+          {replyCut && !replyCut.found && (
+            <span className="text-[10px] text-[#FFB300]">
+              no prompt marker in this pane — showing everything
+            </span>
+          )}
+        </div>
+        \1
         <div className="reader-prose">
           {blocks.length === 0 ? (
             <p className="text-[#66666E]">

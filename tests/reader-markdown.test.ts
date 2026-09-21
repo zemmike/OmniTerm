@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   ansiToEmphasis,
+  isNoiseLine,
+  lastReplyOnly,
+  stripNoiseLines,
   looksLikePath,
   parseInlineText,
   parseReaderText,
@@ -313,5 +316,94 @@ describe('headings written as bold only', () => {
         { kind: 'text', value: ' today' },
       ],
     });
+  });
+});
+
+describe('isNoiseLine', () => {
+  it('drops the status lines a coding agent fills the screen with', () => {
+    expect(isNoiseLine('✻ Thinking… (1m 20s · ↑ 3.1k tokens)')).toBe(true);
+    expect(isNoiseLine('⠋ Working for 21s')).toBe(true);
+    expect(isNoiseLine('esc to interrupt')).toBe(true);
+    expect(isNoiseLine('45% ███░░░')).toBe(true);
+    expect(isNoiseLine('────────────')).toBe(true);
+  });
+
+  it('drops tool-call chatter', () => {
+    expect(isNoiseLine('⏺ Read(src/app.ts)')).toBe(true);
+    expect(isNoiseLine('◉ Bash(npm test)')).toBe(true);
+    expect(isNoiseLine('> Read(src/app.ts)')).toBe(true);
+  });
+
+  it('keeps real prose, even when it mentions the same words', () => {
+    // The filter must not eat a sentence just because it sounds like status.
+    expect(isNoiseLine('The run took 21s because the token budget was exceeded.')).toBe(false);
+    expect(isNoiseLine('## Plan')).toBe(false);
+    // A bulleted sentence that starts with a tool name is still a sentence.
+    expect(isNoiseLine('- Read the file first')).toBe(false);
+  });
+
+  it('treats a blank line as structure, not noise', () => {
+    expect(isNoiseLine('')).toBe(false);
+    expect(isNoiseLine('   ')).toBe(false);
+  });
+});
+
+describe('lastReplyOnly', () => {
+  const screen = [
+    'user@host:~/project$ claude',
+    'Thinking… (3s)',
+    'Earlier answer that should be dropped',
+    'user@host:~/project$ ',
+    '## The actual last reply',
+    'This is what matters.',
+  ].join('\n');
+
+  it('keeps only the text after the last prompt', () => {
+    const { text, found } = lastReplyOnly(screen);
+    expect(found).toBe(true);
+    expect(text).toContain('The actual last reply');
+    expect(text).not.toContain('Earlier answer');
+  });
+
+  it('says so when there is no prompt marker to cut at', () => {
+    const { text, found } = lastReplyOnly('Just agent output\nwith no prompt');
+    expect(found).toBe(false);
+    expect(text).toBe('Just agent output\nwith no prompt');
+  });
+
+  it('does not mistake a normal sentence ending in a period for a prompt', () => {
+    expect(lastReplyOnly('Line one\nLine two.').found).toBe(false);
+  });
+});
+
+describe('parseReaderText filters', () => {
+  const screen = [
+    '✻ Working for 12s',
+    '## Heading',
+    'Body text.',
+    'esc to interrupt',
+    '',
+    'user@host:~$ ',
+    'Only this should survive both filters.',
+  ].join('\n');
+
+  it('hides noise when asked, and keeps it by default', () => {
+    expect(
+      parseReaderText(screen)
+        .map((b) => JSON.stringify(b))
+        .join(' '),
+    ).toContain('Working for 12s');
+    const filtered = parseReaderText(screen, { hideNoise: true });
+    const rendered = filtered.map((b) => JSON.stringify(b)).join(' ');
+    expect(rendered).not.toContain('Working for 12s');
+    expect(rendered).not.toContain('esc to interrupt');
+    expect(rendered).toContain('Only this should survive');
+  });
+
+  it('keeps only the last reply when asked', () => {
+    const filtered = parseReaderText(screen, { lastReply: true, hideNoise: true });
+    const rendered = filtered.map((b) => JSON.stringify(b)).join(' ');
+    expect(rendered).toContain('Only this should survive');
+    expect(rendered).not.toContain('Heading');
   });
 });

@@ -109,7 +109,7 @@ describe('AI Reader', () => {
 
     expect(screen.getByRole('complementary', { name: 'AI Reader' })).toBeTruthy();
     const region = screen.getByRole('region', { name: 'Reader content' });
-    expect(region.style.fontSize).toBe('13px');
+    expect(region.style.fontSize).toBe('14px');
 
     const follow = screen.getByRole('button', { name: 'Following' });
     expect(follow.getAttribute('aria-pressed')).toBe('true');
@@ -119,9 +119,9 @@ describe('AI Reader', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Larger reader text' }));
-    expect(region.style.fontSize).toBe('14.95px');
+    expect(region.style.fontSize).toBe('16.1px');
     fireEvent.click(screen.getByRole('button', { name: 'Smaller reader text' }));
-    expect(region.style.fontSize).toBe('13px');
+    expect(region.style.fontSize).toBe('14px');
 
     fireEvent.click(screen.getByRole('button', { name: 'Close the AI Reader' }));
     expect(onClose).toHaveBeenCalledOnce();

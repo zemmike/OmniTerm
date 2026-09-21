@@ -79,7 +79,9 @@ describe('settings changes must not corrupt the terminal grid', () => {
   it('refits for a font change and not for a colour change', () => {
     expect(pane).toContain('const fontChanged = previousFontKey.current !== fontKey');
     expect(pane).toContain('if (fontChanged) safeFit();');
-    expect(pane).toContain('// Deliberately no refit here: a colour change leaves the grid alone.');
+    // A colour change must still repaint: without it the old palette stays on screen and
+    // half the text looks blacked out.
+    expect(pane).toContain('term.refresh(0, term.rows - 1);');
   });
 
   it('fits and repaints once when the pane comes back on screen', () => {
@@ -99,13 +101,23 @@ describe('settings changes must not corrupt the terminal grid', () => {
 describe('reader typography', () => {
   const reader = read('src/components/AiReader.tsx');
 
-  it('sets prose in a serif stack', () => {
-    expect(reader).toContain('Georgia');
-    expect(reader).toMatch(/serif["']/);
+  it('sets prose in a readable sans stack at a comfortable measure', () => {
+    // The serif experiment read worse at these sizes; sans plus a ~70ch measure is the
+    // combination that survived looking at it.
+    expect(reader).toContain('ui-sans-serif');
+    expect(reader).toContain("maxWidth: '70ch'");
+    expect(reader).not.toContain('Georgia');
   });
 
   it('keeps code monospace', () => {
-    expect(reader).toContain('whitespace-pre font-mono');
+    expect(reader).toContain('font-mono');
+    expect(read('src/index.css')).toContain('.reader-code code');
+  });
+
+  it('offers the two filters, wired to the parser', () => {
+    expect(reader).toContain('setLastReplyFilter');
+    expect(reader).toContain('setHideNoise');
+    expect(reader).toContain('parseReaderText(text, { hideNoise, lastReply: lastReplyFilter })');
   });
 });
 
