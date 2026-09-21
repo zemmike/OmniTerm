@@ -46,6 +46,27 @@ describe('native packaging configuration', () => {
     expect(workflow).toContain('Verify Linux package');
   });
 
+  it('repairs the macOS node-pty helper permission before the smoke test', () => {
+    const workflow = read('.github/workflows/build.yml');
+
+    expect(workflow).toContain('chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper');
+    expect(workflow.indexOf('chmod +x node_modules/node-pty')).toBeLessThan(
+      workflow.indexOf('npm run test:pty'),
+    );
+  });
+
+  it('verifies Windows package metadata without capturing GUI stdout', () => {
+    const workflow = read('.github/workflows/build.yml');
+
+    expect(workflow).toContain('$metadata = (Get-Item $app).VersionInfo');
+    expect(workflow).toContain(
+      '$expectedVersion = (Get-Content package.json | ConvertFrom-Json).version',
+    );
+    expect(workflow).toContain("$metadata.ProductName -ne 'OmniTerm'");
+    expect(workflow).toContain('$metadata.ProductVersion -notlike "$expectedVersion*"');
+    expect(workflow).not.toContain('$version = & $app --version');
+  });
+
   it('publishes native release artifacts through one checksum job', () => {
     const workflow = read('.github/workflows/release.yml');
 

@@ -69,6 +69,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # node-pty 1.1.0's npm tarball ships the Darwin spawn-helper as 0644.
+      # macOS refuses to execute it and reports only "posix_spawnp failed".
+      - name: Repair node-pty helper permission (macOS)
+        if: matrix.platform == 'mac'
+        run: chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
       - name: Native PTY smoke (Unix)
         if: matrix.platform != 'windows'
         run: npm run test:pty
@@ -120,8 +125,14 @@ jobs:
           if ($result.ExitCode -ne 0) { throw "Installer exited $($result.ExitCode)" }
           $app = Join-Path $installDir 'OmniTerm.exe'
           if (-not (Test-Path $app)) { throw 'OmniTerm.exe was not installed' }
-          $version = & $app --version
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch 'OmniTerm') { throw 'Version check failed' }
+          # Electron is linked as a Windows GUI application, so PowerShell cannot
+          # reliably capture process.stdout from `OmniTerm.exe --version`. Verify
+          # the version resource embedded by electron-builder instead.
+          $expectedVersion = (Get-Content package.json | ConvertFrom-Json).version
+          $metadata = (Get-Item $app).VersionInfo
+          if ($metadata.ProductName -ne 'OmniTerm' -or $metadata.ProductVersion -notlike "$expectedVersion*") {
+            throw "Version check failed: product=$($metadata.ProductName) version=$($metadata.ProductVersion) expected=$expectedVersion"
+          }
           $uninstaller = Get-ChildItem $installDir -Filter 'Uninstall*.exe' | Select-Object -First 1
           if (-not $uninstaller) { throw 'Uninstaller not found' }
           $result = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
