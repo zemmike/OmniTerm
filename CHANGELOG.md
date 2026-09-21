@@ -57,6 +57,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.14.1] - 2026-09-21
+
+### Documentation
+- **Install instructions you can follow click by click.** The README now says which file to
+  download for which machine, and walks the Windows and macOS installs step by step,
+  including the first-launch security warnings and how to check a download on each platform
+  (`shasum` on macOS, `Get-FileHash` on Windows).
+- New [docs/INSTALL.md](docs/INSTALL.md): requirements, every click, both ways past
+  Gatekeeper, how to check the version, how to uninstall, where your settings and logs live,
+  and what to do when something goes wrong.
+- Requirements are stated from what actually runs: **macOS 13 Ventura or newer** (Electron
+  44's floor) and **Windows 10 version 1809 or newer** (ConPTY's).
+
+### Fixed
+- The reader's clipboard write is now awaited. Electron 44 made `clipboard.writeText`
+  asynchronous and removed the clipboard module from renderer processes entirely, so a copy
+  that fails is reported instead of assumed to have worked.
+
 ## [1.14.0] - 2026-09-21
 
 ### Added
@@ -710,7 +728,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/zemmike/OmniTerm/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/zemmike/OmniTerm/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/zemmike/OmniTerm/compare/v1.12.3...v1.13.0
 [1.12.3]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...v1.12.3
