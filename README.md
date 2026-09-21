@@ -59,9 +59,10 @@ without opening a window.
 
 ### macOS
 
-1. Download `OmniTerm-<version>-universal.dmg` and drag OmniTerm into Applications, or
-   extract the `.zip` and move `OmniTerm.app` there yourself. One build covers Apple
-   Silicon and Intel.
+1. Download the DMG for your Mac - `OmniTerm-<version>-mac-arm64.dmg` on Apple Silicon,
+   `OmniTerm-<version>-mac-x64.dmg` on Intel - and drag OmniTerm into Applications, or
+   extract the matching `.zip` and move `OmniTerm.app` there yourself. Apple Silicon has
+   been the default since 2021; check _About This Mac_ if you are unsure.
 2. These builds are **not notarised yet**, so Gatekeeper blocks the first launch. Either
    right-click the app and choose Open, or clear the quarantine flag:
    `xattr -dr com.apple.quarantine /Applications/OmniTerm.app`
