@@ -95,12 +95,31 @@ jobs:
         if: matrix.platform == 'mac'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac --publish never
+        run: |
+          set -o pipefail
+          npx electron-builder --mac --publish never 2>&1 | tee package.log
+          code=$?
+          if [ $code -ne 0 ]; then
+            tail=$(tail -30 package.log | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=macOS packaging failed (exit $code)::$tail"
+            exit $code
+          fi
+      # electron-builder's own output is the only diagnosis when this step fails, and the
+      # job log needs repository admin rights to read. Fold the tail of it into a check
+      # annotation, so a failure explains itself instead of reading as "exit code 1".
       - name: Package Windows
         if: matrix.platform == 'windows'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win --x64 --publish never
+        shell: pwsh
+        run: |
+          npx electron-builder --win --x64 --publish never 2>&1 | Tee-Object -FilePath package.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content package.log -Tail 30) -join "%0A"
+            Write-Output "::error title=Windows packaging failed (exit $code)::$tail"
+            exit $code
+          }
       - name: Upload release packages
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
