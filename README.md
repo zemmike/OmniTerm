@@ -40,40 +40,75 @@ anyway** action if you trust it; do not disable system-wide security checks.
 
 ## Install
 
-Packages for every platform are on
-[GitHub Releases](https://github.com/zemmike/OmniTerm/releases). Each release also
-ships `SHA256SUMS`, so a download can be verified before it is run:
-`sha256sum -c SHA256SUMS --ignore-missing`.
+Every release is on [GitHub Releases](https://github.com/zemmike/OmniTerm/releases). Full
+step-by-step instructions - including the first-launch warnings, how to verify a download,
+and how to uninstall - are in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+**Pick your file.** Open the release, scroll to the **Assets** section, and download the
+line that matches your machine:
+
+| Your machine                            | Download                             |
+| --------------------------------------- | ------------------------------------ |
+| Windows 10/11, 64-bit                   | `OmniTerm-<version>-win-x64.exe`     |
+| Mac with Apple silicon (M1, M2, M3, M4) | `OmniTerm-<version>-mac-arm64.dmg`   |
+| Mac with an Intel processor             | `OmniTerm-<version>-mac-x64.dmg`     |
+| Linux, Debian or Ubuntu                 | `OmniTerm-<version>-amd64.deb`       |
+| Linux, any distribution (no install)    | `OmniTerm-<version>-x86_64.AppImage` |
+
+### Windows (Windows 10 version 1809 or newer)
+
+1. Download `OmniTerm-<version>-win-x64.exe` from the release's **Assets** section.
+2. Double-click the file. Windows will say _Windows protected your PC_ - that is because
+   the installer is not code-signed yet. Click **More info**, then **Run anyway**.
+3. Follow the installer. It installs for your user account only, so it never asks for an
+   administrator password.
+4. Start OmniTerm from the **Start menu**. Open your first terminal with **Ctrl+Shift+T**.
+5. No installer, or no admin rights? Download `OmniTerm-<version>-win-x64.zip` instead,
+   extract it anywhere, and run `OmniTerm.exe`.
+6. To remove it: **Settings → Apps → Installed apps → OmniTerm → Uninstall**.
+
+### macOS (macOS 13 Ventura or newer)
+
+1. Check your chip: menu → **About This Mac**. "Apple M1/M2/M3/M4" means Apple silicon,
+   "Intel" means Intel.
+2. Download the matching file: `OmniTerm-<version>-mac-arm64.dmg` (Apple silicon) or
+   `OmniTerm-<version>-mac-x64.dmg` (Intel).
+3. Open the DMG, then drag **OmniTerm** onto the **Applications** shortcut in the same
+   window.
+4. Eject the disk image (the ⏏ button next to it in Finder), then launch OmniTerm from
+   **Applications**.
+5. macOS blocks the first launch because these builds are **not notarised** yet. Do one of:
+   - right-click (or Control-click) OmniTerm in Applications → **Open** → **Open** again, or
+   - in Terminal: `xattr -dr com.apple.quarantine /Applications/OmniTerm.app`
+
+   You only need to do this once. Never disable Gatekeeper globally.
+
+6. OmniTerm uses your login shell automatically (`$SHELL`, falling back to `/bin/zsh`).
+7. To remove it: drag OmniTerm from Applications to the Bin. To also remove your settings
+   and logs, delete `~/Library/Application Support/OmniTerm`.
 
 ### Linux
 
-1. Download `OmniTerm-<version>-amd64.deb` and install it:
+1. Debian/Ubuntu: download `OmniTerm-<version>-amd64.deb`, then
    `sudo apt install ./OmniTerm-<version>-amd64.deb`
-2. Or use the portable build: `chmod +x OmniTerm-<version>-x86_64.AppImage` and run it.
-   An `.rpm` and a `.tar.gz` are published as well.
-3. Or install from source with the script:
+2. Any distribution, no install: download `OmniTerm-<version>-x86_64.AppImage`, run
+   `chmod +x OmniTerm-<version>-x86_64.AppImage`, then `./OmniTerm-<version>-x86_64.AppImage`
+3. Fedora/openSUSE: `sudo dnf install ./OmniTerm-<version>-x86_64.rpm`
+4. Or build and install from source:
    `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`
 
-After install, `omniterm` is on `PATH`, and `omniterm --version` prints the version
-without opening a window.
+`omniterm` is then on your `PATH`, and `omniterm --version` prints the version without
+opening a window. Linux needs an X11 session; on Wayland-only systems install XWayland
+(see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)).
 
-### macOS
+### Check the download before you run it
 
-1. Download the DMG for your Mac - `OmniTerm-<version>-mac-arm64.dmg` on Apple Silicon,
-   `OmniTerm-<version>-mac-x64.dmg` on Intel - and drag OmniTerm into Applications, or
-   extract the matching `.zip` and move `OmniTerm.app` there yourself. Apple Silicon has
-   been the default since 2021; check _About This Mac_ if you are unsure.
-2. These builds are **not notarised yet**, so Gatekeeper blocks the first launch. Either
-   right-click the app and choose Open, or clear the quarantine flag:
-   `xattr -dr com.apple.quarantine /Applications/OmniTerm.app`
+Every release ships `SHA256SUMS`. Compare it with what you downloaded:
 
-### Windows
-
-1. In the release's **Assets** section, download `OmniTerm-<version>-win-x64.exe` and run
-   the installer (NSIS). It installs per user and adds an uninstaller.
-2. The installer is **not code-signed yet**, so SmartScreen shows a warning: choose
-   _More info_ → _Run anyway_.
-3. Or extract the `.zip` and run `OmniTerm.exe` without installing.
+- **Linux / macOS**: `shasum -a 256 -c SHA256SUMS --ignore-missing` (macOS has `shasum`,
+  not `sha256sum`)
+- **Windows (PowerShell)**: `Get-FileHash .\OmniTerm-<version>-win-x64.exe -Algorithm SHA256`
+  and compare the hash with the line in `SHA256SUMS`
 
 ## Develop
 

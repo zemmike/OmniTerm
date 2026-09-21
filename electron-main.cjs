@@ -332,7 +332,10 @@ if (!app.requestSingleInstanceLock()) {
    * own frame may call it, the payload must be a string, and it is capped so a runaway
    * caller cannot push megabytes into the system clipboard.
    */
-  ipcMain.handle('omniterm:clipboard-write', (event, rawText) => {
+  // Electron 44 made the clipboard async and removed the module from renderers entirely,
+  // which is the other half of why a page-side copy fails: the write has to happen here,
+  // and it has to be awaited.
+  ipcMain.handle('omniterm:clipboard-write', async (event, rawText) => {
     if (!isLocalAppUrl(event.senderFrame?.url)) {
       log(`[main] refused clipboard-write from a foreign frame: ${event.senderFrame?.url}`);
       return { ok: false, error: 'refused' };
@@ -340,7 +343,12 @@ if (!app.requestSingleInstanceLock()) {
     const text = typeof rawText === 'string' ? rawText : '';
     if (!text) return { ok: false, error: 'empty' };
     if (text.length > MAX_CLIPBOARD_CHARS) return { ok: false, error: 'too-large' };
-    clipboard.writeText(text);
+    try {
+      await clipboard.writeText(text);
+    } catch (error) {
+      log(`[main] clipboard write failed: ${String(error)}`);
+      return { ok: false, error: 'write-failed' };
+    }
     return { ok: true, length: text.length };
   });
 

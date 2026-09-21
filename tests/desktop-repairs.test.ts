@@ -134,6 +134,28 @@ describe('install documentation and packaging', () => {
     expect(readme).toContain('xattr -dr com.apple.quarantine /Applications/OmniTerm.app');
   });
 
+  it('gives every platform its own requirements and file names in the install guide', () => {
+    const guide = read('docs/INSTALL.md');
+    // The platform floors come from what actually runs: Electron 44 needs macOS 13, and
+    // ConPTY wants Windows 10 1809.
+    expect(guide).toContain('macOS 13 Ventura');
+    expect(guide).toContain('1809');
+    expect(guide).toContain('OmniTerm-<version>-mac-arm64.dmg');
+    expect(guide).toContain('OmniTerm-<version>-mac-x64.dmg');
+    expect(guide).toContain('OmniTerm-<version>-win-x64.exe');
+    expect(guide).toContain('xattr -dr com.apple.quarantine /Applications/OmniTerm.app');
+    // Notarisation is not in place, and the guide must say so rather than let people
+    // assume a warning means a broken download.
+    expect(guide).toContain('not notarised');
+  });
+
+  it('documents how to verify a download on each platform', () => {
+    const guide = read('docs/INSTALL.md');
+    expect(guide).toContain('shasum -a 256 -c SHA256SUMS');
+    expect(guide).toContain('Get-FileHash');
+    expect(guide).toContain('sha256sum -c SHA256SUMS');
+  });
+
   it('names Windows artifacts with the platform in them', () => {
     expect(pkg.build.win?.artifactName).toContain('-win-');
   });
