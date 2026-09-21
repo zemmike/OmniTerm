@@ -84,6 +84,26 @@ export default function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+
+  // Fitting a hidden or not-yet-laid-out pane computes a grid from a zero-sized
+  // container, and the PTY is then resized to those invalid dimensions - which is what
+  // corrupted the layout after a settings change, even while another tab was showing.
+  // Every refit goes through this guard. It reads refs so it stays correct inside the
+  // mount effect, which must not re-run (it closes over sessionId and cwd).
+  const canFit = useCallback(() => {
+    if (!activeRef.current) return false;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+    const host = hostRef.current;
+    return Boolean(host && host.clientWidth > 40 && host.clientHeight > 20);
+  }, []);
+  const safeFit = useCallback(() => {
+    if (!canFit()) return;
+    try {
+      fitRef.current?.fit();
+    } catch {
+      /* not laid out yet */
+    }
+  }, [canFit]);
   const searchRef = useRef<SearchAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<'connecting' | 'live' | 'reconnecting' | 'exited' | 'error'>(
@@ -557,37 +577,21 @@ export default function TerminalPane({
     // Keep PTY and grid in step.
     const resizeSub = term.onResize(({ cols, rows }) => send({ type: 'resize', cols, rows }));
     const observer = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        /* ignore */
-      }
+      safeFit();
     });
     observer.observe(host);
     const onWindowResize = () => {
-      try {
-        fit.fit();
-      } catch {
-        /* ignore */
-      }
+      safeFit();
     };
     window.addEventListener('resize', onWindowResize);
     requestAnimationFrame(() => {
-      try {
-        fit.fit();
-        term.refresh(0, term.rows - 1);
-      } catch {
-        /* ignore */
-      }
+      safeFit();
+      term.refresh(0, term.rows - 1);
     });
     if (typeof (document as any).fonts?.ready?.then === 'function') {
       (document as any).fonts.ready.then(() => {
-        try {
-          fit.fit();
-          term.refresh(0, term.rows - 1);
-        } catch {
-          /* ignore */
-        }
+        safeFit();
+        term.refresh(0, term.rows - 1);
       });
     }
 
@@ -709,15 +713,24 @@ export default function TerminalPane({
   }, [sessionId, cwd, requestPaste]);
 
   // Live option updates: theme, font and cursor change without a reconnect.
+  //
+  // A theme-only change must not refit: the grid is unchanged, and refitting a hidden
+  // pane is what resized the PTY against an empty container. Only a change that moves
+  // the cell size refits, and only while this pane is the visible one.
+  const fontKey = [
+    settings.fontFamily,
+    settings.fontSize,
+    settings.lineHeight,
+    (settings as { letterSpacing?: number }).letterSpacing,
+  ].join('|');
+  const previousFontKey = useRef(fontKey);
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
+    const fontChanged = previousFontKey.current !== fontKey;
+    previousFontKey.current = fontKey;
     applyTerminalSettings(term.options, settings, () => {
-      try {
-        fitRef.current?.fit();
-      } catch {
-        /* container not laid out yet */
-      }
+      if (fontChanged) safeFit();
     });
 
     // The renderer switches live, so the difference is measurable without
@@ -729,16 +742,20 @@ export default function TerminalPane({
       webglRef.current = null;
       console.debug('[renderer] dom (webgl disabled in settings)');
     }
-    try {
-      fitRef.current?.fit();
-    } catch {
-      /* ignore */
-    }
-  }, [settings]);
+    // Deliberately no refit here: a colour change leaves the grid alone.
+  }, [settings, fontKey, safeFit]);
 
   useEffect(() => {
-    if (active) termRef.current?.focus();
-  }, [active]);
+    if (!active) return;
+    // Back on screen: the grid may have been sized while this pane was hidden, so fit
+    // once and repaint, then take focus.
+    requestAnimationFrame(() => {
+      safeFit();
+      const term = termRef.current;
+      if (term) term.refresh(0, term.rows - 1);
+    });
+    termRef.current?.focus();
+  }, [active, safeFit]);
 
   useEffect(() => {
     if (!searchOpen) return;

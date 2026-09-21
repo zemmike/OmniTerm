@@ -4,6 +4,10 @@ import katex from 'katex';
 import { parseReaderText, type InlineToken, type ReaderBlock } from '../readerMarkdown';
 import { normalizeTargetPath } from '../fileTarget';
 
+interface ClipboardBridge {
+  writeClipboard?: (text: string) => Promise<{ ok?: boolean; error?: string } | undefined>;
+}
+
 interface Props {
   /** Raw terminal output, straight from the pane's rendered buffer. */
   text: string;
@@ -26,6 +30,7 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
   const [scale, setScale] = useState(1);
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const blocks = useMemo(() => parseReaderText(text), [text]);
@@ -58,12 +63,30 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
   };
 
   const copyAll = async () => {
+    // Desktop first: Electron on Linux rejects the page's clipboard request unless it
+    // recognises the gesture, which is why Copy did nothing there. The browser API
+    // below remains the development-server path.
+    const bridge = (window as unknown as { omniterm?: ClipboardBridge }).omniterm;
+    if (bridge?.writeClipboard) {
+      try {
+        const result = await bridge.writeClipboard(text);
+        if (result?.ok) {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+          return;
+        }
+      } catch {
+        /* fall through to the browser clipboard */
+      }
+    }
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard denied: the terminal's own copy still works */
+      // Say so rather than looking like it worked.
+      setCopyFailed(true);
+      window.setTimeout(() => setCopyFailed(false), 2500);
     }
   };
 
@@ -143,7 +166,9 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
           // Sans-serif prose against the terminal's monospace is most of what makes
           // this readable at a glance; code keeps monospace below.
           fontFamily:
-            "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+            // Reader-style serif for prose, code stays monospace below: the point of
+            // this panel is that it does not look like the terminal it came from.
+            "'Source Serif 4', 'Source Serif Pro', Charter, 'Bitstream Charter', Georgia, 'Liberation Serif', 'DejaVu Serif', 'Times New Roman', serif",
         }}
       >
         <div className="reader-prose">
@@ -161,6 +186,11 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
           {copied && (
             <p role="status" className="pt-2 text-[11px] text-[#00C853]">
               Copied the pane text.
+            </p>
+          )}
+          {copyFailed && (
+            <p role="status" className="pt-2 text-[11px] text-[#FFB300]">
+              Could not reach the clipboard. The terminal&apos;s own copy still works.
             </p>
           )}
         </div>
@@ -223,7 +253,7 @@ function ReaderBlockView({
       return (
         <pre className="reader-code my-2 rounded border border-[#232329] bg-[#111114] p-2.5">
           <code
-            className="whitespace-pre text-[#D7E1C9]"
+            className="whitespace-pre font-mono text-[#D7E1C9]"
             data-language={block.lang || undefined}
             style={{ fontSize: `${Math.max(10, 12 * scale)}px`, lineHeight: 1.5 }}
           >

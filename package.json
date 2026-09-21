@@ -134,6 +134,7 @@
       "icon": "build/icon.png"
     },
     "win": {
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}",
       "target": [
         {
           "target": "nsis",

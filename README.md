@@ -40,16 +40,39 @@ anyway** action if you trust it; do not disable system-wide security checks.
 
 ## Install
 
-Download the package for your platform from
-[GitHub Releases](https://github.com/zemmike/OmniTerm/releases):
+Packages for every platform are on
+[GitHub Releases](https://github.com/zemmike/OmniTerm/releases). Each release also
+ships `SHA256SUMS`, so a download can be verified before it is run:
+`sha256sum -c SHA256SUMS --ignore-missing`.
 
-- **Linux:** install the `.deb` with `sudo apt install ./OmniTerm-<version>-<arch>.deb`,
-  or run the AppImage/portable archive. The Linux installer script is also available:
-  `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`.
-- **macOS:** open the DMG and move OmniTerm to Applications, or extract the ZIP.
-- **Windows:** run the NSIS `.exe`, or extract the ZIP and launch `OmniTerm.exe`.
+### Linux
 
-Every release includes `SHA256SUMS` for verifying downloaded assets.
+1. Download `OmniTerm-<version>-amd64.deb` and install it:
+   `sudo apt install ./OmniTerm-<version>-amd64.deb`
+2. Or use the portable build: `chmod +x OmniTerm-<version>-x86_64.AppImage` and run it.
+   An `.rpm` and a `.tar.gz` are published as well.
+3. Or install from source with the script:
+   `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`
+
+After install, `omniterm` is on `PATH`, and `omniterm --version` prints the version
+without opening a window.
+
+### macOS
+
+1. Download `OmniTerm-<version>-universal.dmg` and drag OmniTerm into Applications, or
+   extract the `.zip` and move `OmniTerm.app` there yourself. One build covers Apple
+   Silicon and Intel.
+2. These builds are **not notarised yet**, so Gatekeeper blocks the first launch. Either
+   right-click the app and choose Open, or clear the quarantine flag:
+   `xattr -dr com.apple.quarantine /Applications/OmniTerm.app`
+
+### Windows
+
+1. In the release's **Assets** section, download `OmniTerm-<version>-win-x64.exe` and run
+   the installer (NSIS). It installs per user and adds an uninstaller.
+2. The installer is **not code-signed yet**, so SmartScreen shows a warning: choose
+   _More info_ → _Run anyway_.
+3. Or extract the `.zip` and run `OmniTerm.exe` without installing.
 
 ## Develop
 

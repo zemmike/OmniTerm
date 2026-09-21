@@ -7,9 +7,8 @@ LINK="/usr/bin/omniterm"
 # On upgrade ($1 = upgrade) keep the link; on remove/purge drop it.
 case "$1" in
   remove|purge)
-    if [ -L "$LINK" ]; then
-      rm -f "$LINK"
-    fi
+    # The link is a launcher script now, not a symlink, so do not test for -L.
+    rm -f "$LINK"
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database -q /usr/share/applications || true
     fi

@@ -8,7 +8,16 @@
  *  3. hand the renderer a per-launch session token,
  *  4. shut the backend down cleanly when the window closes.
  */
-const { app, BrowserWindow, Menu, shell, dialog, nativeImage, ipcMain } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  shell,
+  dialog,
+  nativeImage,
+  ipcMain,
+  clipboard,
+} = require('electron');
 const path = require('path');
 const os = require('os');
 const net = require('net');
@@ -22,11 +31,19 @@ const { resolveElectronDataDir } = require('./platform/electron-data-dir.cjs');
 const TOKEN = (process.env.OMNITERM_TOKEN || '').trim() || crypto.randomBytes(32).toString('hex');
 const VERSION = app.getVersion();
 
+/** Upper bound for one clipboard write, so a caller cannot brute-force memory. */
+const MAX_CLIPBOARD_CHARS = 4_000_000;
+
 // `omniterm --version` answers without opening a window. The troubleshooting
 // guide and the bug-report template both ask for the version, and until now
 // nothing handled the flag: `omniterm --version` launched the whole app instead.
 // Exiting before app.whenReady() also means it works with no display attached.
-if (process.argv.slice(1).some((arg) => arg === '--version' || arg === '-v')) {
+// `--version` and `-v` are also claimed by Chromium itself, and in an installed build
+// Electron's own argument parsing sees them first: `OmniTerm --version` printed the
+// Electron version, not ours. The Linux launcher (build/deb-postinst.sh) therefore
+// rewrites those two flags to this one, which Chromium passes through untouched.
+const VERSION_FLAGS = ['--version', '-v', '--omniterm-version'];
+if (process.argv.slice(1).some((arg) => VERSION_FLAGS.includes(arg))) {
   process.stdout.write(`${app.getName()} ${VERSION}\n`);
   process.exit(0);
 }
@@ -306,6 +323,27 @@ if (!app.requestSingleInstanceLock()) {
    * run, and it has been a real terminal-emulator RCE vector. Nothing in the UI
    * needs it: the terminal link detector only ever emits http(s).
    */
+  /**
+   * Copying text out of the AI Reader.
+   *
+   * Electron on Linux refuses a clipboard write from the page unless it recognises the
+   * gesture ("Document is not focused"), so the reader's Copy button silently did
+   * nothing there. This bridge is validated exactly like open-external: only this app's
+   * own frame may call it, the payload must be a string, and it is capped so a runaway
+   * caller cannot push megabytes into the system clipboard.
+   */
+  ipcMain.handle('omniterm:clipboard-write', (event, rawText) => {
+    if (!isLocalAppUrl(event.senderFrame?.url)) {
+      log(`[main] refused clipboard-write from a foreign frame: ${event.senderFrame?.url}`);
+      return { ok: false, error: 'refused' };
+    }
+    const text = typeof rawText === 'string' ? rawText : '';
+    if (!text) return { ok: false, error: 'empty' };
+    if (text.length > MAX_CLIPBOARD_CHARS) return { ok: false, error: 'too-large' };
+    clipboard.writeText(text);
+    return { ok: true, length: text.length };
+  });
+
   ipcMain.handle('omniterm:open-external', (event, rawUrl) => {
     // Refuse anything that is not the app's own window. Today there is exactly
     // one local window, but "the renderer is the only caller" is an assumption

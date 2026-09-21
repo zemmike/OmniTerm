@@ -74,6 +74,11 @@ jobs:
           RELEASE_VERSION: ${{ steps.vars_unix.outputs.version || steps.vars_windows.outputs.version }}
         run: node -e "const fs=require('fs');const p=require('./package.json');p.version=process.env.RELEASE_VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
       - run: npm ci
+      # Same repair as the build workflow: node-pty 1.1.0 ships the Darwin
+      # spawn-helper as 0644, and macOS reports only "posix_spawnp failed" without it.
+      - name: Repair node-pty helper permission (macOS)
+        if: matrix.platform == 'mac'
+        run: chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper
       - name: Native PTY smoke (Unix)
         if: matrix.platform != 'windows'
         run: npm run test:pty

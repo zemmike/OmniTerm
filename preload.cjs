@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('omniterm', {
   // Clicking a link in the terminal goes through the main process, which
   // validates the scheme before handing it to the OS.
   openExternal: (url) => ipcRenderer.invoke('omniterm:open-external', String(url)),
+  // Copying goes through the main process: the page's own clipboard request is
+  // rejected by Electron on Linux. The browser API stays available as a fallback.
+  writeClipboard: (text) => ipcRenderer.invoke('omniterm:clipboard-write', String(text)),
   version: VERSION,
   platform: process.platform,
   isDesktop: true,
