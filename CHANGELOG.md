@@ -57,6 +57,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.13.0] - 2026-09-21
+
+### Added
+- **macOS and Windows support.** OmniTerm builds and runs on all three platforms:
+  platform-neutral shell selection and data paths, capability-aware host metrics (a
+  metric this OS cannot provide is reported as unavailable rather than as a plausible
+  zero), native snapshots, and platform packaging - `OmniTerm-<version>-universal.dmg`
+  for macOS and `OmniTerm-<version>-win-<arch>.exe` for Windows.
+- **Reader: TeX and structured output**, so formulas and structured agent replies render
+  as content instead of escapes.
+- CI builds and smoke-tests each platform natively, and publishes the checksums for all
+  of them in one job.
+
+### Fixed
+- **`omniterm --version` printed the Electron version.** Chromium claims that flag before
+  the app sees it, and `/usr/bin/omniterm` was a symlink to that binary. It is now a
+  launcher that rewrites `--version`/`-v` to OmniTerm's own flag and forwards every other
+  argument unchanged.
+- **Copy in the AI Reader did nothing on Linux.** Electron refuses a page clipboard write
+  it cannot tie to a gesture; copying now goes through a validated IPC bridge, capped at
+  4,000,000 characters, with the browser clipboard as the development fallback.
+- **A settings change could corrupt the terminal grid.** Refits now require the pane to be
+  active, the document visible and the host laid out; a colour change never refits, a font
+  change refits only when visible, and returning to the tab does one fit and repaint.
+- **macOS packaging failed** because node-pty 1.1.0 ships its Darwin `spawn-helper` as
+  0644 and macOS reports only "posix_spawnp failed"; both workflows repair the permission
+  before the smoke test.
+- **Three releases contained no packages.** Lint failed on an async `setTimeout` callback,
+  and the packaging workflow tested before it built, so the Package jobs were skipped
+  while `Release` still reported success.
+- Clicking a terminal path with a relative path or a `:line` suffix, and the Files tab
+  going blank after such a click.
+
+### Notes
+- macOS builds are **not notarised** and Windows installers are **not code-signed** yet;
+  both are documented with the workaround in the README.
+- Reader prose is set in a serif stack with code left monospace.
+
 ## [1.12.3] - 2026-09-17
 
 ### Fixed
@@ -646,7 +684,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installable Ubuntu `.deb` packaging.
 - Publishing to GitHub Releases.
 
-[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.12.3...HEAD
+[Unreleased]: https://github.com/zemmike/OmniTerm/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/zemmike/OmniTerm/compare/v1.12.3...v1.13.0
 [1.12.3]: https://github.com/zemmike/OmniTerm/compare/v1.12.2...v1.12.3
 [1.12.2]: https://github.com/zemmike/OmniTerm/compare/v1.12.1...v1.12.2
 [1.12.1]: https://github.com/zemmike/OmniTerm/compare/v1.12.0...v1.12.1
