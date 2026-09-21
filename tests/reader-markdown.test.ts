@@ -3,7 +3,6 @@ import {
   ansiToEmphasis,
   isNoiseLine,
   lastReplyOnly,
-  stripNoiseLines,
   looksLikePath,
   parseInlineText,
   parseReaderText,

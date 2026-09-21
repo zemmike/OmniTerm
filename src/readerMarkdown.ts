@@ -349,7 +349,9 @@ export function isNoiseLine(line: string): boolean {
   }
 
   // Progress and context meters.
-  if (/^\d{1,3}%\s*[\|\[]?/.test(value) && value.length < 40) return true;
+  // A percentage followed by a bar or block character - not a sentence that happens to
+  // start with a number, which is why the next character must not be a word character.
+  if (/^\d{1,3}%\s*[^\w\s]/.test(value) && value.length < 40) return true;
   if (/[\u2588\u2591\u2592\u2593]{4,}/.test(value) && !/[a-z]{4,}/i.test(value)) return true;
   if (/^\s*(?:token usage|context left|remaining)\b.*\d/i.test(value)) return true;
 
