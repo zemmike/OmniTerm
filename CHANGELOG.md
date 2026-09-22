@@ -57,6 +57,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.15.0] - 2026-09-22
+
+### Added
+- **Document-style AI Reader.** Responses now appear on a centred Word/Google Docs-style
+  page with clear heading levels, properly indented lists, formatted tables and quotes,
+  highlighted important callouts, readable code blocks and display mathematics.
+- **Independent Reader light and dark modes.** The document theme can be changed without
+  changing the terminal theme, and the choice is remembered between launches.
+- Reader parsing now supports multiline display equations and Markdown tables containing
+  empty cells.
+
+### Fixed
+- Switching to Settings and changing the theme no longer destroys and recreates the
+  terminal renderer. Full-screen and alternate-screen programs such as Claude retain their
+  complete display instead of returning with text hidden behind black regions.
+- Removed the stray `\\1` text that appeared above Reader content.
+- The System Health dashboard now owns its vertical scroll area, so memory, disk and process
+  information at the bottom remains reachable.
+
 ## [1.14.1] - 2026-09-21
 
 ### Documentation
