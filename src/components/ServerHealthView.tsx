@@ -93,7 +93,11 @@ export const ServerHealthView: React.FC = () => {
   const segPct = (mb: number) => `${(mb / segTotal) * 100}%`;
 
   return (
-    <div className="p-4 sm:p-6 bg-[#0F0F10] text-[#E0E0E5] font-mono min-h-[calc(100vh-125px)] space-y-6">
+    <div
+      role="region"
+      aria-label="System health metrics"
+      className="h-full overflow-y-auto overflow-x-hidden p-4 pb-10 sm:p-6 sm:pb-10 bg-[#0F0F10] text-[#E0E0E5] font-mono space-y-6"
+    >
       {/* Dashboard Top Title Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#2A2A2E] pb-4">
         <div>

@@ -148,8 +148,15 @@ export default function App() {
           tabIndex={-1}
           className="h-full min-h-0 overflow-hidden"
         >
-          {activeTab === 'terminal' && (
+          {/* Keep xterm mounted across app-tab switches. Full-screen programs use the
+              alternate screen and do not have to repaint after their renderer is torn
+              down, which used to leave black regions when returning from Settings. */}
+          <div
+            className={`h-full min-h-0 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}
+            aria-hidden={activeTab !== 'terminal'}
+          >
             <TerminalView
+              visible={activeTab === 'terminal'}
               tabs={tabs}
               setTabs={setTabs}
               activeTabId={activeTabId}
@@ -162,7 +169,7 @@ export default function App() {
                 setActiveTab('files');
               }}
             />
-          )}
+          </div>
 
           {activeTab === 'files' && <FileManagerView openTarget={fileTarget} />}
 

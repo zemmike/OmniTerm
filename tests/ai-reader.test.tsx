@@ -13,6 +13,7 @@ describe('AI Reader', () => {
   let stylesheet: HTMLStyleElement;
 
   beforeEach(() => {
+    localStorage.clear();
     writeText = vi.fn(async () => undefined);
     stylesheet = document.createElement('style');
     stylesheet.textContent = readerStyles;
@@ -42,6 +43,48 @@ describe('AI Reader', () => {
     expect(document.querySelector('.katex-display')).not.toBeNull();
     expect(document.querySelector('script')).toBeNull();
     expect(screen.getByText('<script>alert(1)</script>')).toBeTruthy();
+  });
+
+  it('renders a document page without leaking terminal-only text', () => {
+    render(<AiReader text={'# Deployment\n\n**Important:** back up first.'} onClose={() => {}} />);
+
+    const documentPage = screen.getByRole('article', { name: 'Formatted AI response' });
+    expect(documentPage.getAttribute('data-reader-theme')).toBe('light');
+    expect(within(documentPage).getByRole('heading', { name: 'Deployment' })).toBeTruthy();
+    expect(
+      within(documentPage).getByText('Important:').classList.contains('reader-important'),
+    ).toBe(true);
+    expect(documentPage.textContent).not.toContain('\\1');
+  });
+
+  it('highlights a standalone important callout instead of turning it into a heading', () => {
+    render(<AiReader text={'**Important**\n\nBack up the database.'} onClose={() => {}} />);
+
+    const important = screen.getByText('Important');
+    expect(important.tagName).toBe('STRONG');
+    expect(important.classList.contains('reader-important')).toBe(true);
+    expect(screen.queryByRole('heading', { name: 'Important' })).toBeNull();
+  });
+
+  it('offers a persistent dark document mode independent of the terminal theme', () => {
+    const { unmount } = render(<AiReader text="Readable response" onClose={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use dark reader mode' }));
+    expect(
+      screen
+        .getByRole('article', { name: 'Formatted AI response' })
+        .getAttribute('data-reader-theme'),
+    ).toBe('dark');
+    expect(localStorage.getItem('omniterm:reader-theme')).toBe('dark');
+
+    unmount();
+    render(<AiReader text="Readable response" onClose={() => {}} />);
+    expect(
+      screen
+        .getByRole('article', { name: 'Formatted AI response' })
+        .getAttribute('data-reader-theme'),
+    ).toBe('dark');
+    expect(screen.getByRole('button', { name: 'Use light reader mode' })).toBeTruthy();
   });
 
   it('keeps malformed TeX source visible', () => {

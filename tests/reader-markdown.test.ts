@@ -152,6 +152,22 @@ describe('reader TeX parsing', () => {
     ]);
   });
 
+  it('parses multiline display TeX as one document block', () => {
+    expect(
+      parseReaderText(
+        'Before\n\n$$\n\\begin{aligned}\nx &= 1 \\\\\ny &= 2\n\\end{aligned}\n$$\n\nAfter',
+      ),
+    ).toEqual([
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'Before' }] },
+      {
+        kind: 'math',
+        value: '\\begin{aligned}\nx &= 1 \\\\\ny &= 2\n\\end{aligned}',
+        display: true,
+      },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'After' }] },
+    ]);
+  });
+
   it('requires a TeX signal in display math', () => {
     for (const source of ['$$hello$$', '$$20$$', '$$$$']) {
       expect(parseReaderText(source)).toEqual([
@@ -196,6 +212,16 @@ describe('reader structural parsing', () => {
     expect(parseReaderText('| Name | Value |\n| --- | ---: |\n| CPU | 42% |')[0].kind).toBe(
       'table',
     );
+  });
+
+  it('keeps empty table cells inside the table', () => {
+    expect(parseReaderText('| Name | Notes |\n| --- | --- |\n| alpha | |')).toEqual([
+      {
+        kind: 'table',
+        headers: [[{ kind: 'text', value: 'Name' }], [{ kind: 'text', value: 'Notes' }]],
+        rows: [[[{ kind: 'text', value: 'alpha' }], []]],
+      },
+    ]);
   });
 });
 
@@ -315,6 +341,18 @@ describe('headings written as bold only', () => {
         { kind: 'text', value: ' today' },
       ],
     });
+  });
+
+  it('keeps a standalone important callout as highlighted strong text', () => {
+    expect(parseReaderText('**Important**')).toEqual([
+      { kind: 'paragraph', content: [{ kind: 'strong', value: 'Important' }] },
+    ]);
+    expect(parseReaderText('**Important:**')).toEqual([
+      {
+        kind: 'paragraph',
+        content: [{ kind: 'strong', value: 'Important:' }],
+      },
+    ]);
   });
 });
 

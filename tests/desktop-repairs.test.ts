@@ -105,7 +105,7 @@ describe('reader typography', () => {
     // The serif experiment read worse at these sizes; sans plus a ~70ch measure is the
     // combination that survived looking at it.
     expect(reader).toContain('ui-sans-serif');
-    expect(reader).toContain("maxWidth: '70ch'");
+    expect(read('src/index.css')).toContain('max-width: 70ch');
     expect(reader).not.toContain('Georgia');
   });
 

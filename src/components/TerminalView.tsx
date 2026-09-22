@@ -22,6 +22,7 @@ import AiReader from './AiReader';
 import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
 interface Props {
+  visible?: boolean;
   tabs: TerminalTab[];
   setTabs: React.Dispatch<React.SetStateAction<TerminalTab[]>>;
   activeTabId: string;
@@ -60,6 +61,7 @@ function makeTab(cwd: string, colorTheme: string, index: number): TerminalTab {
 }
 
 export default function TerminalView({
+  visible = true,
   tabs,
   setTabs,
   activeTabId,
@@ -796,7 +798,7 @@ export default function TerminalView({
                           <TerminalPane
                             sessionId={pane.sessionId}
                             cwd={tab.cwd}
-                            active={isCurrent && isActive}
+                            active={visible && isCurrent && isActive}
                             settings={settings}
                             home={home}
                             onOpenFilePath={openResolvedPath}

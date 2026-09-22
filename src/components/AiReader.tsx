@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Copy, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { BookOpen, Copy, Moon, Sun, X, ZoomIn, ZoomOut } from 'lucide-react';
 import katex from 'katex';
 import {
   lastReplyOnly,
@@ -22,6 +22,7 @@ interface Props {
 }
 
 const SCALES = [0.85, 1, 1.15, 1.3, 1.5];
+const READER_THEME_KEY = 'omniterm:reader-theme';
 
 /**
  * A reader panel for terminal output that was written for a fixed-width screen.
@@ -36,6 +37,13 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const [readerTheme, setReaderTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      return localStorage.getItem(READER_THEME_KEY) === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   // Filters, because a terminal pane is mostly status: the useful part of an agent's
@@ -112,6 +120,18 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
     setScale(next);
   };
 
+  const toggleReaderTheme = () => {
+    setReaderTheme((current) => {
+      const next = current === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem(READER_THEME_KEY, next);
+      } catch {
+        /* storage unavailable */
+      }
+      return next;
+    });
+  };
+
   return (
     <aside
       aria-label="AI Reader"
@@ -122,6 +142,19 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
         <span className="text-[11px] font-bold text-[#E0E0E5]">AI Reader</span>
         <span className="text-[10px] text-[#66666E]">formatted from this pane</span>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={toggleReaderTheme}
+          aria-label={readerTheme === 'light' ? 'Use dark reader mode' : 'Use light reader mode'}
+          title={readerTheme === 'light' ? 'Dark document' : 'Light document'}
+          className="rounded p-0.5 text-[#88888E] hover:text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+        >
+          {readerTheme === 'light' ? (
+            <Moon aria-hidden="true" className="h-3.5 w-3.5" />
+          ) : (
+            <Sun aria-hidden="true" className="h-3.5 w-3.5" />
+          )}
+        </button>
         <button
           type="button"
           onClick={() => setFollow((current) => !current)}
@@ -175,22 +208,17 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
         tabIndex={0}
         role="region"
         aria-label="Reader content"
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]"
+        className={`reader-surface reader-surface-${readerTheme} min-h-0 flex-1 overflow-y-auto px-4 py-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[var(--ui-accent)]`}
         style={{
           // Rounded, because 14 * 1.15 is 16.099999999999998 in binary floating point
           // and a font size with seventeen decimals is not a font size.
           fontSize: `${Math.round(14 * scale * 100) / 100}px`,
           lineHeight: 1.75,
-          // A comfortable measure: full-width terminal lines are the main reason agent
-          // output is tiring to read.
-          maxWidth: '70ch',
-          // Sans for prose. The serif experiment read worse at the sizes this panel
-          // uses; code stays monospace through .reader-code.
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
         }}
       >
-        <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-[#1E1E22] bg-[#111114] px-2 py-1">
+        <div className="reader-controls sticky top-0 z-10 mb-4 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded border px-2 py-1 shadow-sm">
           <span className="text-[10px] tracking-wide text-[#55555E] uppercase">Show</span>
           <button
             type="button"
@@ -224,30 +252,35 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
             </span>
           )}
         </div>
-        \1
-        <div className="reader-prose">
-          {blocks.length === 0 ? (
-            <p className="text-[#66666E]">
-              Nothing to read yet. This shows the focused pane&apos;s output as it arrives.
-            </p>
-          ) : (
-            blocks.map((block, index) => (
-              <React.Fragment key={index}>
-                <ReaderBlockView block={block} scale={scale} onOpenPath={onOpenPath} />
-              </React.Fragment>
-            ))
-          )}
-          {copied && (
-            <p role="status" className="pt-2 text-[11px] text-[#00C853]">
-              Copied the pane text.
-            </p>
-          )}
-          {copyFailed && (
-            <p role="status" className="pt-2 text-[11px] text-[#FFB300]">
-              Could not reach the clipboard. The terminal&apos;s own copy still works.
-            </p>
-          )}
-        </div>
+        <article
+          aria-label="Formatted AI response"
+          data-reader-theme={readerTheme}
+          className={`reader-document reader-document-${readerTheme}`}
+        >
+          <div className="reader-prose">
+            {blocks.length === 0 ? (
+              <p className="reader-muted">
+                Nothing to read yet. This shows the focused pane&apos;s output as it arrives.
+              </p>
+            ) : (
+              blocks.map((block, index) => (
+                <React.Fragment key={index}>
+                  <ReaderBlockView block={block} scale={scale} onOpenPath={onOpenPath} />
+                </React.Fragment>
+              ))
+            )}
+            {copied && (
+              <p role="status" className="pt-2 text-[11px] text-[#00C853]">
+                Copied the pane text.
+              </p>
+            )}
+            {copyFailed && (
+              <p role="status" className="pt-2 text-[11px] text-[#FFB300]">
+                Could not reach the clipboard. The terminal&apos;s own copy still works.
+              </p>
+            )}
+          </div>
+        </article>
       </div>
     </aside>
   );
@@ -269,7 +302,7 @@ function ReaderBlockView({
         'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       return (
         <Tag
-          className="mt-4 mb-1.5 font-bold text-[#F2F2F5] first:mt-0"
+          className="reader-heading mt-4 mb-1.5 font-bold first:mt-0"
           style={{ fontSize: `${size}em` }}
         >
           <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
@@ -278,13 +311,13 @@ function ReaderBlockView({
     }
     case 'paragraph':
       return (
-        <p className="my-1.5 whitespace-pre-wrap text-[#DCDCE2]">
+        <p className="reader-paragraph my-1.5 whitespace-pre-wrap">
           <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
         </p>
       );
     case 'quote':
       return (
-        <blockquote className="my-2 border-l-2 border-[#3A3A42] pl-3 text-[#A9A9B2]">
+        <blockquote className="reader-quote my-2 border-l-4 pl-3">
           <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
         </blockquote>
       );
@@ -292,11 +325,11 @@ function ReaderBlockView({
       const List = block.ordered ? 'ol' : 'ul';
       return (
         <List
-          className={`my-2 space-y-1 pl-6 text-[#DCDCE2] ${block.ordered ? 'list-decimal' : 'list-disc'}`}
+          className={`reader-list my-2 space-y-1 pl-6 ${block.ordered ? 'list-decimal' : 'list-disc'}`}
           start={block.ordered ? block.start : undefined}
         >
           {block.items.map((item, index) => (
-            <li key={index} className="pl-1 marker:text-[#8AB4F8]">
+            <li key={index} className="pl-1">
               <InlineTokens tokens={item} onOpenPath={onOpenPath} />
             </li>
           ))}
@@ -305,9 +338,9 @@ function ReaderBlockView({
     }
     case 'code':
       return (
-        <pre className="reader-code my-2 rounded border border-[#232329] bg-[#111114] p-2.5">
+        <pre className="reader-code my-3 rounded-md border p-3">
           <code
-            className="whitespace-pre font-mono text-[#D7E1C9]"
+            className="whitespace-pre font-mono"
             data-language={block.lang || undefined}
             style={{ fontSize: `${Math.max(10, 12 * scale)}px`, lineHeight: 1.5 }}
           >
@@ -317,9 +350,9 @@ function ReaderBlockView({
       );
     case 'table':
       return (
-        <div className="reader-table my-3 rounded border border-[#2A2A2E]">
+        <div className="reader-table my-3 rounded border">
           <table>
-            <thead className="bg-[#17171B] text-left text-[#F2F2F5]">
+            <thead className="text-left">
               <tr>
                 {block.headers.map((header, index) => (
                   <th key={index} scope="col">
@@ -328,7 +361,7 @@ function ReaderBlockView({
                 ))}
               </tr>
             </thead>
-            <tbody className="text-[#DCDCE2]">
+            <tbody>
               {block.rows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
                   {row.map((cell, cellIndex) => (
@@ -376,11 +409,11 @@ function InlineTokenView({
     case 'text':
       return token.value;
     case 'strong':
-      return <strong className="font-semibold text-[#F2F2F5]">{token.value}</strong>;
+      return <strong className="reader-important font-semibold">{token.value}</strong>;
     case 'emphasis':
       return <em>{token.value}</em>;
     case 'code':
-      return <code className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">{token.value}</code>;
+      return <code className="reader-inline-code rounded px-1 py-0.5">{token.value}</code>;
     case 'path':
       if (!onOpenPath) return token.value;
       return (
@@ -388,7 +421,7 @@ function InlineTokenView({
           type="button"
           onClick={() => onOpenPath(normalizeTargetPath(token.value))}
           title={`Open ${token.value} in the Files tab`}
-          className="rounded text-left text-[#8AB4F8] underline decoration-dotted underline-offset-2 hover:text-[#AECBFA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+          className="reader-path rounded text-left underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
         >
           {token.value}
         </button>
@@ -410,7 +443,7 @@ function MathToken({ value, displayMode }: { value: string; displayMode: boolean
     });
   } catch {
     return (
-      <code className="rounded bg-[#1B1B20] px-1 py-0.5 text-[#E7D6A8]">
+      <code className="reader-inline-code rounded px-1 py-0.5">
         {displayMode ? `$$${value}$$` : `$${value}$`}
       </code>
     );

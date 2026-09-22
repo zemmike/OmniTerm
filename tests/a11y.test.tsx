@@ -371,6 +371,10 @@ describe('ServerHealthView', () => {
     const { container } = renderInMain(h(ServerHealthView));
 
     await screen.findByRole('heading', { name: /THIS MACHINE/ });
+    const scrollRegion = screen.getByRole('region', { name: 'System health metrics' });
+    expect(scrollRegion.className).toContain('h-full');
+    expect(scrollRegion.className).toContain('overflow-y-auto');
+    expect(scrollRegion.className).toContain('pb-10');
     expect(screen.getByText('omniterm-dev')).toBeTruthy();
     expect(
       screen.getByRole('progressbar', { name: 'CPU usage' }).getAttribute('aria-valuenow'),

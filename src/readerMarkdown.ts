@@ -167,7 +167,10 @@ function tableCells(line: string): string[] | null {
   if (!trimmed.includes('|')) return null;
   const body = trimmed.replace(/^\|/, '').replace(/\|$/, '');
   const cells = body.split('|').map((cell) => cell.trim());
-  return cells.length >= 2 && cells.every((cell) => cell.length > 0) ? cells : null;
+  // Empty cells are valid Markdown (for example `| alpha | |`). The separator
+  // validator remains strict, so accepting them here cannot turn arbitrary pipes
+  // into a table.
+  return cells.length >= 2 ? cells : null;
 }
 
 function isTableSeparator(line: string, columns: number): boolean {
@@ -214,6 +217,23 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
       code = { lang: fence[1] || '', lines: [] };
       continue;
     }
+    if (line.trim() === '$$') {
+      const closing = lines.findIndex((candidate, candidateIndex) => {
+        return candidateIndex > index && candidate.trim() === '$$';
+      });
+      if (closing > index + 1) {
+        const value = lines
+          .slice(index + 1, closing)
+          .join('\n')
+          .trim();
+        if (texSignal(value)) {
+          flush();
+          blocks.push({ kind: 'math', value, display: true });
+          index = closing;
+          continue;
+        }
+      }
+    }
     const displayMath = DISPLAY_MATH.exec(line);
     if (displayMath && texSignal(displayMath[1])) {
       flush();
@@ -224,6 +244,10 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
     if (boldLine) {
       flush();
       const inner = boldLine[1].trim();
+      if (/^(important|warning|caution|note|tip|attention):?$/i.test(inner)) {
+        blocks.push({ kind: 'paragraph', content: parseInlineText(line.trim()) });
+        continue;
+      }
       const heading = HEADING.exec(inner);
       blocks.push({
         kind: 'heading',
