@@ -14,7 +14,8 @@ import { TerminalSettings } from '../settings';
 import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { terminalFileLinks } from '../fileLinks';
 import { createPreOpenMessageQueue } from '../socketQueue';
-import { applyTerminalSettings } from '../terminalOptions';
+import { applyTerminalSettingsWhenVisible } from '../terminalOptions';
+import { terminalBufferToText } from '../terminalBufferText';
 
 export type { XtermTheme };
 
@@ -51,6 +52,7 @@ interface Props {
   sessionId: string;
   cwd?: string;
   active: boolean;
+  visible: boolean;
   settings: TerminalSettings;
   onReady?: (info: {
     shell: string;
@@ -71,6 +73,7 @@ export default function TerminalPane({
   sessionId,
   cwd,
   active,
+  visible,
   settings,
   onReady,
   onExit,
@@ -84,6 +87,8 @@ export default function TerminalPane({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   // Fitting a hidden or not-yet-laid-out pane computes a grid from a zero-sized
   // container, and the PTY is then resized to those invalid dimensions - which is what
@@ -91,7 +96,7 @@ export default function TerminalPane({
   // Every refit goes through this guard. It reads refs so it stays correct inside the
   // mount effect, which must not re-run (it closes over sessionId and cwd).
   const canFit = useCallback(() => {
-    if (!activeRef.current) return false;
+    if (!visibleRef.current) return false;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
     const host = hostRef.current;
     return Boolean(host && host.clientWidth > 40 && host.clientHeight > 20);
@@ -103,6 +108,11 @@ export default function TerminalPane({
     } catch {
       /* not laid out yet */
     }
+  }, [canFit]);
+  const safeRefresh = useCallback(() => {
+    if (!canFit()) return;
+    const term = termRef.current;
+    if (term) term.refresh(0, term.rows - 1);
   }, [canFit]);
   const searchRef = useRef<SearchAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -586,12 +596,12 @@ export default function TerminalPane({
     window.addEventListener('resize', onWindowResize);
     requestAnimationFrame(() => {
       safeFit();
-      term.refresh(0, term.rows - 1);
+      safeRefresh();
     });
     if (typeof (document as any).fonts?.ready?.then === 'function') {
       (document as any).fonts.ready.then(() => {
         safeFit();
-        term.refresh(0, term.rows - 1);
+        safeRefresh();
       });
     }
 
@@ -605,14 +615,7 @@ export default function TerminalPane({
       },
       selectAll: () => term.selectAll(),
       clear: () => term.clear(),
-      readBuffer: () => {
-        const buffer = term.buffer.active;
-        const lines: string[] = [];
-        for (let i = 0; i < buffer.length; i += 1) {
-          lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
-        }
-        return lines.join('\n');
-      },
+      readBuffer: () => terminalBufferToText(term.buffer.active),
       focus: () => term.focus(),
       search: (query, direction) => {
         if (!query) return;
@@ -728,10 +731,15 @@ export default function TerminalPane({
     const term = termRef.current;
     if (!term) return;
     const fontChanged = previousFontKey.current !== fontKey;
-    previousFontKey.current = fontKey;
-    applyTerminalSettings(term.options, settings, () => {
-      if (fontChanged) safeFit();
+    const applied = applyTerminalSettingsWhenVisible(term.options, {
+      settings,
+      visible,
+      fontChanged,
+      refit: safeFit,
+      refresh: safeRefresh,
     });
+    if (!applied) return;
+    previousFontKey.current = fontKey;
 
     // The renderer switches live, so the difference is measurable without
     // reopening the app.
@@ -745,20 +753,18 @@ export default function TerminalPane({
     // No refit here: a colour change leaves the grid alone. It does need a repaint
     // though - the renderer keeps the old palette on screen otherwise, which shows up
     // as half the text going black after a theme switch.
-    term.refresh(0, term.rows - 1);
-  }, [settings, fontKey, safeFit]);
+  }, [settings, fontKey, visible, safeFit, safeRefresh]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!visible) return;
     // Back on screen: the grid may have been sized while this pane was hidden, so fit
     // once and repaint, then take focus.
     requestAnimationFrame(() => {
       safeFit();
-      const term = termRef.current;
-      if (term) term.refresh(0, term.rows - 1);
+      safeRefresh();
     });
-    termRef.current?.focus();
-  }, [active, safeFit]);
+    if (active) termRef.current?.focus();
+  }, [active, visible, safeFit, safeRefresh]);
 
   useEffect(() => {
     if (!searchOpen) return;

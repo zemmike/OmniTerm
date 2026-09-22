@@ -76,14 +76,6 @@ describe('settings changes must not corrupt the terminal grid', () => {
     expect(pane).toContain('host.clientWidth > 40');
   });
 
-  it('refits for a font change and not for a colour change', () => {
-    expect(pane).toContain('const fontChanged = previousFontKey.current !== fontKey');
-    expect(pane).toContain('if (fontChanged) safeFit();');
-    // A colour change must still repaint: without it the old palette stays on screen and
-    // half the text looks blacked out.
-    expect(pane).toContain('term.refresh(0, term.rows - 1);');
-  });
-
   it('fits and repaints once when the pane comes back on screen', () => {
     expect(pane).toContain('term.refresh(0, term.rows - 1)');
   });

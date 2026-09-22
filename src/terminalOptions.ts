@@ -25,3 +25,21 @@ export function applyTerminalSettings(
   options.scrollback = settings.scrollback;
   refit();
 }
+
+export function applyTerminalSettingsWhenVisible(
+  options: LiveTerminalOptions,
+  update: {
+    settings: TerminalSettings;
+    visible: boolean;
+    fontChanged: boolean;
+    refit: () => void;
+    refresh: () => void;
+  },
+): boolean {
+  if (!update.visible) return false;
+  applyTerminalSettings(options, update.settings, () => {
+    if (update.fontChanged) update.refit();
+  });
+  update.refresh();
+  return true;
+}

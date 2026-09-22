@@ -798,6 +798,7 @@ export default function TerminalView({
                           <TerminalPane
                             sessionId={pane.sessionId}
                             cwd={tab.cwd}
+                            visible={visible && isCurrent}
                             active={visible && isCurrent && isActive}
                             settings={settings}
                             home={home}
