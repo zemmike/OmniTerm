@@ -57,6 +57,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.17.0] - 2026-09-22
+
+### Added
+- **Match Herdr to this theme.** Settings → Herdr writes `auto_switch`, `dark_name` and
+  `light_name` into Herdr's `config.toml` and asks a running Herdr to reload, so Herdr's own
+  interface uses the palette OmniTerm is drawing with and follows the light/dark switch.
+  What it guarantees: those three keys and nothing else are written (comments, sections and
+  `[theme.custom]` overrides are untouched); the config path is taken from Herdr's own
+  reported socket rather than assumed; one backup is kept before the first change and
+  **Restore my config** puts it back; every write is validated with `herdr config check`
+  before the reload, and a config Herdr rejects is **rolled back immediately**; it never runs
+  on its own.
+- `OMNITERM_HERDR_E2E=1` runs an opt-in integration test against a real Herdr installation.
+  It writes, validates, reverts, and proves the rollback by handing Herdr a config it must
+  refuse.
+
+### Documentation
+- [docs/THEME-INTEGRATION.md](docs/THEME-INTEGRATION.md) gained the Herdr section, and
+  [docs/herdr/findings.md](docs/herdr/findings.md) records phase 0 of the Herdr integration:
+  measured latency, the `recent-unwrapped` finding, the capability probe, and what could not
+  be verified on a headless box.
+
 ## [1.16.0] - 2026-09-22
 
 ### Added

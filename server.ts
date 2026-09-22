@@ -10,6 +10,8 @@ const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import { searchDirectory } from './fileSearch';
+import { applyHerdrTheme, readHerdrStatus, revertHerdrTheme } from './herdr';
+import { herdrThemeKeysFor, isHerdrThemeName } from './src/herdrTheme';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
 import { resolveDataDir } from './platform/paths';
 import { discoverShellProfile } from './platform/shell';
@@ -937,6 +939,51 @@ app.get('/api/files/search', (req, res) => {
     res.json(searchDirectory(root, query));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------------------- Herdr
+//
+// Herdr owns its own terminals: OmniTerm reads its state and, only when asked, matches
+// Herdr's interface to the current theme. Nothing here starts, stops, or controls a Herdr
+// session, and the only file touched is Herdr's own config - three keys inside [theme],
+// after a backup.
+app.get('/api/herdr/status', async (_req, res) => {
+  try {
+    res.json(await readHerdrStatus());
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Could not read Herdr status.' });
+  }
+});
+
+app.post('/api/herdr/theme', async (req, res) => {
+  try {
+    const body = (req.body || {}) as { themeId?: unknown; darkName?: unknown; lightName?: unknown };
+    const overrides: { darkName?: string; lightName?: string } = {};
+    for (const key of ['darkName', 'lightName'] as const) {
+      const value = body[key];
+      if (value === undefined || value === '') continue;
+      if (typeof value !== 'string' || !isHerdrThemeName(value)) {
+        return res
+          .status(400)
+          .json({ error: `Unknown Herdr theme: ${String(value).slice(0, 40)}` });
+      }
+      overrides[key] = value;
+    }
+    const keys = herdrThemeKeysFor(typeof body.themeId === 'string' ? body.themeId : '', overrides);
+    const result = await applyHerdrTheme(keys);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Could not write the Herdr config.' });
+  }
+});
+
+app.post('/api/herdr/theme/revert', async (_req, res) => {
+  try {
+    const result = await revertHerdrTheme();
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Could not restore the Herdr config.' });
   }
 });
 

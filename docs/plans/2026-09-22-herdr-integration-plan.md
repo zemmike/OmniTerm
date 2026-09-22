@@ -94,7 +94,7 @@ usable?" **Gate:** if `pane read` is slow, huge, or lossy, Phase 2 shrinks to th
 plus status badges and the Reader keeps working from the local pane only. If IDs are
 unstable across a server restart, the whole plan is re-scoped before any UI work.
 
-### Phase 1 — Match Herdr to your OmniTerm theme (1–2 days)
+### Phase 1 — Match Herdr to your OmniTerm theme (1–2 days) — **done, shipped in 1.17.0**
 
 Phase 0 found the cheap path: Herdr's config has `[theme] auto_switch`, documented as
 "follow host terminal light/dark appearance" — which is the colour-scheme protocol OmniTerm
