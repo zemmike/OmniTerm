@@ -164,8 +164,8 @@ export default function App() {
               currentTheme={settings.theme}
               onOpenSettings={() => setActiveTab('settings')}
               home={home}
-              onOpenFilePath={(path) => {
-                setFileTarget({ path, requestId: Date.now() });
+              onOpenFilePath={(path, cwd) => {
+                setFileTarget({ path, requestId: Date.now(), cwd });
                 setActiveTab('files');
               }}
             />

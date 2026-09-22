@@ -30,7 +30,9 @@ interface Props {
   currentTheme?: string;
   onOpenSettings?: () => void;
   home?: string;
-  onOpenFilePath?: (path: string) => void;
+  /** The pane's working directory travels with the path: the Files tab needs it to
+   * find a relative path the shell's directory does not contain. */
+  onOpenFilePath?: (path: string, cwd?: string) => void;
 }
 
 interface PaneState {
@@ -324,7 +326,7 @@ export default function TerminalView({
     (raw: string) => {
       if (!onOpenFilePath) return;
       const resolved = resolveTargetPath(raw, { base: activeCwd, home });
-      onOpenFilePath(resolved);
+      onOpenFilePath(resolved, activeCwd);
     },
     [activeCwd, home, onOpenFilePath],
   );

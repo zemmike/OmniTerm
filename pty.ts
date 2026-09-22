@@ -530,6 +530,9 @@ function spawnSession(
         ...launch.env,
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
+        // Programs branch on the terminal they are running in; saying so plainly is what
+        // lets them pick the right defaults instead of guessing from TERM.
+        TERM_PROGRAM: 'OmniTerm',
         OMNITERM_SESSION: opts.id,
         OMNITERM: '1',
         // LANG/LC_ALL are inherited on purpose: the user's locale is theirs.

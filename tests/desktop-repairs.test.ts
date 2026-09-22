@@ -106,10 +106,37 @@ describe('reader typography', () => {
     expect(read('src/index.css')).toContain('.reader-code code');
   });
 
-  it('offers the two filters, wired to the parser', () => {
-    expect(reader).toContain('setLastReplyFilter');
-    expect(reader).toContain('setHideNoise');
-    expect(reader).toContain('parseReaderText(text, { hideNoise, lastReply: lastReplyFilter })');
+  it('defaults to the answer only, with noise hiding as a second filter', () => {
+    expect(reader).toContain('const [answerOnly, setAnswerOnly] = useState(true)');
+    expect(reader).toContain('const [hideNoise, setHideNoise] = useState(true)');
+    expect(reader).toContain('parseReaderText(text, { answerOnly, hideNoise })');
+  });
+
+  it('answers the colour-scheme query and announces a change', () => {
+    const pane = read('src/components/TerminalPane.tsx');
+    // Programs read the terminal's colours once and keep them; without this protocol a
+    // session inside a multiplexer survived a theme change.
+    expect(pane).toContain("registerCsiHandler({ prefix: '?', final: 'n' }");
+    expect(pane).toContain('params[0] === 996');
+    expect(pane).toContain('params.includes(2031)');
+    expect(pane).toContain('colorSchemeReport(scheme)');
+    expect(read('pty.ts')).toContain("TERM_PROGRAM: 'OmniTerm'");
+  });
+
+  it('resolves a clicked path from the pane it was clicked in', () => {
+    // The path travels with the pane's working directory, and a miss there searches that
+    // directory instead of reporting the file as missing.
+    expect(read('src/components/TerminalView.tsx')).toContain(
+      'onOpenFilePath(resolved, activeCwd)',
+    );
+    expect(read('src/App.tsx')).toContain('setFileTarget({ path, requestId: Date.now(), cwd })');
+    const files = read('src/components/FileManagerView.tsx');
+    expect(files).toContain('findByNameUnder(openTarget.cwd, basenameOf(targetPath))');
+    expect(files).toContain('&path=${encodeURIComponent(openTarget.cwd)}');
+  });
+
+  it('does not show a colour legend in the Files tab', () => {
+    expect(read('src/components/FileManagerView.tsx')).not.toContain('showLegend');
   });
 });
 

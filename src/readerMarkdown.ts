@@ -63,7 +63,7 @@ export function stripTerminalFurniture(text: string): string {
 }
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*\S)\s*$/;
-const LIST_ITEM = /^\s*([-*•‣◦]|(\d{1,2})[.)])\s+(.*\S)\s*$/;
+const LIST_ITEM = /^(\s*)([-*•‣◦▪·]|(\d{1,2})[.)]|\((\d{1,2})\))\s+(.*\S)\s*$/;
 const QUOTE = /^\s*>\s?(.*\S)\s*$/;
 const FENCE = /^\s*```\s*([\w+-]*)\s*$/;
 const DISPLAY_MATH = /^\s*\$\$([\s\S]*?)\$\$\s*$/;
@@ -180,7 +180,11 @@ function isTableSeparator(line: string, columns: number): boolean {
 
 /** Classify cleaned terminal text into blocks suitable for reader rendering. */
 export function parseReaderText(raw: string, options: ReaderFilterOptions = {}): ReaderBlock[] {
-  const source = options.lastReply ? lastReplyOnly(raw || '').text : raw || '';
+  const source = options.answerOnly
+    ? extractAnswer(raw || '').text
+    : options.lastReply
+      ? lastReplyOnly(raw || '').text
+      : raw || '';
   const cleaned = stripTerminalFurniture(stripAnsi(ansiToEmphasis(source)));
   const withoutNoise = options.hideNoise ? stripNoiseLines(cleaned) : cleaned;
   const blocks: ReaderBlock[] = [];
@@ -269,14 +273,31 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
     const listItem = LIST_ITEM.exec(line);
     if (listItem) {
       flush();
-      const ordered = !!listItem[2];
-      const start = ordered ? Number(listItem[2]) : 1;
-      const items: InlineToken[][] = [parseInlineText(listItem[3])];
+      const ordered = Boolean(listItem[3] || listItem[4]);
+      const start = ordered ? Number(listItem[3] || listItem[4]) : 1;
+      // A wrapped bullet is still one bullet: agents wrap long items, and a continuation
+      // line is indented past the marker without starting a new one.
+      const readItem = (text: string, indent: number) => {
+        const parts = [text];
+        while (index + 1 < lines.length) {
+          const next = lines[index + 1];
+          if (!next.trim()) break;
+          const nextItem = LIST_ITEM.exec(next);
+          if (nextItem) break;
+          const nextIndent = next.length - next.trimStart().length;
+          if (nextIndent <= indent) break;
+          parts.push(next.trim());
+          index += 1;
+        }
+        return parseInlineText(parts.join(' '));
+      };
+      const items: InlineToken[][] = [readItem(listItem[5], listItem[1].length)];
       while (index + 1 < lines.length) {
         const next = LIST_ITEM.exec(lines[index + 1]);
-        if (!next || !!next[2] !== ordered) break;
-        items.push(parseInlineText(next[3]));
+        // The list ends at the first line that is not an item of the same kind.
+        if (!next || Boolean(next[3] || next[4]) !== ordered) break;
         index += 1;
+        items.push(readItem(next[5], next[1].length));
       }
       blocks.push({ kind: 'list', ordered, start, items });
       continue;
@@ -426,4 +447,63 @@ export interface ReaderFilterOptions {
   hideNoise?: boolean;
   /** Keep only what follows the last prompt. */
   lastReply?: boolean;
+  /** Keep only the assistant's answer: no run history, no tool output. Implies lastReply. */
+  answerOnly?: boolean;
+}
+
+/**
+ * Tool output that is not part of the answer.
+ *
+ * An agent's screen mixes the reply with the evidence for it: command invocations,
+ * diffs, file dumps, test logs. The reader is for the reply, so those blocks are
+ * dropped - which is what "leave the run history out" means in practice.
+ */
+export function isToolOutputBlock(block: string): boolean {
+  const lines = block.split('\n').filter((line) => line.trim());
+  if (!lines.length) return false;
+  // A unified diff or patch. It always carries its headers, which is what separates a
+  // patch from a bulleted list: "- alpha" is a bullet, "--- a/file" is a patch.
+  if (lines.some((line) => /^\s*(?:@@|\+\+\+|diff --git|index [0-9a-f]{7})/.test(line))) {
+    return true;
+  }
+  // A command and the output it produced.
+  const first = lines[0].trim();
+  if (/^(?:\$|>|\u276f)\s+\S/.test(first) && lines.length > 1) return true;
+  // A tool call with its result.
+  if (/^[\u25c9\u23fa\u23f5\u23f8]\s*\S/.test(first)) return true;
+  if (
+    /^(?:read|write|edit|bash|shell|grep|glob|search|fetch|webfetch)\b/i.test(first) &&
+    /[({:]/.test(first)
+  ) {
+    return true;
+  }
+  // A file dump: a path header followed by uniformly indented or numbered source.
+  if (/^\/\S+\s*$/.test(lines[0]) && lines.length > 3) return true;
+  if (
+    lines.length > 4 &&
+    lines.filter((line) => /^\s*\d+\s{1,2}\S/.test(line)).length >= lines.length - 1
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The assistant's answer, without the terminal history around it.
+ *
+ * Cuts at the last prompt when one is present (lastReplyOnly), then drops trailing tool
+ * output so the answer is the last thing the reader shows. When the pane has no prompt
+ * marker - a multiplexer or a full-screen agent owns the screen - the tool blocks are
+ * still dropped, and the trailing run of prose is what remains.
+ */
+export function extractAnswer(raw: string): { text: string; cut: boolean } {
+  const { text: afterPrompt, found } = lastReplyOnly(raw || '');
+  const blocks = afterPrompt.split(/\n{2,}/);
+  let lastTool = -1;
+  blocks.forEach((block, i) => {
+    if (isToolOutputBlock(block)) lastTool = i;
+  });
+  if (lastTool === -1) return { text: afterPrompt, cut: found };
+  const kept = blocks.filter((block, i) => i > lastTool || !isToolOutputBlock(block));
+  return { text: kept.join('\n\n'), cut: true };
 }

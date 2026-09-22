@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ansiToEmphasis,
   isNoiseLine,
+  extractAnswer,
+  isToolOutputBlock,
   lastReplyOnly,
   looksLikePath,
   parseInlineText,
@@ -442,5 +444,77 @@ describe('parseReaderText filters', () => {
     const rendered = filtered.map((b) => JSON.stringify(b)).join(' ');
     expect(rendered).toContain('Only this should survive');
     expect(rendered).not.toContain('Heading');
+  });
+});
+
+describe('extractAnswer', () => {
+  it('does not mistake a bulleted list for a diff', () => {
+    // Regression: "- alpha" / "- beta" used to match the unified-diff rule and the whole
+    // answer was dropped as tool output.
+    const answer = '- alpha\n- beta';
+    expect(isToolOutputBlock(answer)).toBe(false);
+    expect(extractAnswer(answer).text).toContain('alpha');
+  });
+
+  it('drops a diff and the command that produced it', () => {
+    const screen = [
+      '$ git diff',
+      'diff --git a/src/app.ts b/src/app.ts',
+      '@@ -1,3 +1,3 @@',
+      '-const x = 1;',
+      '+const x = 2;',
+      '',
+      'Done: the guard now rejects a stale token.',
+    ].join('\n');
+    const { text } = extractAnswer(screen);
+    expect(text).toContain('Done: the guard');
+    expect(text).not.toContain('const x =');
+    expect(text).not.toContain('git diff');
+  });
+
+  it('keeps the answer after the last tool block', () => {
+    const screen = [
+      'Here is the plan:',
+      '',
+      '\u23fa Read(src/app.ts)',
+      'const x = 1;',
+      '',
+      'Then apply it.',
+    ].join('\n');
+    const { text } = extractAnswer(screen);
+    expect(text).toContain('Then apply it.');
+    expect(text).not.toContain('\u23fa Read');
+  });
+
+  it('cuts at the last prompt when the pane has one', () => {
+    const screen = 'old output\nuser@host:~/proj$ \nThe answer.';
+    expect(extractAnswer(screen).text.trim()).toBe('The answer.');
+  });
+});
+
+describe('parseReaderText answer-only mode', () => {
+  it('renders the answer as prose, lists and headings, without the history', () => {
+    const screen = [
+      'user@host:~$ claude',
+      'previous answer that should be gone',
+      'user@host:~$ ',
+      '## Summary',
+      '- first point that wraps',
+      '  onto a second line',
+      '- second point',
+      '',
+      '~~struck through old text~~',
+      'Final sentence.',
+    ].join('\n');
+    const blocks = parseReaderText(screen, { answerOnly: true, hideNoise: true });
+    const kinds = blocks.map((b) => b.kind);
+    expect(kinds).toContain('heading');
+    expect(kinds).toContain('list');
+    const rendered = JSON.stringify(blocks);
+    expect(rendered).not.toContain('previous answer');
+    const list = blocks.find((b) => b.kind === 'list') as { items: unknown[] };
+    // Two bullets, with the wrapped line joined onto the first.
+    expect(list.items).toHaveLength(2);
+    expect(JSON.stringify(list.items[0])).toContain('onto a second line');
   });
 });

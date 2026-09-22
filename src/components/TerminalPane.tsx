@@ -16,6 +16,7 @@ import { terminalFileLinks } from '../fileLinks';
 import { createPreOpenMessageQueue } from '../socketQueue';
 import { applyTerminalSettingsWhenVisible } from '../terminalOptions';
 import { terminalBufferToText } from '../terminalBufferText';
+import { colorSchemeReport, schemeForBackground } from '../colorScheme';
 
 export type { XtermTheme };
 
@@ -152,6 +153,11 @@ export default function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const markersRef = useRef<IMarker[]>([]);
+  // Whether the program in this pane asked to be told about colour-scheme changes
+  // (DECSET 2031), and the scheme it would be told about.
+  const sendRef = useRef<((msg: unknown) => void) | null>(null);
+  const schemeNotifyRef = useRef(false);
+  const schemeRef = useRef(schemeForBackground(terminalTheme(settings).background));
   const decorations = useRef<IDisposable[]>([]);
   const apiRef = useRef<PaneApi | null>(null);
   const cwdRef = useRef(cwd || home);
@@ -295,6 +301,37 @@ export default function TerminalPane({
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     });
     const send = (msg: unknown) => outbound.send(msg);
+    sendRef.current = send;
+
+    // ------------------------------------------------- colour scheme protocol
+    //
+    // Programs read the terminal's colours once at startup and then keep them, which is
+    // why a theme change did not reach a session running inside a multiplexer. The
+    // standards answer is the colour-scheme protocol: answer `CSI ? 996 n` with the
+    // current scheme, and when a program has enabled DECSET 2031 tell it the scheme
+    // changed so it can re-probe OSC 10/11 rather than cache a stale palette.
+    const schemeQuery = term.parser.registerCsiHandler({ prefix: '?', final: 'n' }, (params) => {
+      if (params.length === 1 && params[0] === 996) {
+        send({ type: 'input', data: colorSchemeReport(schemeRef.current) });
+        return true;
+      }
+      return false;
+    });
+    const schemeOn = term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, (params) => {
+      if (params.includes(2031)) {
+        schemeNotifyRef.current = true;
+        return true;
+      }
+      return false;
+    });
+    const schemeOff = term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, (params) => {
+      if (params.includes(2031)) {
+        schemeNotifyRef.current = false;
+        return true;
+      }
+      return false;
+    });
+    decorations.current.push(schemeQuery, schemeOn, schemeOff);
 
     ws.onopen = () => {
       // The backend requires `start` before every input/history frame. Anything
@@ -740,6 +777,15 @@ export default function TerminalPane({
     });
     if (!applied) return;
     previousFontKey.current = fontKey;
+
+    // Tell the pane's program when the scheme it read at startup is no longer true.
+    const scheme = schemeForBackground(terminalTheme(settings).background);
+    if (scheme !== schemeRef.current) {
+      schemeRef.current = scheme;
+      if (schemeNotifyRef.current) {
+        sendRef.current?.({ type: 'input', data: colorSchemeReport(scheme) });
+      }
+    }
 
     // The renderer switches live, so the difference is measurable without
     // reopening the app.

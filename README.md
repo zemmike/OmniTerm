@@ -98,7 +98,9 @@ line that matches your machine:
    `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`
 
 `omniterm` is then on your `PATH`, and `omniterm --version` prints the version without
-opening a window. Linux needs an X11 session; on Wayland-only systems install XWayland
+opening a window. For what OmniTerm tells the programs running inside it - colours, the
+colour-scheme protocol, and why a cached theme needs a notification to change - see
+[docs/THEME-INTEGRATION.md](docs/THEME-INTEGRATION.md). Linux needs an X11 session; on Wayland-only systems install XWayland
 (see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)).
 
 ### Check the download before you run it

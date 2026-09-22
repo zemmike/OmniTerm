@@ -48,16 +48,16 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
 
   // Filters, because a terminal pane is mostly status: the useful part of an agent's
   // screen is the reply, not the spinners, timers and tool chatter around it.
-  const [lastReplyFilter, setLastReplyFilter] = useState(true);
+  const [answerOnly, setAnswerOnly] = useState(true);
   const [hideNoise, setHideNoise] = useState(true);
   const blocks = useMemo(
-    () => parseReaderText(text, { hideNoise, lastReply: lastReplyFilter }),
-    [text, hideNoise, lastReplyFilter],
+    () => parseReaderText(text, { answerOnly, hideNoise }),
+    [text, answerOnly, hideNoise],
   );
-  const replyCut = useMemo(
-    () => (lastReplyFilter ? lastReplyOnly(text) : null),
-    [text, lastReplyFilter],
-  );
+  // With answer-only on, tool output is dropped even when the pane has no prompt marker
+  // (a multiplexer or full-screen agent owns the screen), so the warning is only relevant
+  // to the softer "last reply" path.
+  const replyCut = useMemo(() => (answerOnly ? null : lastReplyOnly(text)), [text, answerOnly]);
 
   // Follow the newest output, unless the user has scrolled up to read something.
   useEffect(() => {
@@ -222,16 +222,16 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
           <span className="text-[10px] tracking-wide text-[#55555E] uppercase">Show</span>
           <button
             type="button"
-            onClick={() => setLastReplyFilter((value) => !value)}
-            aria-pressed={lastReplyFilter}
-            title="Only what follows the last prompt, not the whole session"
+            onClick={() => setAnswerOnly((value) => !value)}
+            aria-pressed={answerOnly}
+            title="Only the assistant's answer: no terminal history, no tool output, no diffs"
             className={`rounded border px-1.5 py-0.5 text-[10px] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] focus-visible:outline-none ${
-              lastReplyFilter
+              answerOnly
                 ? 'border-[#8AB4F8] text-[#8AB4F8]'
                 : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            Last reply
+            Answer only
           </button>
           <button
             type="button"

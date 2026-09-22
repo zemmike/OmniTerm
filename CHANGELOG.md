@@ -57,6 +57,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.16.0] - 2026-09-22
+
+### Added
+- **The reader shows the answer, not the session.** "Answer only" is now the default: the
+  assistant's text is rendered as prose, its lists as lists and its headings as headings,
+  and the run history around it - command lines, diffs, file dumps, test output - is left
+  out. Wrapped bullets are joined back into one item.
+- **A clicked path is opened from where you clicked it.** The pane's working directory
+  travels with the path, and when the file is not there - an agent can outlive the
+  directory it was started in - it is looked up by name under that directory instead of
+  being reported missing. The Files tab's deep search now starts there too, rather than in
+  the home directory.
+- **Colour-scheme protocol.** OmniTerm answers `CSI ? 996 n` with the current scheme and,
+  for programs that enable `DECSET 2031`, reports `CSI ? 997;1n` or `997;2n` when the theme
+  changes, so a program can re-probe `OSC 10`/`OSC 11` instead of keeping the palette it
+  read at startup. `TERM_PROGRAM=OmniTerm` is exported to new sessions. See
+  [docs/THEME-INTEGRATION.md](docs/THEME-INTEGRATION.md).
+
+### Changed
+- The colour legend in the Files tab is gone. Rows keep their colour coding and badges.
+
+### Fixed
+- A bulleted list that started with "-" was classified as a unified diff and dropped from
+  the reader entirely. Patch detection is now keyed on real patch headers.
+- A reader filter that could drop an entire answer: the noise classifier now matches status
+  wording only on short lines, so a sentence mentioning tokens survives.
+
+### Known limits
+- A program that reads the palette once and never asks to be notified keeps its colours;
+  no terminal can change a value a program has already cached. Restarting that session, or
+  its own "follow the terminal" setting, is the only fix on this side.
+- Restyling another program's own interface (Herdr's chrome, a tmux status bar) is not
+  something a terminal can do - that needs integration with the program, which is
+  [designed separately](docs/superpowers/specs/2026-09-22-herdr-integration-design.md).
+
 ## [1.15.1] - 2026-09-22
 
 ### Fixed

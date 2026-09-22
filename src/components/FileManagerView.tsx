@@ -473,7 +473,34 @@ const FILE_FILTERS: { id: FilterId; label: string; match: (s: FileStyle) => bool
 ];
 
 interface FileManagerViewProps {
-  openTarget?: { path: string; requestId: number } | null;
+  openTarget?: { path: string; requestId: number; cwd?: string } | null;
+}
+
+/**
+ * Look for a file name under a directory, using the Files tab's own bounded search.
+ *
+ * This is the "open it from where I am" path: a clicked path is resolved against the
+ * pane's working directory, but an agent session or a multiplexer can outlive that
+ * directory - the reply says `src/app.ts` while the shell sits in the home directory -
+ * and a home-directory miss is not the same thing as a missing file.
+ */
+async function findByNameUnder(
+  root: string | undefined,
+  name: string,
+): Promise<{ name: string; path: string; isDirectory: boolean } | null> {
+  if (!root || name.length < 2) return null;
+  try {
+    const res = await fetch(
+      `/api/files/search?q=${encodeURIComponent(name)}&path=${encodeURIComponent(root)}`,
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      results?: { name: string; path: string; isDirectory: boolean }[];
+    };
+    return (data.results || []).filter((hit) => hit.name === name)[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) => {
@@ -512,7 +539,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
       void (async () => {
         setDeepBusy(true);
         try {
-          const res = await fetch(`/api/files/search?q=${encodeURIComponent(q)}`);
+          // From the pane this tab was opened around, not from the home directory:
+          // "everywhere" should mean "everywhere under where I am".
+          const root = openTarget?.cwd ? `&path=${encodeURIComponent(openTarget.cwd)}` : '';
+          const res = await fetch(`/api/files/search?q=${encodeURIComponent(q)}${root}`);
           const data = await res.json();
           if (cancelled) return;
           if (!res.ok) {
@@ -540,7 +570,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [search, scope]);
+  }, [search, scope, openTarget?.cwd]);
 
   // The file list is the one panel whose useful width depends on the project, so
   // it is resizable and the width is remembered.
@@ -610,7 +640,6 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   const [busy, setBusy] = useState(false);
 
   const [kindFilter, setKindFilter] = useState<FilterId>('all');
-  const [showLegend, setShowLegend] = useState(false);
 
   const [showNew, setShowNew] = useState(false);
   const [newPath, setNewPath] = useState('');
@@ -737,6 +766,24 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
       } catch (err: any) {
         if (cancelled) return;
         const message = err.message || String(err);
+        // Before calling it missing, look for the name under the directory the click came
+        // from. A relative path printed by an agent belongs to that project, not to the
+        // shell's directory, and this is the difference between "not found" and "found".
+        const found = await findByNameUnder(openTarget.cwd, basenameOf(targetPath));
+        if (cancelled) return;
+        if (found) {
+          setScope('everywhere');
+          setSearch(found.name);
+          setStatus(
+            `Opened ${found.path} — it is not in the pane's directory, so it was found under ${openTarget.cwd}`,
+          );
+          await openFile({
+            name: found.name,
+            path: found.path,
+            type: found.isDirectory ? 'directory' : 'file',
+          } as Entry);
+          return;
+        }
         setError(message);
         setFailedTarget({ path: targetPath, reason: message });
       }
@@ -998,34 +1045,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
                 {f.label}
               </button>
             ))}
-            <button
-              onClick={() => setShowLegend((v) => !v)}
-              aria-expanded={showLegend}
-              className={`ml-auto px-2 py-0.5 rounded border text-[10px] uppercase tracking-wide focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41] ${
-                showLegend
-                  ? 'bg-[#202024] border-[#3A3A3E] text-[#E0E0E5]'
-                  : 'bg-[#202024] border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
-              }`}
-              title="Toggle colour legend"
-            >
-              {showLegend ? 'Legend ▲' : 'Legend ▼'}
-            </button>
           </div>
-
-          {/* Legend — built from FILE_KINDS, the same table the rows classify with */}
-          {showLegend && (
-            <div className="flex flex-wrap items-center gap-1">
-              {FILE_KINDS.map((k, i) => (
-                <span
-                  key={`${k.kind}-${k.badge}-${i}`}
-                  className={`px-1.5 py-0.5 rounded border text-[10px] ${BADGE_CLASS[k.colour] || BADGE_CLASS['#6B7280']}`}
-                >
-                  <span className="font-bold">{k.label}</span>
-                  <span className="opacity-70 ml-1">{k.badge}</span>
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         <div
