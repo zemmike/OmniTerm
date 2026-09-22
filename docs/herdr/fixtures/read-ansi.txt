@@ -1,0 +1,5 @@
+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-END
+root@ubuntu:~/OmniTerm# less /etc/services
+root@ubuntu:~/OmniTerm# printf "\033[31mRED\033[0m plain\n"
+[0m[38;5;1mRED[0m plain
+root@ubuntu:~/OmniTerm# 

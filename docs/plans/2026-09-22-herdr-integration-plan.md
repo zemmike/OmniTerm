@@ -2,7 +2,8 @@
 
 **Status:** proposal for approval · **Date:** 2026-09-22 · **Owner:** Michael (zemmike)
 **Builds on:** `docs/superpowers/specs/2026-09-22-herdr-integration-design.md` (architecture, written earlier)
-**Verified against:** herdr.dev documentation, 2026-09-22 (docs version 0.9.1)
+**Verified against:** herdr.dev documentation and a real Herdr 0.9.1 install, 2026-09-22
+**Phase 0 result:** **passed** — measurements and fixtures in `docs/herdr/findings.md`
 
 ---
 
@@ -80,7 +81,7 @@ Checked against Herdr's published documentation, not assumed:
 
 Each phase ends in a release that is useful on its own. No phase depends on a later one.
 
-### Phase 0 — Spike and fixtures (½–1 day)
+### Phase 0 — Spike and fixtures (½–1 day) — **done, passed**
 
 Install Herdr on this box. Capture, as committed fixtures: `herdr --help` and every
 subcommand's `--help`, `herdr status --json`, `herdr agent list --json` with a real agent
@@ -95,10 +96,16 @@ unstable across a server restart, the whole plan is re-scoped before any UI work
 
 ### Phase 1 — Match Herdr to your OmniTerm theme (1–2 days)
 
+Phase 0 found the cheap path: Herdr's config has `[theme] auto_switch`, documented as
+"follow host terminal light/dark appearance" — which is the colour-scheme protocol OmniTerm
+shipped in 1.16.0. So the recommended version of this phase writes **three keys**
+(`auto_switch = true`, `dark_name`, `light_name`) and runs `herdr server reload-config`;
+Herdr then follows OmniTerm's light/dark switch on its own. Per-token colour overrides are a
+second, optional step, taken only if the built-in themes read as close-but-wrong.
+
 Settings gets one button: **Match Herdr to this theme.** It reads
-`~/.config/herdr/config.toml`, backs it up once, writes only the `[theme]` keys, runs
-`herdr server reload-config`, and reports what changed. A **Revert** button restores the
-backup. Never automatic, never on startup.
+`~/.config/herdr/config.toml`, backs it up once, writes only those keys, reloads, and reports
+what changed. A **Revert** button restores the backup. Never automatic, never on startup.
 
 **Acceptance:** the Herdr UI matches after reload; no Herdr config is touched without an
 explicit click; a missing Herdr, a read-only config, or an unknown `[theme]` shape produces
@@ -116,11 +123,18 @@ timeouts, and maps errors to stable OmniTerm codes. Routes: `GET /api/herdr/stat
 tab listing workspaces, tabs, panes and agents with status badges, plus the AI Reader
 reading `pane read` output for the selected pane.
 
+Verified specifics to build on (Phase 0): the capability probe is `herdr status --json`
+(version, protocol, `endpoint_compatible`, socket path); the navigator reads
+`herdr api snapshot`; the Reader reads **`agent read --source recent-unwrapped`** — measured
+at 0.10 s for 200 lines, and the only source that keeps a 300-character line as one line; a
+pane's `foreground_cwd` is the base for opening a clicked file path; and
+`scroll.max_offset_from_bottom` lets the Reader say how much history it is not showing.
+
 **Acceptance:** every Herdr read goes through the adapter; no route accepts a path or a
 command from the renderer; Herdr missing, stopped, incompatible or slow all render as states
 rather than errors; the Reader produces document-formatted output from a real transcript,
-with soft-wrapped rows not becoming false paragraphs; contract tests run against the Phase 0
-fixtures with no Herdr installed in CI.
+with soft-wrapped rows not becoming false paragraphs (guaranteed by `recent-unwrapped`);
+contract tests run against the Phase 0 fixtures with no Herdr installed in CI.
 
 ### Phase 3 — Shared pane transport (3–4 days)
 
