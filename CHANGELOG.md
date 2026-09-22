@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.15.1] - 2026-09-22
+
+### Fixed
+- Linux theme changes are deferred while a terminal is hidden, preventing xterm from
+  repainting against a zero-sized surface and leaving black regions over Claude or
+  other full-screen terminal applications.
+- The AI Reader now joins xterm soft-wrapped screen rows back into logical lines before
+  parsing them, preserving paragraphs, headings, lists and other document formatting.
+
 ## [1.15.0] - 2026-09-22
 
 ### Added
