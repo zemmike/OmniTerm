@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.1] - 2026-09-23
+
+### Fixed
+- **Links vs file paths.** Web addresses (`https://…`, `www.…`, `github.com/user/repo`)
+  open in the browser instead of being treated as files, in both the terminal and the
+  AI Reader. File paths still open in the Files tab.
+- **CI.** Prettier formatting, and the `.deb` artifact test now checks the launcher
+  script the package installs instead of a symlink.
+
 ## [1.18.0] - 2026-09-23
 
 ### Added
