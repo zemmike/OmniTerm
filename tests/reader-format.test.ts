@@ -75,3 +75,47 @@ describe('Claude Code full screen (as read from a Herdr pane)', () => {
     expect(json).not.toContain('how do I fix');
   });
 });
+
+describe('Claude Code welcome screen on Windows (issue screenshot)', () => {
+  const screen = [
+    'PS C:\\Users\\Mike-work> claude',
+    '╭─── Claude Code v2.1.98 ──────────────────────────────────────────────────╮',
+    '│                                     │ Tips for getting started           │',
+    '│         Welcome back Michael!       │ Run /init to create a CLAUDE.md    │',
+    '│                                     │ ────────────────────────────────── │',
+    '│              ▐▛███▜▌                │ Recent activity                    │',
+    '│             ▝▜█████▛▘               │ No recent activity                 │',
+    '│   Opus 4.6 · Claude Pro · Org       │                                    │',
+    '│          C:\\Users\\Mike-work        │                                    │',
+    '╰──────────────────────────────────────────────────────────────────────────╯',
+    '',
+    '─'.repeat(60),
+    '❯ Try "refactor <filepath>"',
+    '─'.repeat(60),
+    '  ? for shortcuts',
+  ].join('\n');
+
+  it('shows nothing (not a jumble) before Claude has answered', () => {
+    expect(parseReaderText(screen, { answerOnly: true, hideNoise: true })).toEqual([]);
+  });
+
+  it('shows the answer once there is one, without the banner', () => {
+    const answered = screen.replace(
+      '❯ Try "refactor <filepath>"',
+      [
+        '> what is 2+2?',
+        '',
+        '⏺ The answer is **4**.',
+        '',
+        '─'.repeat(60),
+        '❯ Try "refactor <filepath>"',
+      ].join('\n'),
+    );
+    const blocks = parseReaderText(answered, { answerOnly: true, hideNoise: true });
+    const json = JSON.stringify(blocks);
+    expect(json).toContain('The answer is');
+    expect(json).not.toContain('Welcome back');
+    expect(json).not.toContain('refactor');
+    expect(json).not.toContain('what is 2+2');
+  });
+});

@@ -228,11 +228,11 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
             title="Only the assistant's answer: no terminal history, no tool output, no diffs"
             className={`rounded border px-1.5 py-0.5 text-[10px] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] focus-visible:outline-none ${
               answerOnly
-                ? 'border-[#8AB4F8] text-[#8AB4F8]'
+                ? 'border-[#8AB4F8] bg-[#8AB4F8] font-semibold text-[#0D0D0F]'
                 : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            Answer only
+            {answerOnly && <span aria-hidden="true">✓ </span>}Answer only
           </button>
           <button
             type="button"
@@ -241,11 +241,11 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
             title="Hide spinners, timers, token counts, progress bars and tool chatter"
             className={`rounded border px-1.5 py-0.5 text-[10px] focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] focus-visible:outline-none ${
               hideNoise
-                ? 'border-[#8AB4F8] text-[#8AB4F8]'
+                ? 'border-[#8AB4F8] bg-[#8AB4F8] font-semibold text-[#0D0D0F]'
                 : 'border-[#2A2A2E] text-[#88888E] hover:text-[#E0E0E5]'
             }`}
           >
-            No noise
+            {hideNoise && <span aria-hidden="true">✓ </span>}No noise
           </button>
           {replyCut && !replyCut.found && (
             <span className="text-[10px] text-[#FFB300]">
@@ -261,7 +261,7 @@ export default function AiReader({ text, onOpenPath, onClose }: Props) {
           <div className="reader-prose">
             {blocks.length === 0 ? (
               <p className="reader-muted">
-                Nothing to read yet. This shows the focused pane&apos;s output as it arrives.
+                No answer yet. Ask your AI tool something and its reply will appear here, formatted.
               </p>
             ) : (
               blocks.map((block, index) => (

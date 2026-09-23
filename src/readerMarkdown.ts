@@ -220,7 +220,11 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
     : options.lastReply
       ? lastReplyOnly(raw || '').text
       : raw || '';
-  const cleaned = stripTerminalFurniture(stripAnsi(ansiToEmphasis(source)));
+  const visible = stripAnsi(ansiToEmphasis(source));
+  // Boxes must go before the furniture pass turns their borders into spaces.
+  const cleaned = stripTerminalFurniture(
+    options.hideNoise || options.answerOnly ? stripBoxedPanels(visible) : visible,
+  );
   const withoutNoise = options.hideNoise ? stripNoiseLines(cleaned) : cleaned;
   const blocks: ReaderBlock[] = [];
   const lines = withoutNoise.split('\n');
@@ -460,6 +464,13 @@ export function isNoiseLine(line: string): boolean {
   const value = line.trim();
   if (!value) return false;
 
+  // Pixel art drawn with block characters (logos, mascots): mostly ▀▄█▌▐▛▜▙▟ and friends.
+  const blocks = (value.match(/[▀-▟■▪]/g) || []).length;
+  if (blocks >= 2 && blocks >= value.replace(/\s/g, '').length * 0.5) return true;
+
+  // An agent's status footer under its input box ("? for shortcuts").
+  if (isAgentFooter(value)) return true;
+
   // A rule or separator on its own.
   if (/^[\s\u2500\u2501\u2550_=~*\-.]{4,}$/.test(value)) return true;
 
@@ -517,6 +528,30 @@ export function isNoiseLine(line: string): boolean {
 }
 
 /** Drop noise lines, keeping the surrounding blank-line structure intact. */
+/**
+ * Remove panels drawn with box borders: a welcome banner, a status card, a tip box.
+ *
+ * A TUI draws these as `╭─ Title ─╮ / │ left │ right │ / ╰───╯`, often with two columns
+ * side by side. Flattened, the columns interleave into nonsense, and they are never the
+ * answer, so the whole panel is dropped. Answers themselves are not boxed.
+ */
+export function stripBoxedPanels(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (/^\s*[╭┌╔┏]/.test(lines[i])) {
+      let end = i + 1;
+      while (end < lines.length && end - i <= 60 && !/^\s*[╰└╚┗]/.test(lines[end])) end += 1;
+      if (end < lines.length && /^\s*[╰└╚┗]/.test(lines[end])) {
+        i = end;
+        continue;
+      }
+    }
+    out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
 export function stripNoiseLines(text: string): string {
   return text
     .split('\n')
@@ -536,6 +571,9 @@ const PROMPT_LINE = /^[\w.@:~/-]{0,60}\s*(?:\u276f|\u276e|\u203a|\u00bb|\u279c|>
 // request instead of ending at a shell marker. These are deliberately limited to the
 // prompt glyphs those programs use; `$ command` remains command output, not a boundary.
 const CONVERSATION_PROMPT = /^(?:>|\u203a|\u276f)\s+\S/;
+// A shell prompt followed by the command typed at it: `PS C:\Users\me> claude`,
+// `user@host:~/proj$ claude`. What follows is that program's output.
+const SHELL_COMMAND_PROMPT = /^(?:PS [A-Za-z]:\\[^>]*>|[\w.-]+@[\w.-]+:[^$#\s]*[$#])\s+\S/;
 
 export function lastReplyOnly(raw: string): { text: string; found: boolean } {
   const lines = (raw || '').split('\n');
@@ -546,7 +584,7 @@ export function lastReplyOnly(raw: string): { text: string; found: boolean } {
     if (
       line.length > 0 &&
       line.length <= 200 &&
-      (PROMPT_LINE.test(line) || CONVERSATION_PROMPT.test(line))
+      (PROMPT_LINE.test(line) || CONVERSATION_PROMPT.test(line) || SHELL_COMMAND_PROMPT.test(line))
     ) {
       const after = lines.slice(i + 1);
       // A full-screen agent (Claude Code, also inside Herdr) keeps an empty input box
@@ -578,9 +616,14 @@ function isAgentFooter(value: string): boolean {
 function trimInputBox(lines: string[]): string[] {
   let end = lines.length;
   for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (hasContent(lines[i])) break;
     const visible = stripTerminalFurniture(stripAnsi(lines[i])).trim();
-    if (/^(?:>|❯|›)$/.test(visible)) end = i;
+    // The input box, empty or showing its grey placeholder (`❯ Try "refactor <file>"`).
+    // Only the last prompt counts: everything under it is footer.
+    if (/^(?:>|❯|›)(?:\s|$)/.test(visible)) {
+      end = i;
+      break;
+    }
+    if (hasContent(lines[i])) break;
   }
   return lines.slice(0, end);
 }
