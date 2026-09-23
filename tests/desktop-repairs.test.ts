@@ -146,8 +146,11 @@ describe('install documentation and packaging', () => {
   const pkg = JSON.parse(read('package.json')) as { build: { win?: { artifactName?: string } } };
 
   it('documents a separate path for each platform', () => {
-    for (const heading of ['### Linux', '### macOS', '### Windows']) {
-      expect(readme).toContain(heading);
+    // Each platform has its own section: a heading or a collapsible <summary>.
+    for (const platform of ['Linux', 'macOS', 'Windows']) {
+      expect(readme).toMatch(
+        new RegExp(`(?:^### ${platform}\\b|<summary><b>${platform}</b>)`, 'm'),
+      );
     }
     expect(readme).toContain('OmniTerm-<version>-win-x64.exe');
     expect(readme).toContain('xattr -dr com.apple.quarantine /Applications/OmniTerm.app');
