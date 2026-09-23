@@ -277,3 +277,13 @@ body,
 .reader-muted {
   color: var(--reader-muted);
 }
+
+/* Document-style headings: the top two levels get a rule underneath, like Docs/Word. */
+.reader-prose h1.reader-heading,
+.reader-prose h2.reader-heading {
+  border-bottom: 1px solid var(--reader-border);
+  padding-bottom: 0.2em;
+}
+.reader-list li + li {
+  margin-top: 0.3em;
+}

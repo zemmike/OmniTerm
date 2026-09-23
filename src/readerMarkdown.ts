@@ -11,7 +11,16 @@ export type InlineToken =
 export type ReaderBlock =
   | { kind: 'heading'; level: number; content: InlineToken[] }
   | { kind: 'paragraph'; content: InlineToken[] }
-  | { kind: 'list'; ordered: boolean; start: number; items: InlineToken[][] }
+  | {
+      kind: 'list';
+      ordered: boolean;
+      start: number;
+      items: InlineToken[][];
+      /** Nesting level per item (0 = top level). */
+      depths?: number[];
+      /** Per-item ordered flag, for sub-lists of another kind. */
+      orderedItems?: boolean[];
+    }
   | { kind: 'code'; text: string; lang: string }
   | { kind: 'quote'; content: InlineToken[] }
   | { kind: 'table'; headers: InlineToken[][]; rows: InlineToken[][][] }
@@ -56,11 +65,17 @@ export function stripTerminalFurniture(text: string): string {
     .map((line) =>
       line
         .replace(/[│┃║┌┐└┘╭╮╰╯├┤┬┴┼─━═╔╗╚╝╠╣╦╩╬╱╲▏▕]/g, ' ')
-        .replace(/^\s*[⠁-⣿✻✢✳✶✽·∙○●◐◓◑◒⣾⣽]\s+/, '')
+        .replace(/^\s*[⠁-⣿✻✢✳✶✽·∙○◐◓◑◒⣾⣽]\s+/, '')
+        // Claude Code marks both replies and tool calls with ⏺/●. A reply keeps its
+        // text; a tool call (`⏺ Bash(ls)`) keeps the glyph so the noise filter sees it.
+        .replace(/^(\s*)[⏺●]\s+(?!\w[\w-]*\s*\()/, '$1')
         .replace(/\s+$/, ''),
     )
     .join('\n');
 }
+
+/** A Claude Code tool call line: `⏺ Bash(ls)`, `● Read(file)`. */
+const TOOL_CALL = /^[⏺●◉⏵⏸]\s*\w[\w-]*\s*\(/;
 
 const HEADING = /^\s{0,3}(#{1,6})\s+(.*\S)\s*$/;
 const LIST_ITEM = /^(\s*)([-*•‣◦▪·]|(\d{1,2})[.)]|\((\d{1,2})\))\s+(.*\S)\s*$/;
@@ -276,6 +291,12 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
       });
       continue;
     }
+    if (isPlainHeading(lines, index, pending.length)) {
+      flush();
+      const text = line.trim().replace(/:$/, '');
+      blocks.push({ kind: 'heading', level: 3, content: parseInlineText(text) });
+      continue;
+    }
     const listItem = LIST_ITEM.exec(line);
     if (listItem) {
       flush();
@@ -297,15 +318,33 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
         }
         return parseInlineText(parts.join(' '));
       };
-      const items: InlineToken[][] = [readItem(listItem[5], listItem[1].length)];
+      const baseIndent = listItem[1].length;
+      const indents: number[] = [baseIndent];
+      const orderedItems: boolean[] = [ordered];
+      const items: InlineToken[][] = [readItem(listItem[5], baseIndent)];
       while (index + 1 < lines.length) {
-        const next = LIST_ITEM.exec(lines[index + 1]);
-        // The list ends at the first line that is not an item of the same kind.
-        if (!next || Boolean(next[3] || next[4]) !== ordered) break;
-        index += 1;
-        items.push(readItem(next[5], next[1].length));
+        let lookahead = index + 1;
+        // One blank line between items does not end a loose list.
+        if (!lines[lookahead].trim() && lookahead + 1 < lines.length) lookahead += 1;
+        const next = LIST_ITEM.exec(lines[lookahead]);
+        if (!next) break;
+        const nextOrdered = Boolean(next[3] || next[4]);
+        const nextIndent = next[1].length;
+        // A top-level item of another kind ends the list; deeper items of either kind
+        // are sub-items.
+        if (nextIndent <= baseIndent && nextOrdered !== ordered) break;
+        index = lookahead;
+        indents.push(Math.max(nextIndent, baseIndent));
+        orderedItems.push(nextOrdered);
+        items.push(readItem(next[5], nextIndent));
       }
-      blocks.push({ kind: 'list', ordered, start, items });
+      const levels = [...new Set(indents)].sort((a, b) => a - b);
+      const depths = indents.map((indent) => levels.indexOf(indent));
+      blocks.push(
+        depths.some((depth) => depth > 0)
+          ? { kind: 'list', ordered, start, items, depths, orderedItems }
+          : { kind: 'list', ordered, start, items },
+      );
       continue;
     }
     const cells = tableCells(line);
@@ -345,6 +384,30 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
   }
   flush();
   return blocks;
+}
+
+/**
+ * A heading written as plain text, the way agents render markdown in a terminal:
+ * the `#` is gone, leaving a short standalone line followed by content. Conservative:
+ * the line must start a block, be short, and not end like a sentence.
+ */
+function isPlainHeading(lines: string[], index: number, pendingCount: number): boolean {
+  if (pendingCount > 0) return false;
+  const value = lines[index].trim();
+  if (value.length < 2 || value.length > 60 || value.split(/\s+/).length > 8) return false;
+  if (!/^[A-Z0-9]/.test(value) || LIST_ITEM.test(lines[index])) return false;
+  if (/[.,;!?)\]`|]$/.test(value) || /[`$|{}<>=]/.test(value)) return false;
+  if (index > 0 && lines[index - 1].trim()) return false;
+  const next = lines[index + 1];
+  if (next === undefined) return false;
+  // Directly followed by a list: "Next steps:" / "Summary".
+  if (next.trim()) return LIST_ITEM.test(next);
+  const after = lines[index + 2];
+  if (!after || !after.trim() || FENCE.test(after) || after.trim() === '$$') return false;
+  // Standing alone, it must look like a title: "Next steps:" or Title Case words.
+  if (value.endsWith(':')) return true;
+  const words = value.split(/\s+/).filter((word) => word.length > 3);
+  return words.length >= 2 && words.every((word) => /^[A-Z0-9]/.test(word));
 }
 
 /** Does this token look like a path worth making clickable? */
@@ -409,7 +472,8 @@ export function isNoiseLine(line: string): boolean {
   // Tool activity: either the agent's own tool glyph, or call syntax like `Read( ... )`.
   // A bulleted sentence ("- Read the file first") must not match, which is why the
   // plain bullet case requires the parenthesis.
-  if (/^[\u25c9\u23fa\u23f5\u276f]\s*\S/.test(value)) return true;
+  // A reply carries the same record glyph as a tool call, so only call syntax counts.
+  if (TOOL_CALL.test(value) || /^[\u25c9\u23f5\u276f]\s*\S/.test(value)) return true;
   // Codex prefixes activity summaries with an ordinary bullet. Match only its action
   // vocabulary so a real answer bullet such as "• Review the result" remains content.
   if (
@@ -497,7 +561,8 @@ export function isToolOutputBlock(block: string): boolean {
   const first = lines[0].trim();
   if (/^(?:\$|>|\u276f)\s+\S/.test(first) && lines.length > 1) return true;
   // A tool call with its result.
-  if (/^[\u25c9\u23fa\u23f5\u23f8]\s*\S/.test(first)) return true;
+  // A reply carries the same glyph, so only call syntax or a result branch counts.
+  if (TOOL_CALL.test(first) || /^\u23bf\s/.test(first)) return true;
   if (
     /^(?:read|write|edit|bash|shell|grep|glob|search|fetch|webfetch)\b/i.test(first) &&
     /[({:]/.test(first)

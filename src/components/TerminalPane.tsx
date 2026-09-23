@@ -17,6 +17,7 @@ import { createPreOpenMessageQueue } from '../socketQueue';
 import { applyTerminalSettingsWhenVisible } from '../terminalOptions';
 import { terminalBufferToText } from '../terminalBufferText';
 import { colorSchemeReport, schemeForBackground } from '../colorScheme';
+import { decodeOsc52, readClipboardText, writeClipboardText } from '../clipboard';
 
 export type { XtermTheme };
 
@@ -188,12 +189,8 @@ export default function TerminalPane({
   const requestPaste = useCallback(async () => {
     const term = termRef.current;
     if (!term) return;
-    try {
-      const text = await navigator.clipboard.readText();
-      if (text) decidePaste(text, term);
-    } catch {
-      /* clipboard permission denied — nothing to do */
-    }
+    const text = await readClipboardText();
+    if (text) decidePaste(text, term);
   }, [decidePaste]);
 
   useEffect(() => {
@@ -211,6 +208,9 @@ export default function TerminalPane({
       theme: terminalTheme(s),
       allowTransparency: false,
       macOptionIsMeta: true,
+      // Programs with mouse tracking (herdr, vim, tmux) own plain drags; Shift+drag
+      // (Option+drag on macOS) still selects text for copying.
+      macOptionClickForcesSelection: true,
       rightClickSelectsWord: false,
       convertEol: false,
       windowsPty: undefined,
@@ -544,6 +544,24 @@ export default function TerminalPane({
       if (event.type !== 'keydown') return true;
       const s2 = settingsRef.current;
 
+      // Ctrl+C with a selection copies instead of sending SIGINT (Windows Terminal
+      // behaviour); without a selection it still interrupts. Ctrl+V pastes through
+      // the review gate. Both work inside full-screen programs like herdr.
+      if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'c' && term.hasSelection()) {
+          void writeClipboardText(term.getSelection());
+          term.clearSelection();
+          event.preventDefault();
+          return false;
+        }
+        if (key === 'v') {
+          event.preventDefault();
+          void requestPaste();
+          return false;
+        }
+      }
+
       // App-level shortcuts are handled by the parent (TerminalView).
       if (
         (event.ctrlKey && event.shiftKey) ||
@@ -617,8 +635,16 @@ export default function TerminalPane({
     const selSub = term.onSelectionChange(() => {
       const text = term.getSelection();
       if (settingsRef.current.copyOnSelect && text && document.hasFocus()) {
-        navigator.clipboard?.writeText(text).catch(() => undefined);
+        void writeClipboardText(text);
       }
+    });
+
+    // OSC 52: a program (herdr, tmux, vim, ssh sessions) asking to set the clipboard.
+    // Writes only; a read request is ignored so output can never exfiltrate the clipboard.
+    const osc52Sub = term.parser.registerOscHandler(52, (data) => {
+      const text = decodeOsc52(data);
+      if (text) void writeClipboardText(text);
+      return true;
     });
 
     // Keep PTY and grid in step.
@@ -645,7 +671,7 @@ export default function TerminalPane({
     const api: PaneApi = {
       copy: () => {
         const text = term.getSelection();
-        if (text) navigator.clipboard?.writeText(text).catch(() => undefined);
+        if (text) void writeClipboardText(text);
       },
       paste: async () => {
         await requestPaste();
@@ -718,6 +744,7 @@ export default function TerminalPane({
       host.removeEventListener('contextmenu', onContextMenu);
       dataSub.dispose();
       selSub.dispose();
+      osc52Sub.dispose();
       resizeSub.dispose();
       fileLinkProvider.dispose();
       decorations.current.forEach((d) => {

@@ -352,6 +352,23 @@ if (!app.requestSingleInstanceLock()) {
     return { ok: true, length: text.length };
   });
 
+  // Paste goes through here for the same reason: the page may not read the clipboard.
+  // Only the app's own frame may ask, and the result is capped like a write.
+  ipcMain.handle('omniterm:clipboard-read', async (event) => {
+    if (!isLocalAppUrl(event.senderFrame?.url)) {
+      log(`[main] refused clipboard-read from a foreign frame: ${event.senderFrame?.url}`);
+      return { ok: false, error: 'refused' };
+    }
+    try {
+      const text = String(await clipboard.readText());
+      if (text.length > MAX_CLIPBOARD_CHARS) return { ok: false, error: 'too-large' };
+      return { ok: true, text };
+    } catch (error) {
+      log(`[main] clipboard read failed: ${String(error)}`);
+      return { ok: false, error: 'read-failed' };
+    }
+  });
+
   ipcMain.handle('omniterm:open-external', (event, rawUrl) => {
     // Refuse anything that is not the app's own window. Today there is exactly
     // one local window, but "the renderer is the only caller" is an assumption

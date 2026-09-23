@@ -297,12 +297,12 @@ function ReaderBlockView({
 }) {
   switch (block.kind) {
     case 'heading': {
-      const size = block.level <= 1 ? 1.35 : block.level === 2 ? 1.2 : 1.08;
+      const size = block.level <= 1 ? 1.6 : block.level === 2 ? 1.35 : block.level === 3 ? 1.15 : 1.05;
       const Tag = `h${Math.min(6, Math.max(1, block.level))}` as
         'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       return (
         <Tag
-          className="reader-heading mt-4 mb-1.5 font-bold first:mt-0"
+          className="reader-heading mt-5 mb-2 font-bold leading-snug first:mt-0"
           style={{ fontSize: `${size}em` }}
         >
           <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
@@ -311,7 +311,7 @@ function ReaderBlockView({
     }
     case 'paragraph':
       return (
-        <p className="reader-paragraph my-1.5 whitespace-pre-wrap">
+        <p className="reader-paragraph my-2.5 whitespace-pre-wrap leading-relaxed">
           <InlineTokens tokens={block.content} onOpenPath={onOpenPath} />
         </p>
       );
@@ -329,7 +329,22 @@ function ReaderBlockView({
           start={block.ordered ? block.start : undefined}
         >
           {block.items.map((item, index) => (
-            <li key={index} className="pl-1">
+            <li
+              key={index}
+              className="pl-1"
+              style={
+                block.depths?.[index]
+                  ? {
+                      marginLeft: `${block.depths[index] * 1.5}rem`,
+                      listStyleType: block.orderedItems?.[index]
+                        ? 'lower-alpha'
+                        : block.depths[index] % 2
+                          ? 'circle'
+                          : 'square',
+                    }
+                  : undefined
+              }
+            >
               <InlineTokens tokens={item} onOpenPath={onOpenPath} />
             </li>
           ))}

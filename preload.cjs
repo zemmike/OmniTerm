@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('omniterm', {
   // Copying goes through the main process: the page's own clipboard request is
   // rejected by Electron on Linux. The browser API stays available as a fallback.
   writeClipboard: (text) => ipcRenderer.invoke('omniterm:clipboard-write', String(text)),
+  // Pasting into the terminal: the page's clipboard-read permission is denied.
+  readClipboard: () => ipcRenderer.invoke('omniterm:clipboard-read'),
   version: VERSION,
   platform: process.platform,
   isDesktop: true,
