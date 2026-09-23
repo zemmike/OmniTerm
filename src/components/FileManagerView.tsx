@@ -32,6 +32,8 @@ import {
   RefreshCw,
   HardDrive,
   FolderSearch,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 interface Entry {
   id: string;
@@ -584,6 +586,25 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   });
   const listDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
+  // Dotfiles (.git, .env, .config) are shown unless the user hides them; remembered.
+  const [showDotfiles, setShowDotfiles] = useState(() => {
+    try {
+      return localStorage.getItem('omniterm:files:showDotfiles') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const toggleDotfiles = useCallback(() => {
+    setShowDotfiles((current) => {
+      try {
+        localStorage.setItem('omniterm:files:showDotfiles', String(!current));
+      } catch {
+        /* storage unavailable (private mode) */
+      }
+      return !current;
+    });
+  }, []);
+
   const persistListWidth = useCallback((width: number) => {
     try {
       localStorage.setItem('omniterm:files:listWidth', String(width));
@@ -882,7 +903,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
   const filtered = entries
     .map((entry) => ({ entry, style: fileStyle(entry) }))
     .filter(
-      ({ entry, style }) => entry.name.toLowerCase().includes(query) && activeFilter.match(style),
+      ({ entry, style }) =>
+        (showDotfiles || !entry.name.startsWith('.')) &&
+        entry.name.toLowerCase().includes(query) &&
+        activeFilter.match(style),
     );
 
   return (
@@ -922,6 +946,19 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({ openTarget }) 
                 aria-label="Refresh directory listing"
               >
                 <RefreshCw aria-hidden="true" className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={toggleDotfiles}
+                aria-pressed={showDotfiles}
+                className="px-2 py-1 bg-[#202024] hover:bg-[#2A2A2E] border border-[#2A2A2E] rounded flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FF41]"
+                title={showDotfiles ? 'Hide dotfiles (.name)' : 'Show dotfiles (.name)'}
+                aria-label={showDotfiles ? 'Hide dotfiles' : 'Show dotfiles'}
+              >
+                {showDotfiles ? (
+                  <Eye aria-hidden="true" className="w-3.5 h-3.5" />
+                ) : (
+                  <EyeOff aria-hidden="true" className="w-3.5 h-3.5" />
+                )}
               </button>
               <button
                 onClick={() => {
