@@ -57,6 +57,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.0] - 2026-09-23
+
+### Added
+- **AI Reader reads the focused pane of any multiplexer.** Inside tmux, zellij, screen,
+  herdr and similar tools the reader reads only the pane holding the cursor instead of
+  mixing side-by-side panes. Herdr's pane history is used when it matches that pane.
+- **OSC 52 clipboard.** Programs such as herdr, tmux and vim can set the clipboard.
+
+### Fixed
+- **AI Reader filters.** Claude Code replies share the tool-call glyph and were dropped by
+  "Answer only" and "No noise"; the empty input box and footer are no longer mistaken for
+  the last prompt.
+- **AI Reader formatting.** Plain-text headings, nested lists and document-style spacing.
+- **Terminal copy/paste.** Copy and paste go through the desktop clipboard bridge (the
+  page clipboard is blocked in Electron). Ctrl+C with a selection copies, Ctrl+V pastes.
+
+### Security
+- Terminal socket checks the page origin and compares the token in constant time.
+
 ## [1.17.1] - 2026-09-23
 
 ### Fixed
