@@ -1,138 +1,185 @@
 # OmniTerm
 
-OmniTerm is a desktop terminal for real local shells, with tabs and split panes,
-a file browser, host health, snapshots, command auditing, and a readable view of
-terminal output. It runs on Linux, macOS, and Windows through Electron and
-`node-pty`.
+**A desktop terminal that makes long terminal output easy to read.**
+
+OmniTerm is a terminal app for Windows, macOS and Linux. It works like the terminal you
+already use (tabs, split panes, your normal shell), and adds a few things on top:
+
+- **AI Reader** - turns messy terminal output, such as answers from Claude Code or Codex,
+  into a clean document with real headings, lists, tables and code blocks.
+- **File browser** - browse and edit files, and click a file path in the terminal to open it.
+- **System health** - see CPU, memory and disk use at a glance.
+- **Snapshots and command history** - back up a folder and keep a local record of commands.
+- **Themes** - pick a theme or your own colours and fonts; changes apply instantly.
+
+Everything runs on your own computer. Nothing is sent to the internet or to an AI service.
 
 ![Terminal with split panes](docs/screenshots/terminal.png)
-![Themes and settings](docs/screenshots/settings.png)
-
-## Highlights
-
-- Real PTY sessions with tabs, split panes, scrollback, search, and remappable shortcuts.
-- Bash, zsh, fish, PowerShell, and Command Prompt support with capability-aware integration.
-- AI Reader view for structured terminal output, including headings, lists, tables, code,
-  paths, inline TeX, and display TeX rendered locally with KaTeX.
-- File browsing and editing, clickable terminal paths, Git status, and Docker status.
-- Live host metrics that show unavailable platform capabilities instead of invented values.
-- Local command audit records and `.tar.gz` or ZIP directory snapshots.
-- Persistent themes, custom colors, cross-platform font stacks, and live terminal previews.
-- Loopback-only, token-protected local API.
-
-## Platform Support
-
-| Platform        | Native CI and packages                                 | Default shell behavior                                                           |
-| --------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| Linux x64/arm64 | `.deb`, AppImage, `.tar.gz`; RPM is also built for x64 | Uses `$SHELL`, then Bash or `sh`; Bash, zsh, and fish receive richer integration |
-| macOS x64/arm64 | DMG and ZIP                                            | Uses `$SHELL`, falling back to `/bin/zsh`                                        |
-| Windows x64     | NSIS installer and ZIP                                 | Prefers PowerShell 7 (`pwsh.exe`), then Windows PowerShell, then `cmd.exe`       |
-
-Linux remains the most established platform. macOS and Windows are supported
-when their native **Build native packages** and **Release** workflow jobs pass.
-Windows requires a ConPTY-capable release (Windows 10 version 1809 or newer).
-WSL and Git Bash discovery are not included in this release.
-
-Current preview packages are unsigned. macOS Gatekeeper or Windows SmartScreen
-may therefore ask you to confirm the downloaded application. Inspect the release
-and its `SHA256SUMS`, then use the operating system's per-app **Open** or **Run
-anyway** action if you trust it; do not disable system-wide security checks.
 
 ## Install
 
-Every release is on [GitHub Releases](https://github.com/zemmike/OmniTerm/releases). Full
-step-by-step instructions - including the first-launch warnings, how to verify a download,
-and how to uninstall - are in **[docs/INSTALL.md](docs/INSTALL.md)**.
+Download OmniTerm from the **[Releases page](https://github.com/zemmike/OmniTerm/releases)**.
+Open the newest release, scroll down to **Assets**, and pick the file for your computer:
 
-**Pick your file.** Open the release, scroll to the **Assets** section, and download the
-line that matches your machine:
-
-| Your machine                            | Download                             |
+| Your computer                           | Download this file                   |
 | --------------------------------------- | ------------------------------------ |
-| Windows 10/11, 64-bit                   | `OmniTerm-<version>-win-x64.exe`     |
+| Windows 10 or 11                        | `OmniTerm-<version>-win-x64.exe`     |
 | Mac with Apple silicon (M1, M2, M3, M4) | `OmniTerm-<version>-mac-arm64.dmg`   |
 | Mac with an Intel processor             | `OmniTerm-<version>-mac-x64.dmg`     |
-| Linux, Debian or Ubuntu                 | `OmniTerm-<version>-amd64.deb`       |
-| Linux, any distribution (no install)    | `OmniTerm-<version>-x86_64.AppImage` |
+| Linux: Debian or Ubuntu                 | `OmniTerm-<version>-amd64.deb`       |
+| Linux: any other distribution           | `OmniTerm-<version>-x86_64.AppImage` |
 
-### Windows (Windows 10 version 1809 or newer)
+> **"Unknown publisher" warning?** OmniTerm is not code-signed yet, so Windows and macOS
+> will ask you to confirm the first time you open it. The steps below show how. Never
+> turn off your system's security checks to do this.
 
-1. Download `OmniTerm-<version>-win-x64.exe` from the release's **Assets** section.
-2. Double-click the file. Windows will say _Windows protected your PC_ - that is because
-   the installer is not code-signed yet. Click **More info**, then **Run anyway**.
-3. Follow the installer. It installs for your user account only, so it never asks for an
-   administrator password.
-4. Start OmniTerm from the **Start menu**. Open your first terminal with **Ctrl+Shift+T**.
-5. No installer, or no admin rights? Download `OmniTerm-<version>-win-x64.zip` instead,
-   extract it anywhere, and run `OmniTerm.exe`.
-6. To remove it: **Settings → Apps → Installed apps → OmniTerm → Uninstall**.
+<details>
+<summary><b>Windows</b> (Windows 10 version 1809 or newer)</summary>
 
-### macOS (macOS 13 Ventura or newer)
+1. Double-click the `.exe` you downloaded.
+2. If Windows says _Windows protected your PC_, click **More info**, then **Run anyway**.
+3. Follow the installer. It installs for your account only and does not need an admin
+   password.
+4. Open OmniTerm from the **Start menu**.
 
-1. Check your chip: menu → **About This Mac**. "Apple M1/M2/M3/M4" means Apple silicon,
-   "Intel" means Intel.
-2. Download the matching file: `OmniTerm-<version>-mac-arm64.dmg` (Apple silicon) or
-   `OmniTerm-<version>-mac-x64.dmg` (Intel).
-3. Open the DMG, then drag **OmniTerm** onto the **Applications** shortcut in the same
-   window.
-4. Eject the disk image (the ⏏ button next to it in Finder), then launch OmniTerm from
-   **Applications**.
-5. macOS blocks the first launch because these builds are **not notarised** yet. Do one of:
-   - right-click (or Control-click) OmniTerm in Applications → **Open** → **Open** again, or
-   - in Terminal: `xattr -dr com.apple.quarantine /Applications/OmniTerm.app`
+No admin rights? Download the `win-x64.zip` instead, unzip it anywhere, and run
+`OmniTerm.exe`.
 
-   You only need to do this once. Never disable Gatekeeper globally.
+**Uninstall:** Settings → Apps → Installed apps → OmniTerm → Uninstall.
 
-6. OmniTerm uses your login shell automatically (`$SHELL`, falling back to `/bin/zsh`).
-7. To remove it: drag OmniTerm from Applications to the Bin. To also remove your settings
-   and logs, delete `~/Library/Application Support/OmniTerm`.
+</details>
 
-### Linux
+<details>
+<summary><b>macOS</b> (macOS 13 Ventura or newer)</summary>
 
-1. Debian/Ubuntu: download `OmniTerm-<version>-amd64.deb`, then
-   `sudo apt install ./OmniTerm-<version>-amd64.deb`
-2. Any distribution, no install: download `OmniTerm-<version>-x86_64.AppImage`, run
-   `chmod +x OmniTerm-<version>-x86_64.AppImage`, then `./OmniTerm-<version>-x86_64.AppImage`
-3. Fedora/openSUSE: `sudo dnf install ./OmniTerm-<version>-x86_64.rpm`
-4. Or build and install from source:
-   `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`
+1. Not sure which Mac you have? Apple menu → **About This Mac**. "Apple M1/M2/M3/M4"
+   means Apple silicon; "Intel" means Intel.
+2. Open the `.dmg` and drag **OmniTerm** onto **Applications**.
+3. The first time only: right-click OmniTerm in Applications → **Open** → **Open**.
+   (Or run `xattr -dr com.apple.quarantine /Applications/OmniTerm.app` in Terminal.)
 
-`omniterm` is then on your `PATH`, and `omniterm --version` prints the version without
-opening a window. For what OmniTerm tells the programs running inside it - colours, the
-colour-scheme protocol, and why a cached theme needs a notification to change - see
-[docs/THEME-INTEGRATION.md](docs/THEME-INTEGRATION.md). Linux needs an X11 session; on Wayland-only systems install XWayland
-(see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)).
+**Uninstall:** drag OmniTerm to the Bin. To remove your settings too, delete
+`~/Library/Application Support/OmniTerm`.
 
-### Check the download before you run it
+</details>
 
-Every release ships `SHA256SUMS`. Compare it with what you downloaded:
+<details>
+<summary><b>Linux</b></summary>
 
-- **Linux / macOS**: `shasum -a 256 -c SHA256SUMS --ignore-missing` (macOS has `shasum`,
-  not `sha256sum`)
-- **Windows (PowerShell)**: `Get-FileHash .\OmniTerm-<version>-win-x64.exe -Algorithm SHA256`
-  and compare the hash with the line in `SHA256SUMS`
+- **Debian / Ubuntu:** `sudo apt install ./OmniTerm-<version>-amd64.deb`
+- **Fedora / openSUSE:** `sudo dnf install ./OmniTerm-<version>-x86_64.rpm`
+- **Any distribution, no install:**
+  `chmod +x OmniTerm-<version>-x86_64.AppImage` then `./OmniTerm-<version>-x86_64.AppImage`
+- **Build from source:**
+  `curl -fsSL https://raw.githubusercontent.com/zemmike/OmniTerm/main/install-linux.sh | bash`
 
-## Develop
+After installing, you can start it by typing `omniterm`. Linux needs an X11 session; on
+Wayland-only systems install XWayland (see [Troubleshooting](docs/TROUBLESHOOTING.md)).
 
-Prerequisites: Git and Node.js 22.12 or newer. Node 24 is used by CI and pinned
-in `.nvmrc`. Native `node-pty` compilation may also require your platform's C/C++
-build tools and Python.
+</details>
+
+More detail, including how to check that your download is genuine, is in the
+**[install guide](docs/INSTALL.md)**.
+
+## Getting started
+
+1. Open OmniTerm. Press **Ctrl+Shift+T** to open a terminal tab.
+2. Split the screen with **Ctrl+Shift+E** (side by side) or **Ctrl+Shift+O** (top and
+   bottom).
+3. Press **Ctrl+,** to open Settings and choose a theme, font and shortcuts.
+
+OmniTerm uses your usual shell automatically: PowerShell on Windows, and your login shell
+(zsh, bash, fish) on macOS and Linux.
+
+## Reading AI answers with the AI Reader
+
+Tools like Claude Code print their answers in the terminal, mixed with progress spinners,
+commands and tool output. The **AI Reader** shows the same answer as a clean document,
+like a page in Word or Google Docs.
+
+1. Run your AI tool in a terminal pane, for example `claude`.
+2. Click **AI Reader** in the terminal toolbar. A panel opens next to the terminal.
+3. Use the two filters at the top:
+   - **Answer only** - shows only the latest answer, without the run history before it.
+   - **No noise** - hides spinners, timers, token counters and tool-call lines.
+
+The reader also works when your AI tool runs inside a split-screen tool such as **tmux,
+zellij, screen or herdr**. It reads only the pane you are typing in (the one with the
+cursor), not the whole screen.
+
+In the reader, **links** open in your browser and **file paths** open in the Files tab.
+You can switch between a light and dark page, change the text size, and copy the text.
+
+The reader only looks at what is already on screen. It never types into your terminal.
+
+## Copy and paste
+
+| To do this                       | Press                                                  |
+| -------------------------------- | ------------------------------------------------------ |
+| Copy selected text               | **Ctrl+C** (when text is selected) or **Ctrl+Shift+C** |
+| Stop a running command           | **Ctrl+C** (when nothing is selected)                  |
+| Paste                            | **Ctrl+V** or **Ctrl+Shift+V**                         |
+| Select text in tmux, herdr, vim… | Hold **Shift** while dragging (**Option** on Mac)      |
+
+When you paste several lines, or something that looks risky, OmniTerm shows it to you
+first so you can confirm it. Programs such as tmux, herdr and vim can also copy text to
+your clipboard.
+
+## Useful shortcuts
+
+| Action                        | Shortcut                    |
+| ----------------------------- | --------------------------- |
+| New tab / close tab           | Ctrl+Shift+T / Ctrl+W       |
+| Next / previous tab           | Ctrl+Tab / Ctrl+Shift+Tab   |
+| Split right / split down      | Ctrl+Shift+E / Ctrl+Shift+O |
+| Close pane                    | Ctrl+Shift+W                |
+| Move between panes            | Ctrl+Shift+Arrow keys       |
+| Search the output             | Ctrl+Shift+F                |
+| Clear the screen              | Ctrl+Shift+K                |
+| Bigger / smaller / reset text | Ctrl+= / Ctrl+- / Ctrl+0    |
+| Settings                      | Ctrl+,                      |
+
+You can change any shortcut in **Settings**.
+
+![Themes and settings](docs/screenshots/settings.png)
+
+## Is it safe?
+
+- OmniTerm runs commands as **you**, exactly like any other terminal, so it can reach the
+  same files you can.
+- It only listens on your own computer (`127.0.0.1`) and uses a new secret key each time
+  it starts. **Do not expose its port to a network** or share that key.
+- Snapshots are ordinary archives. They are **not encrypted**.
+
+To report a security problem privately, see [SECURITY.md](SECURITY.md).
+
+## Need help?
+
+- **Something not working?** See [Troubleshooting](docs/TROUBLESHOOTING.md) for logs,
+  where data is stored, and fixes for each platform.
+- **Found a bug or have an idea?**
+  [Open an issue](https://github.com/zemmike/OmniTerm/issues).
+- **What changed in each version?** See the [changelog](CHANGELOG.md).
+
+---
+
+## For developers
+
+<details>
+<summary>Build, run and test from source</summary>
+
+You need Git and Node.js 22.12 or newer (CI uses Node 24, pinned in `.nvmrc`). Building
+`node-pty` may also need your platform's C/C++ build tools and Python.
 
 ```bash
 git clone https://github.com/zemmike/OmniTerm.git
 cd OmniTerm
 npm ci
-npm run dev
+npm run dev             # web version at http://localhost:3000
+npm run start:desktop   # desktop app
 ```
 
-`npm run dev` starts the Express and Vite development server at
-`http://localhost:3000`. To launch the desktop build:
-
-```bash
-npm run start:desktop
-```
-
-Build native packages on their matching operating system:
+Build installers (run each on its own operating system):
 
 ```bash
 npm run dist:linux
@@ -140,18 +187,7 @@ npm run dist:mac
 npm run dist:win
 ```
 
-## Settings And Reader
-
-Open **Settings** with `Ctrl+,` to change the theme, colors, font family, font
-size, history behavior, paste confirmation, and keyboard shortcuts. Changes are
-stored locally and applied to open terminals immediately.
-
-Select **AI Reader** in the Terminal toolbar to format the active pane's output.
-The reader is local and observational: it strips terminal control sequences,
-organizes supported Markdown-like structures, safely renders TeX with bundled
-KaTeX, and never writes to the shell or sends content to an AI service.
-
-## Verify
+Checks run by CI:
 
 ```bash
 npm run typecheck
@@ -161,24 +197,22 @@ npm test
 npm run build
 ```
 
-Native PTY checks are `npm run test:pty` on Linux/macOS and
-`npm run test:pty:windows` on Windows. The **Build native packages** workflow
-runs portable checks plus native PTY, build, package, and installer checks on
-Ubuntu, macOS, and Windows.
+Native terminal checks: `npm run test:pty` (Linux/macOS) and `npm run test:pty:windows`.
 
-## Security Limits
+**Platform notes.** Linux x64/arm64 builds `.deb`, AppImage and `.tar.gz` (plus RPM on
+x64). macOS builds DMG and ZIP. Windows builds an installer and ZIP and needs ConPTY
+(Windows 10 1809+); WSL and Git Bash discovery are not included yet. Linux is the most
+established platform.
 
-OmniTerm intentionally executes commands with your user account and can read or
-edit files that account can access. The backend binds to `127.0.0.1`, requires a
-per-launch token for API and WebSocket access, and runs Electron with context
-isolation, sandboxing, and no renderer Node integration. Do not expose its port
-to a network, share session tokens, or treat snapshots as encrypted backups.
+**More docs:** [contributing](CONTRIBUTING.md) ·
+[theme integration](docs/THEME-INTEGRATION.md) · [performance](docs/PERFORMANCE.md) ·
+[security model](SECURITY.md)
 
-See [SECURITY.md](SECURITY.md) for the threat model and private vulnerability
-reporting. Logs, data locations, unsigned-build guidance, and platform fixes are
-in [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Linux benchmark results
-and methodology are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md). Development
-rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
+**Security design:** the backend binds to `127.0.0.1` and requires a per-launch token for
+API and WebSocket access (the WebSocket also checks the page origin). Electron runs with
+context isolation, sandboxing and no Node integration in the renderer.
+
+</details>
 
 ## License
 
