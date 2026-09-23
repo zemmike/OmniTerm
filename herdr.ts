@@ -349,7 +349,15 @@ export async function readFocusedHerdrPane(lines = 400): Promise<HerdrReaderText
   if (!/^[\w-]+:[\w-]+$/.test(paneId)) return { ok: false, error: 'no-focused-pane' };
   const count = String(Math.max(1, Math.min(2000, Math.floor(lines))));
   const read = await runHerdr(binary, [
-    'pane', 'read', paneId, '--lines', count, '--source', 'recent-unwrapped', '--format', 'text',
+    'pane',
+    'read',
+    paneId,
+    '--lines',
+    count,
+    '--source',
+    'recent-unwrapped',
+    '--format',
+    'text',
   ]);
   if (read.code !== 0) return { ok: false, error: 'read-failed', paneId };
   return { ok: true, text: read.stdout, paneId };

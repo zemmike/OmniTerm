@@ -10,12 +10,7 @@ const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import { searchDirectory } from './fileSearch';
-import {
-  applyHerdrTheme,
-  readFocusedHerdrPane,
-  readHerdrStatus,
-  revertHerdrTheme,
-} from './herdr';
+import { applyHerdrTheme, readFocusedHerdrPane, readHerdrStatus, revertHerdrTheme } from './herdr';
 import { herdrThemeKeysFor, isHerdrThemeName } from './src/herdrTheme';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
 import { resolveDataDir } from './platform/paths';

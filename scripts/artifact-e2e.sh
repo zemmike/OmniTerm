@@ -114,13 +114,15 @@ fi
 
 BIN_PATH="$(command -v omniterm || true)"
 [ -n "$BIN_PATH" ] || fail "omniterm is not on PATH after installation."
-# postinst creates /usr/bin/omniterm -> /opt/OmniTerm/omniterm. Assert it is
-# really there now, otherwise the "nothing left behind" check after removal
-# would pass vacuously against a package that never installed a launcher.
-[ -L /usr/bin/omniterm ] || fail "the package's postinst did not create /usr/bin/omniterm."
+# postinst writes a launcher script at /usr/bin/omniterm that execs
+# /opt/OmniTerm/omniterm (a script, not a symlink, so --version can be rewritten).
+# Assert it is really there now, otherwise the "nothing left behind" check after
+# removal would pass vacuously against a package that never installed a launcher.
+[ -f /usr/bin/omniterm ] && [ -x /usr/bin/omniterm ]   || fail "the package's postinst did not create /usr/bin/omniterm."
+grep -q '/opt/OmniTerm/omniterm' /usr/bin/omniterm   || fail "/usr/bin/omniterm does not launch /opt/OmniTerm/omniterm."
 DESKTOP_FILE="/usr/share/applications/omniterm.desktop"
 [ -f "$DESKTOP_FILE" ] || fail "$DESKTOP_FILE was not installed."
-ok "installed; omniterm -> $(readlink /usr/bin/omniterm)"
+ok "installed; launcher at /usr/bin/omniterm"
 
 # ---------------------------------------------------------- 5. desktop entry
 say "Validating the desktop entry"

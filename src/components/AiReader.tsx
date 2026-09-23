@@ -297,7 +297,8 @@ function ReaderBlockView({
 }) {
   switch (block.kind) {
     case 'heading': {
-      const size = block.level <= 1 ? 1.6 : block.level === 2 ? 1.35 : block.level === 3 ? 1.15 : 1.05;
+      const size =
+        block.level <= 1 ? 1.6 : block.level === 2 ? 1.35 : block.level === 3 ? 1.15 : 1.05;
       const Tag = `h${Math.min(6, Math.max(1, block.level))}` as
         'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       return (
