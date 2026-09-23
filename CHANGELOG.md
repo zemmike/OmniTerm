@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.17.1] - 2026-09-23
+
+### Fixed
+- **AI Reader document formatting.** Terminal-wrapped prose now reflows as paragraphs
+  while headings, numbered lists, bullet lists, code and tables remain semantic blocks.
+- **AI Reader filters.** "Answer only" now recognises ANSI-coloured shell prompts and
+  Claude/Codex conversation prompts, removes preliminary process commentary, and keeps
+  the latest structured answer. "No noise" now removes Codex activity summaries and
+  Claude tool-result markers without hiding ordinary answer bullets.
+
 ## [1.17.0] - 2026-09-22
 
 ### Added
