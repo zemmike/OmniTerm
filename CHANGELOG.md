@@ -57,6 +57,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.2] - 2026-09-23
+
+### Added
+- **Files tab: show/hide dotfiles.** An eye button next to Refresh hides or shows
+  `.name` files. The choice is remembered; dotfiles stay visible by default.
+
+### Changed
+- **Dependencies.** xterm 6.0, Vite 8.3, @vitejs/plugin-react 6.1, lucide-react 1.46, the
+  minor-and-patch group, and GitHub Actions checkout 7.0.1, setup-node 7.0.0 and
+  upload-artifact 7.0.1.
+- **README** rewritten for users first.
+
 ## [1.18.1] - 2026-09-23
 
 ### Fixed
