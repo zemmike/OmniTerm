@@ -15,7 +15,7 @@ import { Search, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { terminalFileLinks } from '../fileLinks';
 import { createPreOpenMessageQueue } from '../socketQueue';
 import { applyTerminalSettingsWhenVisible } from '../terminalOptions';
-import { terminalBufferToText } from '../terminalBufferText';
+import { focusedPaneText, terminalBufferToText } from '../terminalBufferText';
 import { colorSchemeReport, schemeForBackground } from '../colorScheme';
 import { decodeOsc52, readClipboardText, writeClipboardText } from '../clipboard';
 
@@ -680,7 +680,12 @@ export default function TerminalPane({
       },
       selectAll: () => term.selectAll(),
       clear: () => term.clear(),
-      readBuffer: () => terminalBufferToText(term.buffer.active),
+      // A full-screen program may be a multiplexer showing panes side by side
+      // (tmux, zellij, screen, herdr); read only the pane holding the cursor.
+      readBuffer: () =>
+        term.buffer.active.type === 'alternate'
+          ? focusedPaneText(term.buffer.active, term.cols, term.rows)
+          : terminalBufferToText(term.buffer.active),
       isAlternateScreen: () => term.buffer.active.type === 'alternate',
       focus: () => term.focus(),
       search: (query, direction) => {

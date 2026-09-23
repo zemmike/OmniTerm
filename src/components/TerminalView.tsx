@@ -19,6 +19,7 @@ import { actionForEvent } from '../keys';
 import { normalizeSizes, resizeNeighbours, PANE_KEY_STEP } from '../splitSizes';
 import { resolveTargetPath } from '../fileTarget';
 import AiReader from './AiReader';
+import { sameTail } from '../terminalBufferText';
 import { loadWorkspace, saveWorkspace, type PersistedLayout } from '../workspace';
 
 interface Props {
@@ -314,13 +315,21 @@ export default function TerminalView({
     const read = async () => {
       const api = activeId ? apiRef.current[activeId] : undefined;
       if (!api || busy) return;
-      // Inside Herdr the screen is Herdr's whole UI; ask Herdr for the focused pane's
-      // own text (for example Claude Code's) so the reader sees only that program.
+      // readBuffer already isolates the focused pane of any multiplexer. Herdr can also
+      // hand over that pane's scrolled-off history; use it only when it is provably the
+      // same pane (it ends with what is on screen), since a Herdr server may be running
+      // in the background while another program owns this terminal.
+      const screen = api.readBuffer();
       if (api.isAlternateScreen()) {
         busy = true;
         try {
           const result = await fetch('/api/herdr/reader').then((r) => r.json());
-          if (!cancelled && result?.ok && typeof result.text === 'string') {
+          if (
+            !cancelled &&
+            result?.ok &&
+            typeof result.text === 'string' &&
+            sameTail(result.text, screen)
+          ) {
             setReaderText(result.text);
             return;
           }
@@ -330,7 +339,7 @@ export default function TerminalView({
           busy = false;
         }
       }
-      if (!cancelled) setReaderText(api.readBuffer());
+      if (!cancelled) setReaderText(screen);
     };
     void read();
     const timer = window.setInterval(() => void read(), 1200);
