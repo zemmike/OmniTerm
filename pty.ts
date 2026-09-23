@@ -13,6 +13,7 @@
  * records, so the audit trail keeps working with a real interactive shell.
  */
 import { execFileSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -567,7 +568,25 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
     const remote = req.socket.remoteAddress || '';
     const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
 
-    if (!opts.token || token !== opts.token || !isLoopback) {
+    // A browser page on another site can open a WebSocket to localhost; only the
+    // app's own loopback origin (or none, for non-browser clients) may connect.
+    const origin = req.headers.origin;
+    let originOk = !origin || origin === 'null';
+    if (!originOk) {
+      try {
+        originOk = ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(origin!).hostname);
+      } catch {
+        originOk = false;
+      }
+    }
+    const provided = Buffer.from(token);
+    const expected = Buffer.from(opts.token || '');
+    const tokenOk =
+      expected.length > 0 &&
+      provided.length === expected.length &&
+      crypto.timingSafeEqual(provided, expected);
+
+    if (!tokenOk || !isLoopback || !originOk) {
       ws.send(JSON.stringify({ type: 'error', message: 'unauthorized' }));
       ws.close();
       return;
