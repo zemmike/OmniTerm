@@ -64,9 +64,8 @@ be notified. That cannot be fixed from the terminal side. What helps:
 
 ## Matching Herdr to your theme
 
-Herdr is a terminal multiplexer for coding agents with its own interface, and its config has
-a `[theme]` table. Settings → **Herdr → Match Herdr to this theme** writes three keys into
-`config.toml` and asks Herdr to reload:
+Herdr has its own interface colours. To make it follow OmniTerm's theme, add this to Herdr's
+`config.toml` yourself and run `herdr server reload-config`:
 
 ```toml
 [theme]
@@ -75,26 +74,8 @@ dark_name = "terminal"
 light_name = "terminal"
 ```
 
-`terminal` means Herdr paints itself with the terminal's own palette — the colours OmniTerm
-is actually drawing with — and `auto_switch` makes it follow the light/dark switch, which is
-the protocol above. So Herdr ends up matching this theme exactly rather than approximately,
-and it follows when you change theme.
-
-What the button guarantees:
-
-- It writes **those three keys and nothing else**. Every other line, comment and section of
-  your `config.toml` is copied through untouched, including `[theme.custom]` colour overrides.
-- The config path is **asked for, not assumed**: OmniTerm reads Herdr's own reported socket
-  location, so it edits the file Herdr reads.
-- One backup is taken before the first change, at `config.toml.omniterm-backup`, and kept.
-  **Restore my config** puts it back and reloads. If no config existed before, restoring
-  removes the file again.
-- Every write is validated with `herdr config check` before Herdr is asked to reload. If
-  Herdr rejects the file, the change is **rolled back immediately** and the error is shown.
-- It never runs on its own — not at startup, not when you change theme.
-
-This styles **Herdr's own interface**. It does not, and cannot, restyle what runs inside a
-Herdr pane: those programs draw their own colours from the palette they read.
+`terminal` makes Herdr use the terminal's own palette, the colours OmniTerm is drawing with,
+and `auto_switch` makes it follow the light/dark switch described above.
 
 ## What OmniTerm cannot reach
 

@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useSettings, resetSettings, FONT_STACKS, TerminalSettings } from '../settings';
 import DataControls from './DataControls';
-import HerdrThemeCard from './HerdrThemeCard';
 import ShortcutsCheatsheet from './ShortcutsCheatsheet';
 import { THEMES, themeById } from '../themes';
 import {
@@ -448,7 +447,6 @@ export const SettingsView: React.FC = () => {
 
       <div className="mt-4 space-y-3">
         <ShortcutsCheatsheet />
-        <HerdrThemeCard themeId={settings.theme} />
         <DataControls />
       </div>
     </div>

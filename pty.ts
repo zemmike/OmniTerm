@@ -520,7 +520,7 @@ function spawnSession(
   if (attach) session.clients.add(attach);
 
   try {
-    const proc = pty.spawn(shell, launch.args, {
+    const spawnOptions = {
       name: 'xterm-256color',
       cols,
       rows,
@@ -538,7 +538,8 @@ function spawnSession(
         OMNITERM: '1',
         // LANG/LC_ALL are inherited on purpose: the user's locale is theirs.
       },
-    });
+    };
+    const proc = spawnWithConpty(pty, shell, launch.args, spawnOptions);
     session.proc = proc;
 
     proc.onData((d: string) => handleChunk(session, d));
@@ -559,6 +560,32 @@ function spawnSession(
 }
 
 // -------------------------------------------------------------- websocket API
+/**
+ * Spawn, preferring node-pty's bundled ConPTY on Windows.
+ *
+ * The ConPTY built into Windows swallows sequences a full-screen program relies on:
+ * OSC 52 (a program such as herdr or tmux setting the clipboard) and bracketed paste
+ * mode, which is why copy and paste failed inside them. The bundled conpty.dll is the
+ * one Windows Terminal ships and passes them through. If it cannot start, the inbox
+ * ConPTY is used; OMNITERM_CONPTY=inbox forces that.
+ */
+function spawnWithConpty(
+  pty: any,
+  shell: string,
+  args: string[],
+  options: Record<string, unknown>,
+): any {
+  if (process.platform !== 'win32' || process.env.OMNITERM_CONPTY === 'inbox') {
+    return pty.spawn(shell, args, options);
+  }
+  try {
+    return pty.spawn(shell, args, { ...options, useConptyDll: true });
+  } catch (error) {
+    console.warn(`[pty] bundled ConPTY failed, using the Windows one: ${String(error)}`);
+    return pty.spawn(shell, args, options);
+  }
+}
+
 export function attachTerminalSocket(server: Server, opts: { token: string }) {
   const wss = new WebSocketServer({ server, path: '/term' });
 
