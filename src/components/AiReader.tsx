@@ -8,6 +8,7 @@ import {
   type ReaderBlock,
 } from '../readerMarkdown';
 import { normalizeTargetPath } from '../fileTarget';
+import { openExternal } from '../links';
 
 interface ClipboardBridge {
   writeClipboard?: (text: string) => Promise<{ ok?: boolean; error?: string } | undefined>;
@@ -441,6 +442,21 @@ function InlineTokenView({
         >
           {token.value}
         </button>
+      );
+    case 'link':
+      return (
+        <a
+          href={token.href}
+          onClick={(event) => {
+            event.preventDefault();
+            openExternal(token.href);
+          }}
+          title={`Open ${token.href} in the browser`}
+          className="reader-link underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+          style={{ color: 'var(--reader-link)' }}
+        >
+          {token.value}
+        </a>
       );
     case 'math':
       return <MathToken value={token.value} displayMode={false} />;

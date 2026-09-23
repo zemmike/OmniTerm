@@ -1,3 +1,5 @@
+import { isWebLink } from './links';
+
 export interface TerminalFileLink {
   /** One-based inclusive columns, matching xterm's link-provider API. */
   start: number;
@@ -35,7 +37,10 @@ export function terminalFileLinks(line: string, cwd: string, home: string): Term
   let match: RegExpExecArray | null;
   while ((match = PATH_TOKEN.exec(line))) {
     const token = match[1];
-    if (!token || /^https?:\/\//i.test(token)) continue;
+    if (!token || isWebLink(token)) continue;
+    // Part of a URL (`https://host/a/b` yields `/host/a/b` after the scheme's colon).
+    const before = line.slice(0, match.index + match[0].indexOf(token));
+    if (/[a-z][a-z0-9+.-]*:\/?$/i.test(before) || /\S*:\/\/\S*$/.test(before)) continue;
     const location = token.match(/:(\d+)(?::(\d+))?$/);
     const pathText = location ? token.slice(0, -location[0].length) : token;
     if (!pathText) continue;

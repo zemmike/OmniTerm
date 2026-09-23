@@ -1,11 +1,14 @@
 /** Turn raw terminal output into typed, readable blocks. */
 
+import { URL_AT, isWebLink, toHref } from './links';
+
 export type InlineToken =
   | { kind: 'text'; value: string }
   | { kind: 'strong'; value: string }
   | { kind: 'emphasis'; value: string }
   | { kind: 'code'; value: string }
   | { kind: 'path'; value: string }
+  | { kind: 'link'; value: string; href: string }
   | { kind: 'math'; value: string };
 
 export type ReaderBlock =
@@ -134,6 +137,17 @@ function inlineMarkupAt(
   return null;
 }
 
+/** A web address starting here: `https://…`, `www.…`, or a bare `host.tld/…`. */
+function linkAt(text: string, index: number): { end: number; value: string } | null {
+  // Only at the start of a word, so `foo.com` inside `api.foo.com` is not re-split.
+  if (index > 0 && /[\w./:@-]/.test(text[index - 1])) return null;
+  const match = URL_AT.exec(text.slice(index)) || /^\S+/.exec(text.slice(index));
+  if (!match) return null;
+  const value = match[0].replace(/[),.;:!?\]'"]+$/, '');
+  if (!value || !isWebLink(value)) return null;
+  return { end: index + value.length, value };
+}
+
 function pathAt(text: string, index: number): { end: number; value: string } | null {
   if (!/[A-Za-z0-9./\\]/.test(text[index])) return null;
   const match = /^\S+/.exec(text.slice(index));
@@ -163,6 +177,12 @@ export function parseInlineText(text: string): InlineToken[] {
     if (markup) {
       tokens.push({ kind: markup.kind, value: markup.value });
       index = markup.end;
+      continue;
+    }
+    const link = linkAt(text, index);
+    if (link) {
+      tokens.push({ kind: 'link', value: link.value, href: toHref(link.value) });
+      index = link.end;
       continue;
     }
     const path = pathAt(text, index);
@@ -413,6 +433,7 @@ function isPlainHeading(lines: string[], index: number, pendingCount: number): b
 /** Does this token look like a path worth making clickable? */
 export function looksLikePath(candidate: string): boolean {
   if (!candidate || candidate.length > 300 || /\s/.test(candidate)) return false;
+  if (isWebLink(candidate)) return false;
   const path = candidate.replace(PATH_SUFFIX, '');
   if (!path) return false;
   if (/^[A-Za-z]:\\[^\\/:*?"<>|\r\n]+(?:\\[^\\/:*?"<>|\r\n]+)*$/.test(path)) return true;
