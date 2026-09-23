@@ -405,7 +405,7 @@ function isPlainHeading(lines: string[], index: number, pendingCount: number): b
   const after = lines[index + 2];
   if (!after || !after.trim() || FENCE.test(after) || after.trim() === '$$') return false;
   // Standing alone, it must look like a title: "Next steps:" or Title Case words.
-  if (value.endsWith(':')) return true;
+  if (value.endsWith(':') || LIST_ITEM.test(after)) return true;
   const words = value.split(/\s+/).filter((word) => word.length > 3);
   return words.length >= 2 && words.every((word) => /^[A-Z0-9]/.test(word));
 }
@@ -527,10 +527,41 @@ export function lastReplyOnly(raw: string): { text: string; found: boolean } {
       line.length <= 200 &&
       (PROMPT_LINE.test(line) || CONVERSATION_PROMPT.test(line))
     ) {
-      return { text: lines.slice(i + 1).join('\n'), found: true };
+      const after = lines.slice(i + 1);
+      // A full-screen agent (Claude Code, also inside Herdr) keeps an empty input box
+      // and a footer under its answer. A prompt with nothing readable after it is that
+      // box, not the end of the conversation, so keep looking further up.
+      if (!after.some(hasContent)) continue;
+      return { text: trimInputBox(after).join('\n'), found: true };
     }
   }
   return { text: raw || '', found: false };
+}
+
+/** A line that carries reading material rather than prompt, footer or border. */
+function hasContent(line: string): boolean {
+  const visible = stripTerminalFurniture(stripAnsi(line)).trim();
+  return /\w/.test(visible) && !isNoiseLine(visible) && !isAgentFooter(visible);
+}
+
+/** Claude Code's status footer under the input box. */
+function isAgentFooter(value: string): boolean {
+  return (
+    /^\?\s+for shortcuts/i.test(value) ||
+    /\b(?:shift\+tab|ctrl\+[a-z]) to\b/i.test(value) ||
+    /^(?:auto-accept|plan mode|bypass permissions)\b/i.test(value)
+  );
+}
+
+/** Drop the empty input box and footer that sit under a full-screen agent's answer. */
+function trimInputBox(lines: string[]): string[] {
+  let end = lines.length;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (hasContent(lines[i])) break;
+    const visible = stripTerminalFurniture(stripAnsi(lines[i])).trim();
+    if (/^(?:>|❯|›)$/.test(visible)) end = i;
+  }
+  return lines.slice(0, end);
 }
 
 export interface ReaderFilterOptions {

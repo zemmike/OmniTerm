@@ -45,6 +45,8 @@ export interface PaneApi {
    * the AI Reader observes the pane, it never writes to it.
    */
   readBuffer(): string;
+  /** True while a full-screen program (herdr, vim, less) owns the pane. */
+  isAlternateScreen(): boolean;
   send(text: string): void;
   /** Handles an app-level action coming from a shortcut. */
   runAction(actionId: string): boolean;
@@ -679,6 +681,7 @@ export default function TerminalPane({
       selectAll: () => term.selectAll(),
       clear: () => term.clear(),
       readBuffer: () => terminalBufferToText(term.buffer.active),
+      isAlternateScreen: () => term.buffer.active.type === 'alternate',
       focus: () => term.focus(),
       search: (query, direction) => {
         if (!query) return;

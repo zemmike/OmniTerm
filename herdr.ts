@@ -317,3 +317,40 @@ export async function revertHerdrTheme(): Promise<HerdrWriteResult> {
         : 'Your previous Herdr config is back; it applies when Herdr next starts.',
   };
 }
+
+export interface HerdrReaderText {
+  ok: boolean;
+  text?: string;
+  paneId?: string;
+  error?: string;
+}
+
+/**
+ * The focused Herdr pane's own output, for the AI Reader.
+ *
+ * With Herdr running, the OmniTerm pane shows Herdr's whole UI: sidebar, borders and
+ * split panes side by side, so parsing that screen mixes an agent's answer with
+ * everything around it. Herdr can hand over one pane's text directly, with soft-wrapped
+ * rows rejoined (`recent-unwrapped`, see docs/herdr/findings.md).
+ */
+export async function readFocusedHerdrPane(lines = 400): Promise<HerdrReaderText> {
+  const binary = findHerdrBinary();
+  if (!binary) return { ok: false, error: 'not-installed' };
+  const snapshot = await runHerdr(binary, ['api', 'snapshot']);
+  if (snapshot.code !== 0) return { ok: false, error: 'not-running' };
+  let paneId = '';
+  try {
+    const parsed = JSON.parse(snapshot.stdout);
+    paneId = String(parsed?.result?.snapshot?.focused_pane_id || '');
+  } catch {
+    return { ok: false, error: 'bad-snapshot' };
+  }
+  // Pane IDs look like `w1:p2`; anything else never reaches the command line.
+  if (!/^[\w-]+:[\w-]+$/.test(paneId)) return { ok: false, error: 'no-focused-pane' };
+  const count = String(Math.max(1, Math.min(2000, Math.floor(lines))));
+  const read = await runHerdr(binary, [
+    'pane', 'read', paneId, '--lines', count, '--source', 'recent-unwrapped', '--format', 'text',
+  ]);
+  if (read.code !== 0) return { ok: false, error: 'read-failed', paneId };
+  return { ok: true, text: read.stdout, paneId };
+}

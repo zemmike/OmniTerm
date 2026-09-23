@@ -309,13 +309,35 @@ export default function TerminalView({
   useEffect(() => {
     if (!readerOpen) return;
     const activeId = activeLayout?.activeId;
-    const read = () => {
+    let cancelled = false;
+    let busy = false;
+    const read = async () => {
       const api = activeId ? apiRef.current[activeId] : undefined;
-      if (api) setReaderText(api.readBuffer());
+      if (!api || busy) return;
+      // Inside Herdr the screen is Herdr's whole UI; ask Herdr for the focused pane's
+      // own text (for example Claude Code's) so the reader sees only that program.
+      if (api.isAlternateScreen()) {
+        busy = true;
+        try {
+          const result = await fetch('/api/herdr/reader').then((r) => r.json());
+          if (!cancelled && result?.ok && typeof result.text === 'string') {
+            setReaderText(result.text);
+            return;
+          }
+        } catch {
+          /* fall back to the screen */
+        } finally {
+          busy = false;
+        }
+      }
+      if (!cancelled) setReaderText(api.readBuffer());
     };
-    read();
-    const timer = window.setInterval(read, 1200);
-    return () => window.clearInterval(timer);
+    void read();
+    const timer = window.setInterval(() => void read(), 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [readerOpen, activeLayout?.activeId]);
 
   // A clicked path arrives exactly as the terminal printed it: often relative

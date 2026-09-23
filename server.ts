@@ -10,7 +10,12 @@ const PORT = Number(process.env.PORT) || 3000;
 // Real interactive terminal backend (node-pty + WebSocket).
 import { createConcurrencyLimit, createRateLimiter, positiveInt } from './limits';
 import { searchDirectory } from './fileSearch';
-import { applyHerdrTheme, readHerdrStatus, revertHerdrTheme } from './herdr';
+import {
+  applyHerdrTheme,
+  readFocusedHerdrPane,
+  readHerdrStatus,
+  revertHerdrTheme,
+} from './herdr';
 import { herdrThemeKeysFor, isHerdrThemeName } from './src/herdrTheme';
 import { GENESIS_TAIL, computeEntryHash, loadAuditChainTail, type ChainTail } from './audit-chain';
 import { resolveDataDir } from './platform/paths';
@@ -953,6 +958,15 @@ app.get('/api/herdr/status', async (_req, res) => {
     res.json(await readHerdrStatus());
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Could not read Herdr status.' });
+  }
+});
+
+// The AI Reader's source while Herdr owns the pane: the focused Herdr pane's own text.
+app.get('/api/herdr/reader', async (_req, res) => {
+  try {
+    res.json(await readFocusedHerdrPane());
+  } catch (err: any) {
+    res.json({ ok: false, error: err?.message || 'read-failed' });
   }
 });
 

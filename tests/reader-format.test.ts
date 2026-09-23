@@ -44,3 +44,34 @@ describe('OSC 52', () => {
     expect(decodeOsc52('c;?')).toBeNull();
   });
 });
+
+describe('Claude Code full screen (as read from a Herdr pane)', () => {
+  const screen = [
+    '> how do I fix the build?',
+    '',
+    '⏺ Bash(npm run build)',
+    '  ⎿  error TS2304: Cannot find name foo',
+    '',
+    '⏺ The build fails because `foo` is never imported.',
+    '',
+    '  Fix',
+    '',
+    '  1. Import foo in src/app.ts',
+    '     - then rebuild',
+    '  2. Run the tests again',
+    '',
+    '─'.repeat(40),
+    '> ',
+    '─'.repeat(40),
+    '  ? for shortcuts',
+  ].join('\n');
+
+  it('shows only the formatted answer', () => {
+    const blocks = parseReaderText(screen, { answerOnly: true, hideNoise: true });
+    expect(blocks.map((b) => b.kind)).toEqual(['paragraph', 'heading', 'list']);
+    const json = JSON.stringify(blocks);
+    expect(json).not.toContain('npm run build');
+    expect(json).not.toContain('shortcuts');
+    expect(json).not.toContain('how do I fix');
+  });
+});
