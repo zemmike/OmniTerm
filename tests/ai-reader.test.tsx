@@ -105,6 +105,33 @@ describe('AI Reader', () => {
     expect(within(lists[1]).getAllByRole('listitem')).toHaveLength(2);
   });
 
+  it('shows only the latest Codex answer by default and restores history on request', () => {
+    render(
+      <AiReader
+        text={[
+          'old terminal history',
+          '› Format this answer',
+          'Thinking…',
+          '## Result',
+          '1. first item',
+          '2. second item',
+        ].join('\n')}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText('old terminal history')).toBeNull();
+    expect(screen.queryByText(/Thinking/)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Result' })).toBeTruthy();
+    expect(screen.getByRole('list').tagName).toBe('OL');
+
+    fireEvent.click(screen.getByRole('button', { name: 'No noise' }));
+    expect(screen.getByText(/Thinking/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Answer only' }));
+    expect(screen.getByText(/old terminal history/)).toBeTruthy();
+  });
+
   it('renders tables inside a stable horizontal scroll container', () => {
     render(
       <AiReader text={'| Name | Value |\n| --- | --- |\n| alpha | $x^2$ |'} onClose={() => {}} />,

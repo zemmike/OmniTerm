@@ -192,9 +192,15 @@ export function parseReaderText(raw: string, options: ReaderFilterOptions = {}):
   let code: { lang: string; lines: string[] } | null = null;
   let pending: string[] = [];
   const flush = () => {
+    // The terminal owns physical line wrapping; the document owns prose wrapping.
+    // Blank lines are flushed separately, so non-blank rows here belong to one
+    // paragraph. Preserve Markdown's explicit two-space line break only.
     const text = pending
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
+      .reduce((paragraph, line) => {
+        if (!paragraph) return line.trim();
+        const hardBreak = /\s{2}$/.test(paragraph);
+        return `${paragraph.replace(/\s+$/, '')}${hardBreak ? '\n' : ' '}${line.trim()}`;
+      }, '')
       .trim();
     if (text) blocks.push({ kind: 'paragraph', content: parseInlineText(text) });
     pending = [];
@@ -404,6 +410,17 @@ export function isNoiseLine(line: string): boolean {
   // A bulleted sentence ("- Read the file first") must not match, which is why the
   // plain bullet case requires the parenthesis.
   if (/^[\u25c9\u23fa\u23f5\u276f]\s*\S/.test(value)) return true;
+  // Codex prefixes activity summaries with an ordinary bullet. Match only its action
+  // vocabulary so a real answer bullet such as "• Review the result" remains content.
+  if (
+    /^\u2022\s*(?:ran|explored|searched|called|read|edited|wrote|waited|working|thinking)\b/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  // Claude's indented tool-result branch marker.
+  if (/^\u23bf\s+\S/.test(value)) return true;
   if (
     /^[-*>$]\s*(?:read|write|edit|bash|grep|glob|ls|sed|cat|npm|git|search|fetch|webfetch|tool)\s*\(/i.test(
       value,
@@ -430,12 +447,22 @@ export function stripNoiseLines(text: string): string {
 // matters - matching a bare trailing `$` swallowed text like `Malformed: $\frac{$`,
 // which the reader must show.
 const PROMPT_LINE = /^[\w.@:~/-]{0,60}\s*(?:\u276f|\u276e|\u203a|\u00bb|\u279c|>|\$|#)\s*$/;
+// Claude Code and Codex are full-screen programs, so their user prompt contains the
+// request instead of ending at a shell marker. These are deliberately limited to the
+// prompt glyphs those programs use; `$ command` remains command output, not a boundary.
+const CONVERSATION_PROMPT = /^(?:>|\u203a|\u276f)\s+\S/;
 
 export function lastReplyOnly(raw: string): { text: string; found: boolean } {
   const lines = (raw || '').split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
-    const line = lines[i].trim();
-    if (line.length > 0 && line.length <= 80 && PROMPT_LINE.test(line)) {
+    // Prompts are commonly coloured. Match their visible text but slice the original
+    // buffer so formatting escapes in the answer remain available to the parser.
+    const line = stripAnsi(lines[i]).trim();
+    if (
+      line.length > 0 &&
+      line.length <= 200 &&
+      (PROMPT_LINE.test(line) || CONVERSATION_PROMPT.test(line))
+    ) {
       return { text: lines.slice(i + 1).join('\n'), found: true };
     }
   }
@@ -504,6 +531,8 @@ export function extractAnswer(raw: string): { text: string; cut: boolean } {
     if (isToolOutputBlock(block)) lastTool = i;
   });
   if (lastTool === -1) return { text: afterPrompt, cut: found };
-  const kept = blocks.filter((block, i) => i > lastTool || !isToolOutputBlock(block));
+  // Anything before the final tool block is run history (plans, commentary and older
+  // output). The assistant's final answer is the structured content that follows it.
+  const kept = blocks.slice(lastTool + 1).filter((block) => !isToolOutputBlock(block));
   return { text: kept.join('\n\n'), cut: true };
 }

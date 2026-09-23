@@ -99,7 +99,7 @@ describe('parseReaderText', () => {
   it('joins wrapped lines into one paragraph but honours blank lines', () => {
     const blocks = parseReaderText('one line\nwrapped second\n\nnew paragraph');
     expect(blocks).toEqual([
-      { kind: 'paragraph', content: [{ kind: 'text', value: 'one line\nwrapped second' }] },
+      { kind: 'paragraph', content: [{ kind: 'text', value: 'one line wrapped second' }] },
       { kind: 'paragraph', content: [{ kind: 'text', value: 'new paragraph' }] },
     ]);
   });
@@ -371,6 +371,9 @@ describe('isNoiseLine', () => {
     expect(isNoiseLine('⏺ Read(src/app.ts)')).toBe(true);
     expect(isNoiseLine('◉ Bash(npm test)')).toBe(true);
     expect(isNoiseLine('> Read(src/app.ts)')).toBe(true);
+    expect(isNoiseLine('• Ran npm test')).toBe(true);
+    expect(isNoiseLine('• Explored src/components')).toBe(true);
+    expect(isNoiseLine('  ⎿  67 tests passed')).toBe(true);
   });
 
   it('keeps real prose, even when it mentions the same words', () => {
@@ -412,6 +415,23 @@ describe('lastReplyOnly', () => {
 
   it('does not mistake a normal sentence ending in a period for a prompt', () => {
     expect(lastReplyOnly('Line one\nLine two.').found).toBe(false);
+  });
+
+  it('recognises ANSI-coloured shell prompts and Codex conversation prompts', () => {
+    const colouredShell = [
+      'old answer',
+      '\u001b[32muser@host\u001b[0m:\u001b[34m~/project\u001b[0m$ ',
+      'new answer',
+    ].join('\n');
+    expect(lastReplyOnly(colouredShell)).toMatchObject({ text: 'new answer', found: true });
+
+    const codex = ['› Explain the failure', 'Thinking…', '## Result', '- first', '- second'].join(
+      '\n',
+    );
+    expect(lastReplyOnly(codex)).toMatchObject({
+      text: 'Thinking…\n## Result\n- first\n- second',
+      found: true,
+    });
   });
 });
 
@@ -486,6 +506,24 @@ describe('extractAnswer', () => {
     expect(text).not.toContain('\u23fa Read');
   });
 
+  it('drops preliminary prose before the last tool block', () => {
+    const screen = [
+      '› Fix the reader',
+      'I will inspect the parser first.',
+      '',
+      '\u23fa Read(src/readerMarkdown.ts)',
+      'const oldParser = true;',
+      '',
+      '## Fixed',
+      '1. Lists stay numbered.',
+      '2. Paragraphs are readable.',
+    ].join('\n');
+
+    expect(extractAnswer(screen).text).toBe(
+      '## Fixed\n1. Lists stay numbered.\n2. Paragraphs are readable.',
+    );
+  });
+
   it('cuts at the last prompt when the pane has one', () => {
     const screen = 'old output\nuser@host:~/proj$ \nThe answer.';
     expect(extractAnswer(screen).text.trim()).toBe('The answer.');
@@ -516,5 +554,39 @@ describe('parseReaderText answer-only mode', () => {
     // Two bullets, with the wrapped line joined onto the first.
     expect(list.items).toHaveLength(2);
     expect(JSON.stringify(list.items[0])).toContain('onto a second line');
+  });
+
+  it('reflows terminal-wrapped prose while preserving semantic list blocks', () => {
+    const screen = [
+      '› Summarise the fix',
+      'This sentence was wrapped by the terminal at',
+      'a narrow column but belongs in one paragraph.',
+      '',
+      '1. First numbered item',
+      '2. Second numbered item',
+    ].join('\n');
+    const blocks = parseReaderText(screen, { answerOnly: true, hideNoise: true });
+
+    expect(blocks).toEqual([
+      {
+        kind: 'paragraph',
+        content: [
+          {
+            kind: 'text',
+            value:
+              'This sentence was wrapped by the terminal at a narrow column but belongs in one paragraph.',
+          },
+        ],
+      },
+      {
+        kind: 'list',
+        ordered: true,
+        start: 1,
+        items: [
+          [{ kind: 'text', value: 'First numbered item' }],
+          [{ kind: 'text', value: 'Second numbered item' }],
+        ],
+      },
+    ]);
   });
 });
