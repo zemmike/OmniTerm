@@ -57,6 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.4] - 2026-09-24
+
+### Fixed
+- **Copy and paste inside herdr on Windows.** Sessions now use the ConPTY bundled with
+  node-pty (the one Windows Terminal ships), which passes mouse selection through and
+  delivers pastes as text. Falls back to the Windows ConPTY if it cannot start; set
+  `OMNITERM_CONPTY=inbox` to force that.
+
+### Removed
+- **Herdr card in Settings** ("Match Herdr to this theme") and its endpoints. The AI
+  Reader still reads the focused Herdr pane. To theme Herdr by hand, see
+  docs/THEME-INTEGRATION.md.
+
 ## [1.18.3] - 2026-09-23
 
 ### Fixed
