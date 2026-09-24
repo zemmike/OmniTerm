@@ -564,6 +564,19 @@ function spawnSession(
 
 // -------------------------------------------------------------- websocket API
 /**
+ * Remove bracketed-paste markers (ESC[200~ / ESC[201~) from input.
+ *
+ * On Windows, ConPTY turns input into console key events, so the markers reach
+ * full-screen programs such as herdr as literal keys and show up as `^[[200~` in front
+ * of every paste. The pasted text itself is kept; OmniTerm's own review dialog has
+ * already gated multi-line and risky pastes before they get here.
+ * OMNITERM_BRACKETED_PASTE=keep leaves them in.
+ */
+export function stripBracketedPasteMarkers(data: string): string {
+  return data.includes('\x1b[20') ? data.replace(/\x1b\[20[01]~/g, '') : data;
+}
+
+/**
  * Spawn, preferring node-pty's bundled ConPTY on Windows.
  *
  * The ConPTY built into Windows swallows sequences a full-screen program relies on:
@@ -688,7 +701,11 @@ export function attachTerminalSocket(server: Server, opts: { token: string }) {
       if (msg.type === 'input') {
         const data = String(msg.data ?? '');
         trackInput(session, data);
-        session.proc.write(data);
+        session.proc.write(
+          process.platform === 'win32' && process.env.OMNITERM_BRACKETED_PASTE !== 'keep'
+            ? stripBracketedPasteMarkers(data)
+            : data,
+        );
       } else if (msg.type === 'resize') {
         const cols = Math.max(20, Math.min(500, Number(msg.cols) || session.cols));
         const rows = Math.max(5, Math.min(300, Number(msg.rows) || session.rows));
