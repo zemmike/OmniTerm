@@ -179,6 +179,11 @@ export default function TerminalPane({
    * click, the context menu, Ctrl+Shift+V): low-risk single-line text goes
    * straight through, anything else is held for review.
    */
+  // A paste the user has already reviewed and approved. It comes back through onData
+  // wrapped in bracketed-paste markers, and must not be held for review a second time,
+  // which reopened the dialog and never delivered the text.
+  const approvedPasteRef = useRef<string | null>(null);
+
   const decidePaste = useCallback((text: string, term: Terminal) => {
     const assessment = assessCommand(text);
     if (assessment.multiline || assessment.level !== 'low') {
@@ -478,7 +483,9 @@ export default function TerminalPane({
       // point every paste passes through, so the review gate lives here: a
       // multi-line or risky paste is held, and not a byte of it reaches the shell.
       const pasted = bracketedPasteContent(data);
-      if (pasted !== null) {
+      const approved = pasted !== null && approvedPasteRef.current !== null;
+      approvedPasteRef.current = null;
+      if (pasted !== null && !approved) {
         const assessment = assessCommand(pasted);
         if (assessment.multiline || assessment.level !== 'low') {
           setPastePrompt({ text: pasted, assessment });
@@ -1042,7 +1049,9 @@ export default function TerminalPane({
           assessment={pastePrompt.assessment}
           onCancel={() => setPastePrompt(null)}
           onConfirm={() => {
+            approvedPasteRef.current = pastePrompt.text;
             termRef.current?.paste(pastePrompt.text);
+            approvedPasteRef.current = null;
             setPastePrompt(null);
           }}
         />

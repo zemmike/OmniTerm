@@ -119,3 +119,10 @@ describe('Claude Code welcome screen on Windows (issue screenshot)', () => {
     expect(json).not.toContain('what is 2+2');
   });
 });
+
+describe('OSC 52 tolerance', () => {
+  it('accepts wrapped and URL-safe base64', () => {
+    expect(decodeOsc52('c;aGVs\nbG8=')).toBe('hello');
+    expect(decodeOsc52('c;' + btoa('a?>b').replace(/\+/g, '-').replace(/\//g, '_'))).toBe('a?>b');
+  });
+});

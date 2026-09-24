@@ -55,7 +55,12 @@ export async function readClipboardText(): Promise<string> {
 export function decodeOsc52(data: string): string | null {
   const sep = data.indexOf(';');
   if (sep < 0) return null;
-  const payload = data.slice(sep + 1);
+  // Some programs wrap long base64 or use the URL-safe alphabet; normalise both.
+  const payload = data
+    .slice(sep + 1)
+    .replace(/\s+/g, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
   // `?` is a read request; never answer it, terminal output must not read the clipboard.
   if (!payload || payload === '?') return null;
   try {

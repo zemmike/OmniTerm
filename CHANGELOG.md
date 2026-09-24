@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.5] - 2026-09-24
+
+### Fixed
+- **Confirmed pastes never arrived** in programs that enable bracketed paste (herdr,
+  modern shells): approving a multi-line or risky paste reopened the review dialog
+  instead of sending the text.
+- **OSC 52 clipboard writes** accept wrapped and URL-safe base64.
+
 ## [1.18.4] - 2026-09-24
 
 ### Fixed
