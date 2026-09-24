@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.6] - 2026-09-24
+
+### Fixed
+- **`npm run dev`** reported the terminal backend as unavailable (`require is not
+  defined`): node-pty is now loaded correctly when the server runs as an ES module.
+  The installed app was not affected.
+
 ## [1.18.5] - 2026-09-24
 
 ### Fixed
