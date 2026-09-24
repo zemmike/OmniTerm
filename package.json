@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.18.6",
+  "version": "1.18.7",
   "description": "A real Linux terminal emulator: your own shell in tabs and split panes, live host health, file browser and snapshots.",
   "private": true,
   "type": "module",
@@ -68,7 +68,7 @@
   "build": {
     "appId": "app.zemike.omniterm",
     "productName": "OmniTerm",
-    "copyright": "Copyright \u00a9 2026 Michael (zemmike)",
+    "copyright": "Copyright © 2026 Michael (zemmike)",
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "directories": {
       "output": "release",
@@ -95,7 +95,7 @@
       "syncDesktopName": true,
       "category": "Development;Utility;System;TerminalEmulator",
       "icon": "build/icon.png",
-      "synopsis": "OmniTerm \u2014 a real Linux terminal with split panes and host health",
+      "synopsis": "OmniTerm — a real Linux terminal with split panes and host health",
       "description": "OmniTerm is a terminal emulator for Linux: real shell sessions in tabs and split panes, prefix history search, per-command exit codes and durations, a colour-coded file browser, live host health for this machine, and snapshots.",
       "maintainer": "Michael (zemmike) <zemuim@gmail.com>",
       "vendor": "zemmike",

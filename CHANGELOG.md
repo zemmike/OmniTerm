@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.7] - 2026-09-24
+
+### Fixed
+- **Windows: Ctrl+V inside herdr showed `^[[200~`** in front of the pasted text.
+  ConPTY delivered the bracketed-paste markers as literal keys; they are now
+  removed before the paste reaches the program (`OMNITERM_BRACKETED_PASTE=keep`
+  restores them).
+
 ## [1.18.6] - 2026-09-24
 
 ### Fixed
