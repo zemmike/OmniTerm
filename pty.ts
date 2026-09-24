@@ -13,6 +13,7 @@
  * records, so the audit trail keeps working with a real interactive shell.
  */
 import { execFileSync } from 'child_process';
+import { createRequire } from 'module';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,8 +45,10 @@ function loadPty(): any {
   try {
     // node-pty is a native module that is loaded lazily: a missing/incompatible
     // build must degrade to "unavailable" rather than throw at import time.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ptyLib = require('node-pty');
+    // The bundled server is CommonJS and has `require`; `npm run dev` runs this file as
+    // an ES module (package.json "type": "module"), where it must be created.
+    const load = typeof require === 'function' ? require : createRequire(import.meta.url);
+    ptyLib = load('node-pty');
   } catch (err: any) {
     ptyLoadError = err?.message || String(err);
   }
