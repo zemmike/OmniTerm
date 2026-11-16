@@ -1048,11 +1048,18 @@ export default function TerminalPane({
           text={pastePrompt.text}
           assessment={pastePrompt.assessment}
           onCancel={() => setPastePrompt(null)}
-          onConfirm={() => {
-            approvedPasteRef.current = pastePrompt.text;
-            termRef.current?.paste(pastePrompt.text);
-            approvedPasteRef.current = null;
+          onConfirm={(edited) => {
+            const text = edited.trim() ? edited : pastePrompt.text;
+            // The dialog is editable, so the text that lands on the shell is the one
+            // the user approved on screen, not the clipboard's original bytes.
             setPastePrompt(null);
+            approvedPasteRef.current = text;
+            termRef.current?.paste(text);
+            approvedPasteRef.current = null;
+            // Hand the keyboard back to the pane that received the paste, so the
+            // cursor is live and the next keystroke edits what was just pasted.
+            termRef.current?.focus();
+            onFocusPane?.();
           }}
         />
       )}

@@ -1,12 +1,13 @@
-import React, { useEffect, useId, useRef } from 'react';
-import type { RiskAssessment } from '../risk';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { assessCommand, type RiskAssessment } from '../risk';
 import { RISK_LABEL, riskHeadline } from '../risk';
 
 interface Props {
   text: string;
-  assessment: RiskAssessment;
-  /** Called when the user decides to send it to the shell. */
-  onConfirm: () => void;
+  /** Assessment of the original text; the dialog re-assesses as the user edits. */
+  assessment?: RiskAssessment;
+  /** Called with the (possibly edited) text the user wants to send. */
+  onConfirm: (text: string) => void;
   /** Called when the user backs out. Nothing is sent. */
   onCancel: () => void;
 }
@@ -21,15 +22,22 @@ const LEVEL_ACCENT: Record<RiskAssessment['level'], string> = {
 /**
  * Shown before a paste reaches the shell when the text is multi-line or matches a
  * known risk pattern. Nothing is executed here — the user reads the exact text,
- * sees why it was flagged, and either sends it or cancels. The copy deliberately
- * avoids the word "safe": it states which patterns were checked and what was
- * found, which is all this can honestly claim.
+ * sees why it was flagged, edits it if needed, and either sends it or cancels. The
+ * text is editable because the usual reason to open this dialog is to fix one line
+ * of a long paste, and making the user cancel, edit elsewhere and paste again is
+ * how mistakes get pasted. Findings are re-checked on every keystroke so an edit
+ * cannot quietly reintroduce a risk that was not in the original.
+ *
+ * A paste that becomes harmless after editing (single line, no findings) still
+ * confirms as an ordinary paste; the dialog does not pretend an edit is safer than
+ * the text now in the box.
  */
-export default function PasteConfirmDialog({ text, assessment, onConfirm, onCancel }: Props) {
+export default function PasteConfirmDialog({ text, assessment: initial, onConfirm, onCancel }: Props) {
   const titleId = useId();
   const descId = useId();
   const confirmRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const [draft, setDraft] = useState(text);
 
   // Focus the safe option first: a stray Enter should cancel, not run.
   useEffect(() => {
@@ -47,8 +55,15 @@ export default function PasteConfirmDialog({ text, assessment, onConfirm, onCanc
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
 
+  const assessment = useMemo(
+    () => (draft === text && initial ? initial : assessCommand(draft)),
+    [draft, text, initial],
+  );
+
   const accent = LEVEL_ACCENT[assessment.level];
-  const lines = text.split(/\r?\n/).length;
+  const lines = draft.split(/\r?\n/).length;
+  const chars = draft.length;
+  const empty = draft.trim().length === 0;
 
   return (
     <div
@@ -79,7 +94,7 @@ export default function PasteConfirmDialog({ text, assessment, onConfirm, onCanc
         <p id={descId} className="mt-2 text-[11px] leading-relaxed text-[#B9B9C2]">
           {riskHeadline(assessment)}
           {assessment.multiline
-            ? ` The clipboard holds ${lines} lines, so this would run more than one command.`
+            ? ` The pasted text holds ${lines} lines, so this would run more than one command.`
             : ''}
         </p>
 
@@ -101,13 +116,32 @@ export default function PasteConfirmDialog({ text, assessment, onConfirm, onCanc
           </ul>
         )}
 
-        <pre className="mt-3 max-h-52 overflow-auto rounded border border-[#2A2A2E] bg-[#0F0F10] p-2 text-[11px] leading-relaxed text-[#E0E0E5] whitespace-pre-wrap">
-          {text}
-        </pre>
+        <label htmlFor={`${titleId}-text`} className="mt-3 block text-[10px] uppercase tracking-wide text-[#7A7A85]">
+          Text to paste — edit it here if you need to
+        </label>
+        <textarea
+          id={`${titleId}-text`}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          wrap="off"
+          rows={Math.min(12, Math.max(3, lines))}
+          className="mt-1 block w-full resize-y rounded border border-[#2A2A2E] bg-[#0F0F10] p-2 font-mono text-[11px] leading-relaxed text-[#E0E0E5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] whitespace-pre overflow-auto"
+          aria-describedby={descId}
+        />
+
+        <div className="mt-1 flex justify-between text-[10px] text-[#7A7A85]">
+          <span>
+            {lines} line{lines === 1 ? '' : 's'} · {chars} character{chars === 1 ? '' : 's'}
+            {draft !== text ? ' · edited' : ''}
+          </span>
+          <span>Checked {assessment.checked.length} known risk patterns.</span>
+        </div>
 
         <p className="mt-2 text-[10px] text-[#7A7A85]">
-          Checked {assessment.checked.length} known risk patterns. That is not a guarantee — you are
-          responsible for what you run.
+          That check is not a guarantee — you are responsible for what you run.
         </p>
 
         <div className="mt-3 flex justify-end gap-2">
@@ -122,8 +156,9 @@ export default function PasteConfirmDialog({ text, assessment, onConfirm, onCanc
           <button
             ref={confirmRef}
             type="button"
-            onClick={onConfirm}
-            className="px-2.5 py-1.5 text-[11px] rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)]"
+            disabled={empty}
+            onClick={() => onConfirm(draft)}
+            className="px-2.5 py-1.5 text-[11px] rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-accent)] disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               borderColor: accent,
               color: assessment.level === 'critical' ? '#FFD8D8' : undefined,
