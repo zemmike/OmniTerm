@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.18.8",
+  "version": "1.18.9",
   "description": "A real Linux terminal emulator: your own shell in tabs and split panes, live host health, file browser and snapshots.",
   "private": true,
   "type": "module",
@@ -171,9 +171,7 @@
     "appImage": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
-    "asarUnpack": [
-      "**/node_modules/node-pty/**"
-    ]
+    "asar": false
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

@@ -57,6 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.9] - 2026-11-16
+
+### Fixed
+- **Packaged Linux app failed to start a terminal** with `node-pty unavailable …
+  Cannot find module './prebuilds/linux-x64//pty.node'`. The backend bundle ran with
+  `ELECTRON_RUN_AS_NODE` from inside `app.asar`, so a `require` of the unpacked native
+  module depended on Electron's asar redirect working for a child process. Linux
+  packages now ship without asar: `dist/server.cjs` and `node_modules` are real files,
+  so the backend loads `pty.node` by plain path on every distribution.
+
 ## [1.18.8] - 2026-11-16
 
 ### Added
