@@ -142,8 +142,10 @@ jobs:
     name: Publish release and SHA256SUMS
     needs: release
     # One platform failing (a runner-configuration error, a flaky packaging step) must
-    # not throw away the artifacts the other platforms did build. Publish what exists.
-    if: always() && needs.release.result != 'cancelled'
+    # not throw away the artifacts the other platforms did build. Publish what exists:
+    # `always()` also covers a matrix job cancelled by an unavailable runner, which
+    # reports the whole `release` job as cancelled.
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
