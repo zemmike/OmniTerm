@@ -16,6 +16,10 @@ jobs:
   release:
     name: Build release (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
+    # The macOS runner is unavailable on this account ("macos-14-arm64-us-default is
+    # not supported"). Keep the job visible and non-blocking instead of letting it
+    # cancel the whole release.
+    continue-on-error: ${{ matrix.platform == 'mac' }}
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +141,9 @@ jobs:
   checksums:
     name: Publish release and SHA256SUMS
     needs: release
+    # One platform failing (a runner-configuration error, a flaky packaging step) must
+    # not throw away the artifacts the other platforms did build. Publish what exists.
+    if: always() && needs.release.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
