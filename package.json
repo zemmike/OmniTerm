@@ -2,7 +2,7 @@
   "name": "omniterm",
   "productName": "OmniTerm",
   "desktopName": "omniterm.desktop",
-  "version": "1.18.9",
+  "version": "1.18.10",
   "description": "A real Linux terminal emulator: your own shell in tabs and split panes, live host health, file browser and snapshots.",
   "private": true,
   "type": "module",
@@ -39,7 +39,7 @@
     "start": "NODE_ENV=production node dist/server.cjs",
     "start:desktop": "npm run build && electron .",
     "dist:linux": "npm run build && electron-builder --linux",
-    "dist:deb": "npm run build && electron-builder --linux deb",
+    "dist:deb": "npm run build && npm run native:pty && electron-builder --linux deb",
     "dist:appimage": "npm run build && electron-builder --linux AppImage",
     "dist:rpm": "npm run build && electron-builder --linux rpm",
     "dist:tar": "npm run build && electron-builder --linux tar.gz",
@@ -63,7 +63,8 @@
     "coverage:server": "c8 report --temp-directory=.coverage-child --reporter=text --reporter=lcov --report-dir=coverage/backend",
     "build:verify": "esbuild audit-verify.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/audit-verify.cjs",
     "audit:verify": "node dist/audit-verify.cjs",
-    "bench": "bash scripts/bench.sh"
+    "bench": "bash scripts/bench.sh",
+    "native:pty": "node scripts/install-pty-prebuild.mjs"
   },
   "build": {
     "appId": "app.zemike.omniterm",
@@ -171,7 +172,8 @@
     "appImage": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
-    "asar": false
+    "asar": false,
+    "npmRebuild": false
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

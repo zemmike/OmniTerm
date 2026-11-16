@@ -92,6 +92,12 @@ jobs:
       - run: npm run build
       - name: Rebuild node-pty for Electron
         run: npm run rebuild:native
+      # electron-rebuild just produced a binding linked against this runner's glibc;
+      # replace it with the vendored one built against glibc 2.31 so the package loads
+      # on older distros (Pop!_OS, Debian stable).
+      - name: Install vendored node-pty binding
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        run: npm run native:pty
       - name: Package Linux
         if: matrix.platform == 'linux'
         run: npx electron-builder --linux ${{ matrix.targets }} --${{ matrix.arch }} --publish never
