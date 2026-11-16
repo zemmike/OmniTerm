@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Editable paste review.** The dialog shown before a multi-line or flagged paste
-  now holds the text in a textarea instead of a read-only block, so a bad line can be
-  fixed before it reaches the shell. Findings and the risk badge are re-checked on
-  every keystroke, and confirming puts focus back in the pane that received the paste
-  so the cursor is live for the next keystroke.
 - **Clickable file paths in terminal output.** Absolute, home-relative,
   dot-relative, project-relative and bare filename links open the containing
   directory in Files and select the file. Compiler-style `:line:column` suffixes
@@ -61,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
+
+## [1.18.8] - 2026-11-16
+
+### Added
+- **Editable paste review.** The dialog shown before a multi-line or flagged paste
+  now holds the text in a textarea instead of a read-only block, so a bad line can be
+  fixed before it reaches the shell. Findings and the risk badge are re-checked on
+  every keystroke, and confirming puts focus back in the pane that received the paste
+  so the cursor is live for the next keystroke.
 
 ## [1.18.7] - 2026-09-24
 
