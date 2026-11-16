@@ -32,7 +32,12 @@ const LEVEL_ACCENT: Record<RiskAssessment['level'], string> = {
  * confirms as an ordinary paste; the dialog does not pretend an edit is safer than
  * the text now in the box.
  */
-export default function PasteConfirmDialog({ text, assessment: initial, onConfirm, onCancel }: Props) {
+export default function PasteConfirmDialog({
+  text,
+  assessment: initial,
+  onConfirm,
+  onCancel,
+}: Props) {
   const titleId = useId();
   const descId = useId();
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -116,7 +121,10 @@ export default function PasteConfirmDialog({ text, assessment: initial, onConfir
           </ul>
         )}
 
-        <label htmlFor={`${titleId}-text`} className="mt-3 block text-[10px] uppercase tracking-wide text-[#7A7A85]">
+        <label
+          htmlFor={`${titleId}-text`}
+          className="mt-3 block text-[10px] uppercase tracking-wide text-[#7A7A85]"
+        >
           Text to paste — edit it here if you need to
         </label>
         <textarea
