@@ -67,6 +67,30 @@ describe('reader clipboard on Linux', () => {
   });
 });
 
+describe('clipboard stays with full-screen programs', () => {
+  const pane = read('src/components/TerminalPane.tsx');
+  const view = read('src/components/TerminalView.tsx');
+
+  it('treats a program with mouse tracking or the alternate screen as the owner', () => {
+    expect(pane).toContain('term.modes?.mouseTrackingMode');
+    expect(pane).toContain("buffer.active.type === 'alternate'");
+  });
+
+  it('skips copy-on-select while the program owns the view', () => {
+    const selection = pane.slice(pane.indexOf('const selSub = term.onSelectionChange'));
+    expect(selection.slice(0, 500)).toContain('!appOwnsClipboard(term)');
+  });
+
+  it('leaves Ctrl+C / Ctrl+V alone inside a full-screen program', () => {
+    const keys = pane.slice(pane.indexOf('attachCustomKeyEventHandler'));
+    expect(keys.slice(0, 1400)).toContain('!appOwnsClipboard(term) &&');
+  });
+
+  it('does not run the app-level copy/paste chords over the program', () => {
+    expect(view).toContain("(action === 'copy' || action === 'paste') && api.appOwnsClipboard()");
+  });
+});
+
 describe('settings changes must not corrupt the terminal grid', () => {
   const pane = read('src/components/TerminalPane.tsx');
 

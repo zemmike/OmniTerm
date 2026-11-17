@@ -532,7 +532,12 @@ export default function TerminalView({
         default: {
           // Clipboard / terminal actions belong to the focused pane.
           const api = focusedApi();
-          if (api && api.runAction(action)) {
+          if (!api) return;
+          // A full-screen program (herdr, tmux mouse mode, vim) keeps its own copy and
+          // paste. Do not intercept the chord: the keystroke already went to the pane,
+          // and running OmniTerm's copy here is what overwrote herdr's clipboard.
+          if ((action === 'copy' || action === 'paste') && api.appOwnsClipboard()) return;
+          if (api.runAction(action)) {
             e.preventDefault();
             e.stopPropagation();
           }

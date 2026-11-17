@@ -47,6 +47,8 @@ export interface PaneApi {
   readBuffer(): string;
   /** True while a full-screen program (herdr, vim, less) owns the pane. */
   isAlternateScreen(): boolean;
+  /** True while the program owns the mouse and its own clipboard handling. */
+  appOwnsClipboard(): boolean;
   send(text: string): void;
   /** Handles an app-level action coming from a shortcut. */
   runAction(actionId: string): boolean;
@@ -71,6 +73,20 @@ interface Props {
   registerApi?: (id: string, api: PaneApi | null) => void;
   home?: string;
   onOpenFilePath?: (path: string) => void;
+}
+
+/**
+ * True when the foreground program is a full-screen app that owns the mouse and its
+ * own clipboard behaviour: herdr, tmux with `mouse on`, htop, vim's visual mode.
+ *
+ * In that state OmniTerm must stay out of the way. Its own copy-on-select and
+ * Ctrl+C/Ctrl+V clipboard handling replace the app's (herdr has its own selection and
+ * paste), so they are skipped while the app is in charge. An explicit Copy/Paste from
+ * the menu still works.
+ */
+function appOwnsClipboard(term: Terminal): boolean {
+  const mouse = term.modes?.mouseTrackingMode ?? 'none';
+  return mouse !== 'none' || term.buffer.active.type === 'alternate';
 }
 
 export default function TerminalPane({
@@ -555,8 +571,16 @@ export default function TerminalPane({
 
       // Ctrl+C with a selection copies instead of sending SIGINT (Windows Terminal
       // behaviour); without a selection it still interrupts. Ctrl+V pastes through
-      // the review gate. Both work inside full-screen programs like herdr.
-      if (event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
+      // the review gate. Both are skipped while a full-screen app owns the clipboard
+      // (herdr, tmux mouse mode, vim): there Ctrl+C/Ctrl+V are the program's own
+      // keys, and stealing them is why herdr's copy/paste stopped working.
+      if (
+        !appOwnsClipboard(term) &&
+        event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey
+      ) {
         const key = event.key.toLowerCase();
         if (key === 'c' && term.hasSelection()) {
           void writeClipboardText(term.getSelection());
@@ -624,14 +648,15 @@ export default function TerminalPane({
       }
     };
     const onAuxClick = (event: MouseEvent) => {
-      // Middle click pastes, like an X11 terminal.
-      if (event.button === 1 && settingsRef.current.middleClickPaste) {
+      // Middle click pastes, like an X11 terminal — unless the program wants the mouse.
+      if (event.button === 1 && settingsRef.current.middleClickPaste && !appOwnsClipboard(term)) {
         event.preventDefault();
         void requestPaste();
       }
     };
     const onContextMenu = (event: MouseEvent) => {
-      if (!settingsRef.current.contextMenu) return;
+      // A full-screen program may bind right-click itself; its menu wins.
+      if (!settingsRef.current.contextMenu || appOwnsClipboard(term)) return;
       event.preventDefault();
       const rect = host.getBoundingClientRect();
       setMenu({ x: event.clientX - rect.left, y: event.clientY - rect.top });
@@ -640,10 +665,16 @@ export default function TerminalPane({
     host.addEventListener('auxclick', onAuxClick);
     host.addEventListener('contextmenu', onContextMenu);
 
-    // Copy on select, if enabled.
+    // Copy on select, if enabled — and only when OmniTerm owns the interaction. In a
+    // full-screen app the selection belongs to the program (herdr keeps its own).
     const selSub = term.onSelectionChange(() => {
       const text = term.getSelection();
-      if (settingsRef.current.copyOnSelect && text && document.hasFocus()) {
+      if (
+        settingsRef.current.copyOnSelect &&
+        text &&
+        document.hasFocus() &&
+        !appOwnsClipboard(term)
+      ) {
         void writeClipboardText(text);
       }
     });
@@ -694,6 +725,7 @@ export default function TerminalPane({
           ? focusedPaneText(term.buffer.active, term.cols, term.rows)
           : terminalBufferToText(term.buffer.active),
       isAlternateScreen: () => term.buffer.active.type === 'alternate',
+      appOwnsClipboard: () => appOwnsClipboard(term),
       focus: () => term.focus(),
       search: (query, direction) => {
         if (!query) return;

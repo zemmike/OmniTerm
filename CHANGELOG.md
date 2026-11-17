@@ -57,6 +57,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Measured with CDP against the running window rather than assumed; the probe and
   the reproduction are described in the plan document.
 
+## [1.18.11] - 2026-11-17
+
+### Fixed
+- **Clipboard belongs to the program while a full-screen tool runs.** Inside herdr,
+  tmux with `mouse on`, htop or vim, OmniTerm intercepted Ctrl+C/Ctrl+V and
+  copy-on-select, so the tool's own copy/paste never worked. When the terminal
+  reports mouse tracking (`term.modes.mouseTrackingMode`) or the alternate screen,
+  OmniTerm now leaves Ctrl+C, Ctrl+V, middle-click paste, the context menu and the
+  Ctrl+Shift+C/V chords alone, and the program receives them. Copy still works
+  through the explicit menu item, and everything behaves as before at a plain shell.
+
+## [1.18.10] - 2026-11-16
+
+### Fixed
+- **`node-pty` was linked against the build host's glibc.** The packaged binding
+  required `GLIBC_2.42` (built on Ubuntu 26.04) and failed to load on Pop!_OS
+  (2.35) and Debian stable, where node-pty reported it as the misleading
+  `Cannot find module './prebuilds/linux-x64//pty.node'`. A binding built in
+  `node:20-bullseye` (max symbol `GLIBC_2.28`, N-API so it also loads in Electron 44)
+  is vendored under `vendor/pty/linux-x64/` and installed over both lookup paths
+  before packaging; `npmRebuild` is off so electron-builder cannot overwrite it.
+  Regenerate with `scripts/build-pty-prebuild.sh`.
+
 ## [1.18.9] - 2026-11-16
 
 ### Fixed
